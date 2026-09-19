@@ -1,0 +1,1076 @@
+<title>opthub Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground:   #F6F7FA;
+    --surface:  #FFFFFF;
+    --surface-2:#EFF1F6;
+    --ink:      #13161C;
+    --ink-2:    #3D4552;
+    --muted:    #6B7385;
+    --line:     #E0E4EC;
+    --line-2:   #CBD2DE;
+    --accent:   #2B4FD8;
+    --accent-soft: #E8ECFC;
+    --pass:     #1F7A56;
+    --pass-soft:#E1F2EA;
+    --fail:     #B02D22;
+    --fail-soft:#FBE7E4;
+    --hold:     #8A5B08;
+    --hold-soft:#FAEFD9;
+    --shadow:   0 1px 2px rgba(19,22,28,.05), 0 8px 24px -16px rgba(19,22,28,.24);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #0D1015;
+      --surface:  #14181F;
+      --surface-2:#1B2029;
+      --ink:      #E7EAF1;
+      --ink-2:    #B9C1CE;
+      --muted:    #8A93A3;
+      --line:     #242A34;
+      --line-2:   #333B47;
+      --accent:   #7A99FF;
+      --accent-soft: #1A2340;
+      --pass:     #55C79B;
+      --pass-soft:#122C24;
+      --fail:     #FF8073;
+      --fail-soft:#33191A;
+      --hold:     #E0A845;
+      --hold-soft:#2E2413;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:   #0D1015;
+    --surface:  #14181F;
+    --surface-2:#1B2029;
+    --ink:      #E7EAF1;
+    --ink-2:    #B9C1CE;
+    --muted:    #8A93A3;
+    --line:     #242A34;
+    --line-2:   #333B47;
+    --accent:   #7A99FF;
+    --accent-soft: #1A2340;
+    --pass:     #55C79B;
+    --pass-soft:#122C24;
+    --fail:     #FF8073;
+    --fail-soft:#33191A;
+    --hold:     #E0A845;
+    --hold-soft:#2E2413;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Source Serif 4", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 28px 120px;
+  }
+
+  /* ---- shared type roles ---- */
+  .ui { font-family: Archivo, "Helvetica Neue", Arial, sans-serif; }
+  .mono, code, pre, .num {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .eyebrow {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---- masthead ---- */
+  header.mast {
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .mast-inner {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 56px 28px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+  .mark {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .mark h1 {
+    font-family: Archivo, sans-serif;
+    font-weight: 700;
+    font-size: clamp(38px, 6vw, 58px);
+    letter-spacing: -.035em;
+    line-height: 1;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .mark .phase {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .06em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .lede {
+    font-size: 21px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 40em;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .mast-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .mast-meta span b { color: var(--ink-2); font-weight: 500; }
+
+  /* ---- gate readout ---- */
+  .readout {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .gate-cell {
+    background: var(--surface-2);
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: relative;
+  }
+  .gate-cell::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--accent);
+  }
+  .gate-cell .g-label {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .gate-cell .g-rule {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .gate-cell .g-note {
+    font-size: 14px;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+
+  /* ---- sections ---- */
+  section { margin-top: 68px; scroll-margin-top: 24px; }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-bottom: 1px solid var(--line-2);
+    padding-bottom: 10px;
+    margin-bottom: 26px;
+  }
+  .sec-head .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .sec-head h2 {
+    font-family: Archivo, sans-serif;
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    margin: 0;
+    color: var(--ink);
+  }
+  h3 {
+    font-family: Archivo, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    margin: 34px 0 12px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 16px; max-width: 68ch; text-wrap: pretty; }
+  p:last-child { margin-bottom: 0; }
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  strong { font-weight: 600; color: var(--ink); }
+  a { color: var(--accent); text-underline-offset: 2px; }
+
+  ul { margin: 0 0 16px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 7px; }
+  li::marker { color: var(--muted); }
+
+  code {
+    font-size: .87em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.65;
+    margin: 0 0 16px;
+    color: var(--ink-2);
+  }
+  pre code { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; }
+  pre .c { color: var(--muted); }
+  pre .k { color: var(--accent); font-weight: 500; }
+
+  /* ---- tables ---- */
+  .t-wrap { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 4px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: Archivo, sans-serif;
+    font-size: 14px;
+    background: var(--surface);
+  }
+  th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 11px 14px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    color: var(--ink-2);
+    line-height: 1.45;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td.lead { color: var(--ink); font-weight: 500; }
+  td .mono, th .mono { font-size: 13px; }
+  .n-col { font-variant-numeric: tabular-nums; white-space: nowrap; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+  /* verdict table stripes */
+  tr.v-pass td:first-child { box-shadow: inset 3px 0 0 var(--pass); }
+  tr.v-fail td:first-child { box-shadow: inset 3px 0 0 var(--fail); }
+  tr.v-hold td:first-child { box-shadow: inset 3px 0 0 var(--hold); }
+  tr.v-fail td { background: var(--fail-soft); }
+
+  .chip {
+    display: inline-block;
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .chip.pass { color: var(--pass); background: var(--pass-soft); }
+  .chip.fail { color: var(--fail); background: var(--fail-soft); }
+  .chip.hold { color: var(--hold); background: var(--hold-soft); }
+  .chip.tier { color: var(--accent); background: var(--accent-soft); font-family: "IBM Plex Mono", monospace; }
+
+  .delta-good { color: var(--pass); font-weight: 600; }
+  .delta-bad  { color: var(--fail); font-weight: 600; }
+  .delta-flat { color: var(--muted); }
+
+  /* ---- trust boundary ---- */
+  .boundary {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0;
+    align-items: stretch;
+    margin: 0 0 18px;
+  }
+  .zone {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 18px 20px 20px;
+  }
+  .zone.untrusted { border-style: dashed; border-color: var(--line-2); }
+  .zone h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    margin: 0 0 3px;
+    color: var(--ink);
+  }
+  .zone .z-sub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  .zone ul { margin: 0; padding-left: 17px; font-size: 14.5px; }
+  .zone li { color: var(--ink-2); margin-bottom: 6px; }
+  .divider {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 16px;
+  }
+  .divider .bar {
+    flex: 1;
+    width: 2px;
+    background: repeating-linear-gradient(to bottom, var(--accent) 0 6px, transparent 6px 12px);
+    min-height: 20px;
+  }
+  .divider .lbl {
+    font-family: Archivo, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+  @media (max-width: 720px) {
+    .boundary { grid-template-columns: 1fr; gap: 14px; }
+    .divider { flex-direction: row; padding: 0; }
+    .divider .bar { width: auto; height: 2px; min-height: 0; background: repeating-linear-gradient(to right, var(--accent) 0 6px, transparent 6px 12px); }
+    .divider .lbl { writing-mode: horizontal-tb; }
+  }
+
+  /* ---- state machine ---- */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    margin: 0 0 16px;
+  }
+  .st {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
+    padding: 6px 10px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .st.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .st.ok  { border-color: var(--pass); color: var(--pass); background: var(--pass-soft); }
+  .st.no  { border-color: var(--fail); color: var(--fail); background: var(--fail-soft); }
+  .arrow { color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+  /* ---- tier bands ---- */
+  .tiers { display: flex; flex-direction: column; gap: 10px; margin: 0 0 16px; }
+  .tier {
+    display: grid;
+    grid-template-columns: 62px 1fr;
+    gap: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 16px 18px;
+  }
+  .tier .tname {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -.01em;
+  }
+  .tier h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 14.5px;
+    font-weight: 600;
+    margin: 0 0 5px;
+    color: var(--ink);
+  }
+  .tier p { font-size: 15px; margin: 0 0 9px; color: var(--ink-2); }
+  .tier .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tier .opt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 2px 7px;
+  }
+  @media (max-width: 560px) { .tier { grid-template-columns: 1fr; gap: 8px; } }
+
+  /* ---- callout ---- */
+  .callout {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    padding: 18px 20px;
+    margin: 0 0 16px;
+  }
+  .callout p { margin: 0; max-width: none; color: var(--ink); }
+  .callout .eyebrow { color: var(--accent); margin-bottom: 6px; display: block; }
+
+  /* ---- acts ---- */
+  .acts { display: flex; flex-direction: column; gap: 0; }
+  .act {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 20px;
+    padding: 22px 0;
+    border-top: 1px solid var(--line);
+  }
+  .act:first-child { border-top: 0; padding-top: 0; }
+  .act .act-n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 3px;
+  }
+  .act .act-n b { display: block; color: var(--accent); font-size: 22px; letter-spacing: -.02em; font-weight: 600; }
+  .act h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: var(--ink);
+    letter-spacing: -.01em;
+  }
+  .act p { margin: 0 0 12px; }
+  @media (max-width: 560px) { .act { grid-template-columns: 1fr; gap: 8px; } .act .act-n b { display: inline; margin-right: 8px; } }
+
+  /* ---- scoreboard ---- */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+    margin: 0 0 16px;
+  }
+  .tile { background: var(--surface); padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 4px; }
+  .tile .t-lab {
+    font-family: Archivo, sans-serif;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .tile .t-val {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 27px; font-weight: 600; letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums; line-height: 1.05;
+  }
+  .tile .t-sub { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); }
+
+  /* ---- footer ---- */
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line-2);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+  }
+
+  ::selection { background: var(--accent); color: var(--surface); }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<header class="mast">
+  <div class="mast-inner">
+    <div class="mark">
+      <h1>opthub</h1>
+      <span class="phase">PHASE 1 · DEMO SPEC</span>
+    </div>
+    <p class="lede">
+      A CLI on every dev laptop, shipped with a sandboxed agent. It watches the LLM traffic your code
+      actually makes and continuously proposes — or safely applies — optimizations that cut cost and
+      latency <strong>without</strong> moving accuracy, leaking data, or losing work.
+    </p>
+    <div class="mast-meta">
+      <span>draft <b>v0.1</b></span>
+      <span>2026-08-24</span>
+      <span>owner <b>oleg@canarian.io</b></span>
+      <span>scope <b>LLM &amp; agent workloads</b></span>
+    </div>
+    <div class="readout">
+      <div class="gate-cell">
+        <span class="g-label">Accuracy gate</span>
+        <span class="g-rule">score ≥ baseline</span>
+        <span class="g-note">n ≥ 30, bootstrap CI excludes regression</span>
+      </div>
+      <div class="gate-cell">
+        <span class="g-label">Latency gate</span>
+        <span class="g-rule">p95 ≤ base × 1.05</span>
+        <span class="g-note">cold-cache unless the change is about caching</span>
+      </div>
+      <div class="gate-cell">
+        <span class="g-label">Security gate</span>
+        <span class="g-rule">0 new findings</span>
+        <span class="g-note">redaction, egress, model allowlist, residency</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="problem">
+    <div class="sec-head"><span class="n">01</span><h2>The problem is not finding optimizations</h2></div>
+    <div class="stack">
+      <p>A team ships LLM features. Three months later the same five things are true of almost every codebase:</p>
+      <ul>
+        <li>System prompts have accumulated dead instructions and stale few-shots nobody dares remove.</li>
+        <li>Every call goes to the biggest model, because that is what worked on day one.</li>
+        <li>Prompt caching was never configured, so the same 8k-token preamble is paid for on every request.</li>
+        <li>Tool schemas list thirty tools where the workload uses four.</li>
+        <li>Nobody knows the p95, the $/1k requests, or whether last week's prompt edit hurt accuracy.</li>
+      </ul>
+      <p>
+        Each of these is a known fix. None of them get done — because doing one means proving you did not
+        break anything, and nobody has an eval harness handy at the moment they notice the problem.
+      </p>
+      <div class="callout">
+        <span class="eyebrow">The bet</span>
+        <p>Put the optimizer and the eval harness in the same loop, on the laptop, and make the gate non-optional.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="goals">
+    <div class="sec-head"><span class="n">02</span><h2>Goals &amp; non-goals</h2></div>
+    <div class="t-wrap">
+      <table>
+        <thead><tr><th style="width:52px">—</th><th>Goal</th><th>How the demo measures it</th></tr></thead>
+        <tbody>
+          <tr><td class="n-col">G1</td><td class="lead">Cut the cost of a real workload</td><td>≥ 30% reduction in $/1k requests</td></tr>
+          <tr><td class="n-col">G2</td><td class="lead">Never trade accuracy for it</td><td>Eval score ≥ baseline; the gate blocks anything else</td></tr>
+          <tr><td class="n-col">G3</td><td class="lead">Never regress latency</td><td>p95 ≤ baseline × 1.05</td></tr>
+          <tr><td class="n-col">G4</td><td class="lead">Never widen the security surface</td><td>Zero new findings; redaction verified at capture</td></tr>
+          <tr><td class="n-col">G5</td><td class="lead">Survive a crash</td><td><span class="mono">kill -9</span> mid-run → <span class="mono">opthub resume</span>, no duplicate spend</td></tr>
+          <tr><td class="n-col">G6</td><td class="lead">Two autonomy modes</td><td>Policy decides auto-apply vs. PR, per optimizer tier</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Out of scope for Phase 1</h3>
+    <p>
+      Server-side or production deployment — laptop only. Fleet aggregation across many devs. Non-LLM
+      workloads such as builds, infrastructure, or SQL. Auto-merging pull requests: the agent opens, a
+      human merges. Any form of training or fine-tuning.
+    </p>
+  </section>
+
+  <section id="trust">
+    <div class="sec-head"><span class="n">03</span><h2>Architecture: the agent is untrusted</h2></div>
+    <p>
+      This is the load-bearing decision. <strong>The agent that proposes optimizations can never write to
+      your repo and never sees raw secrets.</strong> It produces a <em>description</em> of a change — a signed
+      JSON proposal — and nothing else.
+    </p>
+    <div class="boundary">
+      <div class="zone untrusted">
+        <h4>Agent sandbox</h4>
+        <p class="z-sub">Docker · untrusted</p>
+        <ul>
+          <li>Repo mounted <strong>read-only</strong></li>
+          <li>No host credentials — short-lived scoped tokens, brokered</li>
+          <li>Network egress allowlist, DNS pinned</li>
+          <li>Output limited to a signed <span class="mono">Proposal</span> JSON</li>
+          <li>Crash blast radius: the container dies, the task resumes</li>
+        </ul>
+      </div>
+      <div class="divider"><div class="bar"></div><span class="lbl">Trust boundary</span><div class="bar"></div></div>
+      <div class="zone">
+        <h4>opthubd — host daemon</h4>
+        <p class="z-sub">Unprivileged · the only writer</p>
+        <ul>
+          <li>Capture proxy on <span class="mono">127.0.0.1:7777</span>, redact-before-disk</li>
+          <li>Journal (SQLite WAL) + content-addressed artifact store</li>
+          <li>Apply engine — the only component that mutates anything</li>
+          <li><strong>Re-runs every gate itself</strong> before writing; it does not trust the sandbox's claim that gates passed</li>
+          <li>Enforces the daily verification spend cap</li>
+        </ul>
+      </div>
+    </div>
+    <h3>Capture</h3>
+    <p>
+      The developer points their SDK at the local proxy — <code>ANTHROPIC_BASE_URL=http://127.0.0.1:7777</code>.
+      The proxy forwards upstream unmodified and records. Redaction happens <strong>before anything touches
+      disk</strong>: configured detectors replace matches with stable pseudonyms (<code>«email:a3f»</code>) so a trace
+      stays semantically replayable without holding the real value. The reverse map lives in the host keychain
+      and never enters the sandbox. Capture is opt-in per project, off by default, and
+      <code>opthub capture status</code> always tells the truth about what is being recorded.
+    </p>
+  </section>
+
+  <section id="gate">
+    <div class="sec-head"><span class="n">04</span><h2>The gate</h2></div>
+    <p>
+      Every candidate must clear four independent gates. Any failure kills the candidate. There is no
+      override flag in Phase 1 — that is deliberate.
+    </p>
+
+    <h3>Accuracy</h3>
+    <p>
+      Replay the golden set against the candidate and score with a two-part scorer. <strong>Deterministic
+      checks run first</strong> because they are fast and free: JSON schema validity, required fields, tool-call
+      name and arity match, refusal detection, and whatever regex assertions the developer declared. Only
+      free-text outputs reach the <strong>LLM judge</strong>, which scores pairwise against the baseline output with
+      position-swap to cancel order bias. The judge model is pinned in policy and is never one of the models
+      being optimized <em>to</em>.
+    </p>
+
+    <h3>Latency</h3>
+    <p>
+      Replay measures wall-clock p50/p95/p99 per workload. Measured warm-cache for cache-related optimizers
+      and cold for everything else, so caching cannot flatter an unrelated change.
+    </p>
+
+    <h3>Security</h3>
+    <ul>
+      <li>No redaction detector disabled or weakened</li>
+      <li>Target model in <code>security.model_allowlist</code>; data-residency tag matches policy</li>
+      <li>No new egress destination versus baseline</li>
+      <li>Workload not listed in <code>never_downgrade</code></li>
+      <li>Prompt-injection surface: the candidate must not newly interpolate untrusted content into the
+        system prompt, or newly grant a tool the baseline did not have</li>
+    </ul>
+
+    <h3>Economics — the optimizer must pay for itself</h3>
+    <p>
+      Verification costs real money. A candidate is only worth verifying if it earns back the verification:
+    </p>
+<pre><code>projected_30d_savings &gt; verification_spend × policy.budgets.min_roi   <span class="c">// default 3×</span></code></pre>
+    <p>
+      opthub estimates verification cost <em>before</em> running it and skips candidates that cannot clear the
+      bar. The daily cap is enforced in the daemon, not in the sandbox.
+    </p>
+  </section>
+
+  <section id="tiers">
+    <div class="sec-head"><span class="n">05</span><h2>Optimizer tiers set the autonomy</h2></div>
+    <p>
+      Optimizers are tiered by how much they can possibly change model output. The tier — not a human's
+      intuition about "risky" — determines the default autonomy.
+    </p>
+    <div class="tiers">
+      <div class="tier">
+        <div class="tname">T0</div>
+        <div>
+          <h4>Token-identical · <span class="chip pass">auto-apply</span></h4>
+          <p>Cannot change the sampled distribution at all. This is where the free lunch lives — prompt caching alone typically explains most of the demo's cost drop, and it is provably output-preserving.</p>
+          <div class="opts"><span class="opt">cache-priming</span><span class="opt">transport-tuning</span></div>
+        </div>
+      </div>
+      <div class="tier">
+        <div class="tname">T1</div>
+        <div>
+          <h4>Output-affecting, eval-gated · <span class="chip hold">auto-apply if policy allows</span></h4>
+          <p>Changes the token stream but not which model answers. Auto-applies only when policy opts the specific optimizer in <em>and</em> the eval clears with n above threshold.</p>
+          <div class="opts"><span class="opt">tool-schema-slimming</span><span class="opt">context-pruning</span><span class="opt">prompt-compaction</span><span class="opt">output-shaping</span></div>
+        </div>
+      </div>
+      <div class="tier">
+        <div class="tname">T2</div>
+        <div>
+          <h4>Changes which model answers · <span class="chip fail">always propose</span></h4>
+          <p>Never auto-applies in Phase 1, regardless of how well it scores. A human sees the evidence and decides.</p>
+          <div class="opts"><span class="opt">model-routing</span><span class="opt">batch-collapse</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="policy">
+    <div class="sec-head"><span class="n">06</span><h2>Policy</h2></div>
+    <p>
+      <code>opthub.policy.yaml</code> is committed to the repo and linted by <code>opthub policy lint</code>.
+      It is the whole configuration surface — there is no second place where behavior is decided.
+    </p>
+<pre><code><span class="k">version:</span> 1
+
+<span class="k">budgets:</span>
+  <span class="k">accuracy:</span>  { min_score: 0.95, relative_drop_max: 0.00, min_samples: 30 }
+  <span class="k">latency:</span>   { p95_regression_max: 1.05 }
+  <span class="k">cost:</span>      { target_reduction: 0.30 }
+  <span class="k">verify:</span>    { daily_usd_cap: 5.00, min_roi: 3.0 }
+
+<span class="k">security:</span>
+  <span class="k">redaction:</span> [email, phone, api_key, jwt, pan]
+  <span class="k">egress_allowlist:</span> [api.anthropic.com]
+  <span class="k">model_allowlist:</span>
+    - claude-opus-5
+    - claude-sonnet-5
+    - claude-haiku-4-5-20251001
+  <span class="k">judge_model:</span> claude-opus-5          <span class="c"># pinned; never a routing target</span>
+  <span class="k">data_residency:</span> us
+  <span class="k">never_downgrade:</span>
+    - supportbot/pii-extract
+
+<span class="k">autonomy:</span>
+  <span class="k">default:</span> propose
+  <span class="k">auto_apply_tiers:</span> [T0]
+  <span class="k">auto_apply_optimizers:</span>
+    - tool-schema-slimming
+  <span class="k">require_approval_optimizers:</span>
+    - model-routing
+    - prompt-compaction
+  <span class="k">apply_mode:</span> pr                      <span class="c"># pr | worktree | direct</span></code></pre>
+  </section>
+
+  <section id="journal">
+    <div class="sec-head"><span class="n">07</span><h2>Journal &amp; recovery</h2></div>
+    <p>
+      Everything opthub does is a task, and every task is a replayable event log. This is what makes
+      "continuously optimizes" safe to leave running.
+    </p>
+    <div class="flow">
+      <span class="st">PENDING</span><span class="arrow">→</span>
+      <span class="st">CAPTURING</span><span class="arrow">→</span>
+      <span class="st">BASELINING</span><span class="arrow">→</span>
+      <span class="st">OPTIMIZING</span><span class="arrow">→</span>
+      <span class="st active">VERIFYING</span><span class="arrow">→</span>
+      <span class="st">PROPOSED</span><span class="arrow">→</span>
+      <span class="st ok">APPLIED</span><span class="arrow">|</span>
+      <span class="st no">REJECTED</span><span class="arrow">|</span>
+      <span class="st">ROLLED_BACK</span>
+    </div>
+
+    <h3>Storage</h3>
+    <ul>
+      <li><code>.opthub/journal.db</code> — SQLite in WAL mode.
+        <span class="mono">events(task_id, seq, ts, type, payload_cas, prev_hash)</span>, append-only and
+        hash-chained, so tampering is detectable.</li>
+      <li><code>.opthub/cas/&lt;sha256&gt;</code> — content-addressed store for traces, candidate configs, eval
+        results, and diffs. Events reference artifacts by hash, so the log stays small and replay is exact.</li>
+    </ul>
+
+    <h3>Idempotent side effects</h3>
+    <p>Every effect that costs money or touches the world is written as a triple:</p>
+<pre><code><span class="k">INTENT</span>(effect_id, description, cost_estimate)
+    … perform …
+<span class="k">EFFECT</span>(effect_id, result_cas)
+<span class="k">CONFIRM</span>(effect_id)</code></pre>
+    <p>
+      On resume, any <span class="mono">INTENT</span> without a matching <span class="mono">CONFIRM</span> is
+      checked against the provider by idempotency key before being retried. <strong>This is what makes
+      <span class="mono">kill -9</span> mid-verification safe: resume never re-pays for an eval run that already
+      completed.</strong>
+    </p>
+  </section>
+
+  <section id="cli">
+    <div class="sec-head"><span class="n">08</span><h2>CLI surface</h2></div>
+<pre><code>opthub init                          <span class="c"># scaffold .opthub/, policy, gitignore</span>
+opthub daemon start | stop | status
+
+opthub capture start --port 7777     <span class="c"># begin recording</span>
+opthub capture status                <span class="c"># what is recorded, redaction on/off</span>
+opthub capture stop
+
+opthub workloads list                <span class="c"># call sites + current cost/latency</span>
+opthub baseline create --workload W --from 24h --n 50
+opthub baseline show W
+
+opthub optimize [--workload W] [--tier T0,T1] [--dry-run]
+opthub proposals list | show &lt;id&gt;
+opthub proposals apply &lt;id&gt; [--as-pr]
+opthub proposals reject &lt;id&gt; --reason "..."
+opthub rollback &lt;apply-id&gt;
+
+opthub report --since 7d             <span class="c"># the dashboard, in the terminal</span>
+opthub policy show | lint
+opthub resume</code></pre>
+    <h3>Exit-code contract</h3>
+    <div class="t-wrap">
+      <table>
+        <thead><tr><th style="width:70px">Code</th><th>Meaning</th><th style="width:70px">Code</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td class="n-col">0</td><td>OK</td><td class="n-col">13</td><td>ROI below <span class="mono">min_roi</span></td></tr>
+          <tr><td class="n-col">10</td><td>Accuracy gate failed</td><td class="n-col">20</td><td>Sandbox unavailable</td></tr>
+          <tr><td class="n-col">11</td><td>Latency gate failed</td><td class="n-col">30</td><td>Journal inconsistent — resume required</td></tr>
+          <tr><td class="n-col">12</td><td>Security gate failed</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="demo">
+    <div class="sec-head"><span class="n">09</span><h2>The demo, act by act</h2></div>
+    <p>
+      Seeded repo: <strong>supportbot</strong> — a small support-ticket app with three workloads
+      (<code>classify</code>, <code>draft-reply</code>, <code>pii-extract</code>) and a synthetic traffic replayer.
+      Total running time about six minutes.
+    </p>
+
+    <div class="acts">
+      <div class="act">
+        <div class="act-n"><b>I</b>90 sec</div>
+        <div>
+          <h4>Observe</h4>
+          <p>
+            <code>opthub daemon start</code> → <code>opthub capture start</code> → replay 400 synthetic tickets.
+            <code>opthub workloads list</code> shows three workloads with $/1k, p95, and a token breakdown. An
+            8k-token system preamble is visible on every <code>draft-reply</code> call — the audience spots the
+            waste before opthub says a word. <code>opthub baseline create --n 50</code> freezes the golden set.
+          </p>
+        </div>
+      </div>
+
+      <div class="act">
+        <div class="act-n"><b>II</b>2 min</div>
+        <div>
+          <h4>Optimize, and get told no</h4>
+          <p>
+            <code>opthub optimize</code>. The sandbox spins up, the agent reads traces read-only, and five
+            candidates come back. The gates run live in the terminal:
+          </p>
+          <div class="t-wrap">
+            <table>
+              <thead>
+                <tr><th>Candidate</th><th>Tier</th><th>Accuracy</th><th>p95</th><th>Cost</th><th>Verdict</th></tr>
+              </thead>
+              <tbody>
+                <tr class="v-pass">
+                  <td class="lead mono">cache-priming</td>
+                  <td><span class="chip tier">T0</span></td>
+                  <td class="n-col delta-flat">tie (token-identical)</td>
+                  <td class="n-col delta-good">−22%</td>
+                  <td class="n-col delta-good">−31%</td>
+                  <td><span class="chip pass">Auto-applied</span></td>
+                </tr>
+                <tr class="v-pass">
+                  <td class="lead mono">tool-schema-slimming</td>
+                  <td><span class="chip tier">T1</span></td>
+                  <td class="n-col delta-flat">0.96 → 0.96</td>
+                  <td class="n-col delta-good">−4%</td>
+                  <td class="n-col delta-good">−6%</td>
+                  <td><span class="chip pass">Auto-applied</span></td>
+                </tr>
+                <tr class="v-pass">
+                  <td class="lead mono">context-pruning</td>
+                  <td><span class="chip tier">T1</span></td>
+                  <td class="n-col delta-flat">0.96 → 0.96</td>
+                  <td class="n-col delta-good">−9%</td>
+                  <td class="n-col delta-good">−8%</td>
+                  <td><span class="chip pass">Auto-applied</span></td>
+                </tr>
+                <tr class="v-hold">
+                  <td class="lead mono">model-routing → Haiku</td>
+                  <td><span class="chip tier">T2</span></td>
+                  <td class="n-col delta-flat">0.96 → 0.95</td>
+                  <td class="n-col delta-good">−41%</td>
+                  <td class="n-col delta-good">−58%</td>
+                  <td><span class="chip hold">Needs approval</span></td>
+                </tr>
+                <tr class="v-fail">
+                  <td class="lead mono">prompt-compaction (aggressive)</td>
+                  <td><span class="chip tier">T1</span></td>
+                  <td class="n-col delta-bad">0.96 → 0.89</td>
+                  <td class="n-col delta-good">−11%</td>
+                  <td class="n-col delta-good">−14%</td>
+                  <td><span class="chip fail">Rejected · accuracy</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <span class="eyebrow">The moment</span>
+            <p>
+              The rejection is the demo. A cheaper <em>and</em> faster candidate is thrown away because it lost
+              seven accuracy points. Anyone can show a cost graph going down; showing the system refuse a
+              tempting win is what makes the graph believable.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="act">
+        <div class="act-n"><b>III</b>60 sec</div>
+        <div>
+          <h4>The pull request</h4>
+          <p>
+            <code>opthub proposals apply model-routing --as-pr</code> opens a PR carrying the diff, the evidence
+            table, the golden-set delta, and per-example links back into the journal. A human reads it and
+            merges on stage. The T2 tier did exactly what the policy promised: it did not decide for anyone.
+          </p>
+        </div>
+      </div>
+
+      <div class="act">
+        <div class="act-n"><b>IV</b>60 sec</div>
+        <div>
+          <h4>Crash and recover</h4>
+          <p>
+            Start a fresh optimize run. Mid-verification, <code>kill -9 $(pgrep opthubd)</code>. Then
+            <code>opthub resume</code>:
+          </p>
+<pre><code>⤷ replaying journal … 412 events, hash chain OK
+⤷ resuming task <span class="k">t_8f21</span> at <span class="k">VERIFYING</span>
+⤷ 34/50 evals already CONFIRMED — skipping
+⤷ 16 remaining … done
+   re-spend: <span class="k">$0.00</span></code></pre>
+        </div>
+      </div>
+
+      <div class="act">
+        <div class="act-n"><b>V</b>30 sec</div>
+        <div>
+          <h4>The number</h4>
+          <p><code>opthub report --since 7d</code></p>
+          <div class="board">
+            <div class="tile"><span class="t-lab">Cost / 1k req</span><span class="t-val delta-good">−41%</span><span class="t-sub">$8.20 → $4.84</span></div>
+            <div class="tile"><span class="t-lab">p95 latency</span><span class="t-val delta-good">−28%</span><span class="t-sub">3.1s → 2.2s</span></div>
+            <div class="tile"><span class="t-lab">Accuracy</span><span class="t-val">0.96</span><span class="t-sub">unchanged from baseline</span></div>
+            <div class="tile"><span class="t-lab">Security findings</span><span class="t-val">0</span><span class="t-sub">across 5 candidates</span></div>
+            <div class="tile"><span class="t-lab">Rejected</span><span class="t-val delta-bad">1</span><span class="t-sub">accuracy gate</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="scope">
+    <div class="sec-head"><span class="n">10</span><h2>What Phase 1 builds</h2></div>
+    <div class="t-wrap">
+      <table>
+        <thead><tr><th style="width:46%">Build</th><th>Defer</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="lead">
+              <span class="mono">opthubd</span> — capture proxy, journal, CAS, apply engine, gate runner
+            </td>
+            <td>Fleet / team aggregation across laptops</td>
+          </tr>
+          <tr>
+            <td class="lead">Docker agent sandbox: read-only mount, egress allowlist, token broker</td>
+            <td>Non-Anthropic providers (interface stubbed only)</td>
+          </tr>
+          <tr>
+            <td class="lead">Five optimizers: cache-priming, tool-schema-slimming, context-pruning, prompt-compaction, model-routing</td>
+            <td><span class="mono">batch-collapse</span> and <span class="mono">transport-tuning</span></td>
+          </tr>
+          <tr>
+            <td class="lead">Two-part scorer — deterministic checks plus pinned judge</td>
+            <td>IDE extension and web dashboard</td>
+          </tr>
+          <tr>
+            <td class="lead">CLI per §08, plus the <span class="mono">supportbot</span> seed repo and traffic replayer</td>
+            <td>Windows support</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="risks">
+    <div class="sec-head"><span class="n">11</span><h2>Risks</h2></div>
+    <div class="t-wrap">
+      <table>
+        <thead><tr><th style="width:38%">Risk</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td class="lead">Golden set overfits — the gate passes but production regresses</td><td>Rotate a held-out slice each run and report the score on unseen traces separately from the gated score</td></tr>
+          <tr><td class="lead">Judge drift makes scores incomparable over time</td><td>Judge model pinned in policy; changing it forces a baseline re-freeze</td></tr>
+          <tr><td class="lead">Devs read the capture proxy as a MITM on their traffic</td><td>Opt-in per project, off by default, local-only bind, truthful <span class="mono">capture status</span>, redact-before-disk, source published</td></tr>
+          <tr><td class="lead">Verification costs more than it saves</td><td>ROI gate (§04) plus a hard daily cap enforced in the daemon</td></tr>
+          <tr><td class="lead">Agent sandbox escape</td><td>Read-only mount, no host creds, egress allowlist, output limited to signed JSON — and the host re-runs every gate independently</td></tr>
+          <tr><td class="lead">"Continuous" turns into noise</td><td>Proposals deduped by candidate hash; a rejected candidate is not re-proposed until its inputs change</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="open">
+    <div class="sec-head"><span class="n">12</span><h2>Open questions</h2></div>
+    <div class="t-wrap">
+      <table>
+        <thead><tr><th style="width:36px">—</th><th style="width:34%">Question</th><th>Current lean</th></tr></thead>
+        <tbody>
+          <tr><td class="n-col">Q1</td><td class="lead">How do we fingerprint a call site? <span class="mono">file:line</span> is brittle under refactor.</td><td>Optional <span class="mono">opthub.workload("name")</span> annotation, with prompt-template hash as fallback</td></tr>
+          <tr><td class="n-col">Q2</td><td class="lead">Where does an applied change live — a generated lock file or a real source diff?</td><td>Source diff for T1/T2 because it is reviewable; <span class="mono">opthub.lock.json</span> for T0 because it is trivially reversible</td></tr>
+          <tr><td class="n-col">Q3</td><td class="lead">Is the journal per-repo or per-machine?</td><td>Per-repo <span class="mono">.opthub/</span> for now; per-machine would unlock cross-project routing insight</td></tr>
+          <tr><td class="n-col">Q4</td><td class="lead">Does the agent need a writable scratch worktree to run the repo's own tests?</td><td>It would widen the trust boundary — deferred past Phase 1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>opthub · Phase 1 demo spec</span>
+    <span>draft v0.1</span>
+    <span>2026-08-24</span>
+    <span>next: build the supportbot seed + gate runner</span>
+  </footer>
+
+</div>
