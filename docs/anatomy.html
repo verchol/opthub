@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%0A%20%20%3Cpath%20d%3D%22M7.2%205.2%20v6.6%22%20stroke%3D%22%238B9C9E%22%20stroke-width%3D%222.6%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M3.2%2010.8%20L7.2%2015.4%20L11.2%2010.8%20Z%22%20fill%3D%22%238B9C9E%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M16.8%2020.8%20v-9.6%22%20stroke%3D%22%230E6E65%22%20stroke-width%3D%222.6%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M12.4%2011.6%20L16.8%205.4%20L21.2%2011.6%20Z%22%20fill%3D%22%230E6E65%22%2F%3E%3C%2Fsvg%3E">
+<title>Anatomy of an Experiment</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --ground:#F2F5F4; --surface:#FFFFFF; --sunk:#E9EEED;
+  --ink:#0F1719; --mut:#5B6D70; --rule:#D3DCDB; --rule2:#B6C3C2;
+  --ac:#0E6E65; --ac-soft:#E0EFEC;
+  --var:#A8611F; --var-soft:#F8EFE3;
+  --d:'Archivo',system-ui,-apple-system,sans-serif;
+  --b:'Source Serif 4',Georgia,'Times New Roman',serif;
+  --m:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0B1113; --surface:#131A1C; --sunk:#0E1517;
+  --ink:#E2EAE9; --mut:#8A9C9E; --rule:#202A2C; --rule2:#31403F;
+  --ac:#46BFAF; --ac-soft:#0D2926; --var:#E2A462; --var-soft:#2A2015;
+}}
+:root[data-theme="dark"]{
+  --ground:#0B1113; --surface:#131A1C; --sunk:#0E1517;
+  --ink:#E2EAE9; --mut:#8A9C9E; --rule:#202A2C; --rule2:#31403F;
+  --ac:#46BFAF; --ac-soft:#0D2926; --var:#E2A462; --var-soft:#2A2015;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+ font-family:var(--b);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1020px;margin:0 auto;padding-block:52px 96px;padding-left:22px;padding-right:22px;
+ display:flex;flex-direction:column;gap:0}
+
+.eyebrow{font-family:var(--m);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+h1{font-family:var(--d);font-weight:800;font-size:clamp(32px,5vw,50px);line-height:1.04;
+ letter-spacing:-.03em;margin:14px 0 0;text-wrap:balance;max-width:17ch}
+.dek{font-size:18.5px;color:var(--mut);max-width:62ch;margin:18px 0 0}
+.dek b{color:var(--ink);font-weight:600}
+
+h2{font-family:var(--d);font-weight:700;font-size:23px;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h3{font-family:var(--d);font-weight:700;font-size:15px;letter-spacing:-.01em;margin:0 0 8px}
+p{margin:0}
+
+.sec{padding-top:46px;display:flex;flex-direction:column;gap:14px}
+.sec.rule{border-top:1px solid var(--rule);margin-top:46px}
+.sechead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.part{font-family:var(--m);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--ac);border:1px solid var(--ac);padding:3px 9px;flex:none}
+.lead{font-size:17.5px;max-width:64ch}
+.body{color:var(--mut);font-size:16px;max-width:66ch}
+.body b{color:var(--ink);font-weight:600}
+
+figure{margin:0;display:flex;flex-direction:column;gap:12px}
+.figbox{background:var(--surface);border:1px solid var(--rule);padding:22px 18px;overflow-x:auto}
+svg{display:block;max-width:100%;height:auto;margin:0 auto;min-width:620px}
+figcaption{font-family:var(--m);font-size:11.5px;color:var(--mut);line-height:1.55;max-width:74ch}
+
+/* two rule-sets side by side: the same idea expressed twice in the codebase */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+.panel{background:var(--surface);border:1px solid var(--rule);border-top:2px solid var(--rule2);padding:16px 18px}
+.panel.ac{border-top-color:var(--ac)}
+.panel.var{border-top-color:var(--var)}
+.panel .src{font-family:var(--m);font-size:10.5px;color:var(--mut);margin-bottom:12px}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline}
+dt{font-family:var(--m);font-size:12px;color:var(--ink);white-space:nowrap}
+dd{margin:0;font-size:14.5px;color:var(--mut);line-height:1.45}
+
+table{width:100%;border-collapse:collapse;font-size:15px;background:var(--surface);border:1px solid var(--rule)}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+thead th{font-family:var(--m);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+ color:var(--mut);border-bottom:1px solid var(--rule2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.k{font-family:var(--m);font-size:12.5px;white-space:nowrap;color:var(--ink)}
+td.v{font-family:var(--m);font-size:12.5px;white-space:nowrap;color:var(--mut);font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto}
+
+code{font-family:var(--m);font-size:.87em;background:var(--sunk);padding:1px 5px;border:1px solid var(--rule)}
+.note{border-left:2px solid var(--var);padding:2px 0 2px 16px;color:var(--mut);font-size:16px;max-width:66ch}
+.note b{color:var(--ink);font-weight:600}
+
+.gap{display:flex;flex-direction:column;gap:10px}
+.gapitem{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:baseline;
+ padding:11px 0;border-bottom:1px solid var(--rule);font-size:15.5px}
+.gapitem:last-child{border-bottom:none}
+.gapitem .w{font-family:var(--m);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+ color:var(--var);white-space:nowrap;min-width:8.5em}
+.gapitem span{color:var(--mut)}
+.gapitem b{color:var(--ink);font-weight:600}
+
+footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--rule);
+ font-family:var(--m);font-size:11.5px;color:var(--mut);line-height:1.75}
+@media (max-width:560px){ .wrap{padding-block:36px 64px} }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Optimization Hub &middot; concept</div>
+    <h1>Anatomy of an experiment</h1>
+    <p class="dek">An experiment is five things bound together: a <b>prompt</b>, a <b>strategy</b> built
+    from rules, an <b>original session</b> that becomes the baseline, <b>operational limits</b>, and a
+    <b>verifier</b>. Bind them and you get two runs that are identical except for one parameter &mdash;
+    which is the only arrangement in which the answer means anything.</p>
+  </header>
+
+  <section class="sec">
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 960 616" role="img" aria-label="An experiment definition holding prompt, strategy, baseline, operations and verifier resolves into two arms that are identical except one parameter. Each arm runs in its own E2B microVM against Bedrock through LiteLLM and produces a git diff. Both diffs go to the verifier, which returns a blind rubric verdict.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+            <marker id="ahv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--var)"/>
+            </marker>
+          </defs>
+          <g font-family="JetBrains Mono, monospace" fill="currentColor">
+
+            <!-- definition -->
+            <rect x="40" y="16" width="880" height="120" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <text x="56" y="40" font-size="11" letter-spacing="1.6" fill="var(--ac)">EXPERIMENT DEFINITION</text>
+            <g font-size="12">
+              <rect x="56" y="56" width="156" height="62" fill="var(--ac-soft)" stroke="var(--ac)"/>
+              <text x="134" y="80" text-anchor="middle" font-weight="700">prompt</text>
+              <text x="134" y="99" text-anchor="middle" font-size="10.5" fill="var(--mut)">the request</text>
+
+              <rect x="229" y="56" width="156" height="62" fill="var(--ac-soft)" stroke="var(--ac)"/>
+              <text x="307" y="80" text-anchor="middle" font-weight="700">strategy</text>
+              <text x="307" y="99" text-anchor="middle" font-size="10.5" fill="var(--mut)">a set of rules</text>
+
+              <rect x="402" y="56" width="156" height="62" fill="var(--ac-soft)" stroke="var(--ac)"/>
+              <text x="480" y="80" text-anchor="middle" font-weight="700">baseline</text>
+              <text x="480" y="99" text-anchor="middle" font-size="10.5" fill="var(--mut)">a real session</text>
+
+              <rect x="575" y="56" width="156" height="62" fill="var(--ac-soft)" stroke="var(--ac)"/>
+              <text x="653" y="80" text-anchor="middle" font-weight="700">operations</text>
+              <text x="653" y="99" text-anchor="middle" font-size="10.5" fill="var(--mut)">budget, caps</text>
+
+              <rect x="748" y="56" width="156" height="62" fill="var(--ac-soft)" stroke="var(--ac)"/>
+              <text x="826" y="80" text-anchor="middle" font-weight="700">verifier</text>
+              <text x="826" y="99" text-anchor="middle" font-size="10.5" fill="var(--mut)">blind rubric</text>
+            </g>
+
+            <!-- fork -->
+            <path d="M480 136 V 152" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M285 152 H 675" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M285 152 V 172" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <path d="M675 152 V 172" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <text x="492" y="148" font-size="11" fill="var(--mut)">resolve</text>
+
+            <!-- arms -->
+            <rect x="120" y="178" width="330" height="86" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <text x="136" y="202" font-size="12" font-weight="700">baseline</text>
+            <text x="136" y="222" font-size="10.5" fill="var(--mut)">session&rsquo;s own model tier</text>
+            <text x="136" y="239" font-size="10.5" fill="var(--mut)">no lever changed</text>
+            <text x="136" y="256" font-size="10.5" fill="var(--mut)">the reference point</text>
+
+            <rect x="510" y="178" width="330" height="86" fill="none" stroke="var(--var)" stroke-width="1.5"/>
+            <text x="526" y="202" font-size="12" font-weight="700" fill="var(--var)">exp1 &middot; cheap</text>
+            <text x="526" y="222" font-size="10.5" fill="var(--mut)">qwen3-coder-480b</text>
+            <text x="526" y="239" font-size="10.5" fill="var(--mut)">everything else identical</text>
+            <text x="526" y="256" font-size="10.5" fill="var(--mut)">the variant</text>
+
+            <path d="M462 221 H 498" stroke="var(--var)" stroke-width="1.5" stroke-dasharray="4 3" fill="none"
+                  marker-start="url(#ahv)" marker-end="url(#ahv)"/>
+            <text x="480" y="286" text-anchor="middle" font-size="11" font-weight="700" fill="var(--var)">exactly one parameter differs</text>
+
+            <!-- to sandboxes -->
+            <path d="M285 264 V 312" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <path d="M675 264 V 312" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+
+            <rect x="120" y="318" width="330" height="86" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <text x="136" y="342" font-size="12" font-weight="700">E2B microVM</text>
+            <text x="136" y="362" font-size="10.5" fill="var(--mut)">session&rsquo;s cwd files, git init</text>
+            <text x="136" y="379" font-size="10.5" fill="var(--mut)">LiteLLM &rarr; Bedrock</text>
+            <text x="136" y="396" font-size="10.5" fill="var(--mut)">claude -p, unmodified</text>
+
+            <rect x="510" y="318" width="330" height="86" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <text x="526" y="342" font-size="12" font-weight="700">E2B microVM</text>
+            <text x="526" y="362" font-size="10.5" fill="var(--mut)">same files, same request</text>
+            <text x="526" y="379" font-size="10.5" fill="var(--mut)">LiteLLM &rarr; Bedrock</text>
+            <text x="526" y="396" font-size="10.5" fill="var(--mut)">claude -p, unmodified</text>
+
+            <!-- converge to verifier -->
+            <path d="M285 404 V 438 H 400 V 456" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <path d="M675 404 V 438 H 560 V 456" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <text x="480" y="432" text-anchor="middle" font-size="11" fill="var(--mut)">git diff --cached</text>
+
+            <rect x="300" y="462" width="360" height="72" fill="none" stroke="var(--ac)" stroke-width="1.5"/>
+            <text x="480" y="488" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ac)">verifier</text>
+            <text x="480" y="508" text-anchor="middle" font-size="10.5" fill="var(--mut)">6 criteria &times; 1&ndash;10, order randomised,</text>
+            <text x="480" y="524" text-anchor="middle" font-size="10.5" fill="var(--mut)">arm identities withheld</text>
+
+            <path d="M480 534 V 566" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah)"/>
+            <text x="492" y="556" font-size="11" fill="var(--mut)">score out of 60</text>
+
+            <rect x="228" y="570" width="504" height="36" fill="var(--sunk)" stroke="currentColor" stroke-width="1.5"/>
+            <text x="480" y="593" text-anchor="middle" font-size="11.5" font-weight="700">verdict &mdash; quality delta, cost delta, the deciding difference</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The five parts resolve into arms. Every arm gets the same files and the same request;
+      one parameter moves. Both diffs reach the verifier, which never learns which arm it is reading.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec rule">
+    <div class="sechead"><span class="part">Part 1</span><h2>Prompt</h2></div>
+    <p class="lead">The request the original session was given, replayed verbatim.</p>
+    <p class="body">It is not rewritten or summarised &mdash; the file that reaches the sandbox is the
+    session&rsquo;s own opening request, written to <code>work/.req</code> and piped into
+    <code>claude -p</code>. A strategy may <b>append</b> to it under a heading, never edit it, so the
+    baseline and the variant are answering the same question. Appending is itself a lever: the
+    <code>terse-context</code> strategy adds one directive and changes nothing else.</p>
+  </section>
+
+  <section class="sec rule">
+    <div class="sechead"><span class="part">Part 2</span><h2>Strategy</h2></div>
+    <p class="lead">A set of rules that says what one arm does differently. Two rule-sets exist, for two
+    different jobs.</p>
+    <div class="cols">
+      <div class="panel ac">
+        <div class="src">config/optimizations.json &middot; a lever against a real session</div>
+        <dl>
+          <dt>model</dt><dd>a model id, or <code>baseline</code> to keep the session&rsquo;s own tier</dd>
+          <dt>compaction</dt><dd>adds <code>--autocompact 100k</code></dd>
+          <dt>effort</dt><dd>low &middot; medium &middot; high &middot; xhigh &middot; max</dd>
+          <dt>budgetUsd</dt><dd>per-arm ceiling, overriding the run&rsquo;s</dd>
+          <dt>flags</dt><dd>extra CLI flags, appended verbatim</dd>
+          <dt>appendPrompt</dt><dd>text added under a heading</dd>
+        </dl>
+      </div>
+      <div class="panel var">
+        <div class="src">scenarios/*.md &middot; a strategy against a fixed benchmark</div>
+        <dl>
+          <dt>description</dt><dd>one line, shown in the report</dd>
+          <dt>flags</dt><dd>extra CLI flags, space-separated</dd>
+          <dt>files</dt><dd>copied from <code>assets/</code> into the workspace</dd>
+          <dt>agents</dt><dd>an asset passed to <code>--agents</code></dd>
+          <dt>model / env</dt><dd>swap the provider entirely</dd>
+          <dt>setup / service / ready</dt><dd>a sidecar the arm needs</dd>
+        </dl>
+      </div>
+    </div>
+    <p class="note"><b>The tag comes from the parameters, not the label.</b> A planner once proposed an
+    arm it called &ldquo;frontier, no compaction&rdquo; when the baseline already had compaction off. Diffing
+    the resolved parameters catches it: the arm is tagged <code>no change</code>, and its delta is
+    reported as a noise floor rather than a finding.</p>
+  </section>
+
+  <section class="sec rule">
+    <div class="sechead"><span class="part">Part 3</span><h2>Baseline</h2></div>
+    <p class="lead">A session that actually happened, replayed as the control arm.</p>
+    <p class="body">The baseline is not a description of a task &mdash; it is a specific session on this
+    machine, and it supplies three things the experiment cannot invent.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>What it supplies</th><th>Where it comes from</th></tr></thead>
+        <tbody>
+          <tr><td class="k">the request</td><td>the session&rsquo;s first user message</td></tr>
+          <tr><td class="k">the working directory</td><td>every file under its cwd, minus its own outputs, dotfiles, <code>node_modules</code>, <code>tests/</code>, and anything over 1&nbsp;MB</td></tr>
+          <tr><td class="k">the model tier</td><td>opus &rarr; Opus 4.5, everything else &rarr; Sonnet 4.6 &mdash; so &ldquo;the same job&rdquo; means what it meant originally</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><b>Arms are compared against each other, never against the original session.</b> A
+    replay reaches an answer in five turns where the real session took seven hundred. &ldquo;N&times; cheaper
+    than the original&rdquo; measures the replay&rsquo;s incompleteness, not a saving.</p>
+  </section>
+
+  <section class="sec rule">
+    <div class="sechead"><span class="part">Part 4</span><h2>Operational settings</h2></div>
+    <p class="lead">What stops a run from spending without limit, and what it costs to find out.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Setting</th><th>Default</th><th>What it bounds</th></tr></thead>
+        <tbody>
+          <tr><td class="k">--max-budget-usd</td><td class="v">3.00 / arm</td><td>the agent stops when it has spent this; a per-arm <code>budgetUsd</code> overrides it</td></tr>
+          <tr><td class="k">--max</td><td class="v">3 arms</td><td>grid width, counting the control &mdash; so an auto grid costs no more than it did at two variants</td></tr>
+          <tr><td class="k">agent timeout</td><td class="v">22 min</td><td>one arm&rsquo;s run</td></tr>
+          <tr><td class="k">sandbox lifetime</td><td class="v">30 min</td><td>the microVM, torn down in a <code>finally</code></td></tr>
+          <tr><td class="k">tool surface</td><td class="v">no web</td><td><code>--disallowed-tools WebSearch WebFetch</code>, so two arms cannot read different internets</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="body">There is a sixth limit that is not a flag: the <b>ROI gate</b>. A session whose best
+    case saves less than the ~$1 of sandbox time needed to measure it is marked
+    <code>below gate</code> before anything runs. On a real three-arm run the experiment cost
+    <b>$0.67</b>; the session it measured had cost $0.22, and the hub said so.</p>
+  </section>
+
+  <section class="sec rule">
+    <div class="sechead"><span class="part">Part 5</span><h2>Verifier</h2></div>
+    <p class="lead">Today it compares artifacts &mdash; the diffs, and nothing else.</p>
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 860 316" role="img" aria-label="The verifier receives only the arms' diffs in randomised order and returns six criterion scores, a winner, a margin and one sentence. Arm identity, model name, cost and turn count are withheld from it.">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g font-family="JetBrains Mono, monospace" fill="currentColor">
+            <text x="40" y="26" font-size="11" letter-spacing="1.4" fill="var(--mut)">GOES IN</text>
+            <g font-size="11.5">
+              <rect x="40" y="40" width="196" height="38" fill="var(--surface)" stroke="currentColor"/>
+              <text x="56" y="64">SUBMISSION 0 &mdash; diff</text>
+              <rect x="40" y="88" width="196" height="38" fill="var(--surface)" stroke="currentColor"/>
+              <text x="56" y="112">SUBMISSION 1 &mdash; diff</text>
+              <rect x="40" y="136" width="196" height="38" fill="var(--surface)" stroke="currentColor"/>
+              <text x="56" y="160">SUBMISSION 2 &mdash; diff</text>
+            </g>
+            <text x="40" y="196" font-size="10.5" fill="var(--mut)">order randomised per run</text>
+
+            <path d="M244 107 H 316" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah2)"/>
+
+            <rect x="324" y="40" width="212" height="134" fill="none" stroke="var(--ac)" stroke-width="1.5"/>
+            <text x="430" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ac)">the judge</text>
+            <text x="430" y="94" text-anchor="middle" font-size="10.5" fill="var(--mut)">Sonnet 4.6 on Bedrock</text>
+            <text x="430" y="114" text-anchor="middle" font-size="10.5" fill="var(--mut)">sees only the text of</text>
+            <text x="430" y="130" text-anchor="middle" font-size="10.5" fill="var(--mut)">each diff, 3500 chars</text>
+            <text x="430" y="156" text-anchor="middle" font-size="10.5" fill="var(--mut)">scores each 1&ndash;10</text>
+
+            <path d="M544 107 H 616" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ah2)"/>
+
+            <text x="624" y="26" font-size="11" letter-spacing="1.4" fill="var(--mut)">COMES OUT</text>
+            <g font-size="11">
+              <rect x="624" y="40" width="196" height="134" fill="var(--surface)" stroke="currentColor"/>
+              <text x="640" y="62">meets_the_request</text>
+              <text x="640" y="80">correctness</text>
+              <text x="640" y="98">completeness</text>
+              <text x="640" y="116">code_quality</text>
+              <text x="640" y="134">tests</text>
+              <text x="640" y="152">contains_no_new_risk</text>
+            </g>
+            <text x="624" y="196" font-size="10.5" fill="var(--mut)">total /60, winner, margin, one sentence</text>
+
+            <!-- withheld -->
+            <rect x="324" y="226" width="212" height="72" fill="none" stroke="var(--var)" stroke-width="1.5" stroke-dasharray="5 4"/>
+            <text x="430" y="250" text-anchor="middle" font-size="11" font-weight="700" fill="var(--var)">WITHHELD</text>
+            <text x="430" y="270" text-anchor="middle" font-size="10.5" fill="var(--mut)">which arm &middot; model name</text>
+            <text x="430" y="286" text-anchor="middle" font-size="10.5" fill="var(--mut)">cost &middot; turns &middot; wall time</text>
+            <path d="M430 226 V 190" stroke="var(--var)" stroke-width="1.5" stroke-dasharray="5 4" fill="none"/>
+            <path d="M420 204 L 440 216 M440 204 L 420 216" stroke="var(--var)" stroke-width="2" fill="none"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>The judge cannot see price, so it cannot be swayed by it. Cost enters the verdict
+      afterwards, alongside the score &mdash; never inside it.</figcaption>
+    </figure>
+    <p class="body">On a real run this caught something a cost table cannot: the cheap arm
+    <b>failed to reject boolean input</b> &mdash; <code>isinstance(True, int)</code> is <code>True</code>,
+    so <code>to_roman(True)</code> returned <code>"I"</code> instead of raising &mdash; and committed a
+    <code>.pyc</code> beside its tests. It came back 7.1&times; cheaper and 18 rubric points worse.</p>
+    <p class="note"><b>It compares artifacts, which is the current limit.</b> An arm that produced no
+    file is not scored at all &mdash; it reports an error rather than a cheap win &mdash; and a task
+    whose value is in the conversation rather than the diff cannot be judged this way.</p>
+  </section>
+
+  <section class="sec rule">
+    <h2>What the definition does not carry yet</h2>
+    <p class="body">Named here because an experiment definition with silent gaps is worse than one with
+    stated ones.</p>
+    <div class="gap">
+      <div class="gapitem"><span class="w">repeats</span><span><b>Every arm is n&nbsp;=&nbsp;1.</b> Agent variance makes a sub-15% single-run difference noise. Three repeats is the minimum before quoting a figure; repeats cost linearly.</span></div>
+      <div class="gapitem"><span class="w">thresholds</span><span>A strategy carries a <code>gate</code> sentence in prose &mdash; <i>&ldquo;judge score must not drop more than 1 point&rdquo;</i> &mdash; that nothing yet enforces. The gate runner is the next build item.</span></div>
+      <div class="gapitem"><span class="w">hidden suite</span><span>A replay has no tests it could not see. Rubric is the fallback, and a weaker signal than <code>52/69</code> &mdash; the report says which one it used.</span></div>
+      <div class="gapitem"><span class="w">gateway levers</span><span>Four of the thirteen catalogued levers need something sitting <i>in</i> the request path &mdash; semantic cache, token rate limiting, response scoring, sanitising. They are defined, with their Kong plugin and parameters, and not yet runnable.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    Drawn from the running implementation: optimize.mjs, lib/optimizations.mjs, config/optimizations.json,
+    scenarios/*.md &middot; report contract in docs/report-spec.md &middot;
+    figures show one auto-grid run, optrun-0af9622d, 3 arms, $0.67
+  </footer>
+</div>
+</body>
+</html>
