@@ -170,6 +170,35 @@
 - One measured result worth carrying: the open-weights arm came back **7.1× cheaper and
   18 points worse** on the blind score, and one of the three arms varied nothing.
 
+## 2026-09-22 · Router prior art + pluggable judge
+- `docs/router-comparison.md` — five model routers (Alexei's `pi-model-router`, RouteLLM, LiteLLM,
+  Kong AI Gateway, hosted routers) in one format: purpose, five use cases, sandbox/dev-machine
+  difficulty, overlap with opthub. Common thread: every router decides *before* the answer exists;
+  opthub decides *after*, from a graded replay. Prior art for `model-routing` (UC-4).
+- `SPEC.md` §6.1.1 + policy `judge:` block — the LLM judge is now a pluggable component. One
+  **pinned** backend (still `claude-opus-5`) is the score of record; **shadow** backends score the
+  same pairs and are reported, never gating, until agreement ≥ 0.85 with the pinned judge.
+  Added: TypeSafe **Jev** (`jev-1.13.0`) as a pairwise-only shadow — it is a Choice primitive,
+  returns per-arm probabilities, cannot fill the 1–10 rubric, and its confidence is decisiveness
+  not correctness; **Ollama** open-weights as the free, no-egress shadow; **Gemini Flash / Groq /
+  OpenRouter `:free`** as free-tier shadows with rate-limit caveats. Judge cost is charged to the
+  verify budget. Free-tier availability is as of today and unverified against current terms.
+- `docs/demo-mock-spec.md` → **v0.2**. The four-terminal demo story is re-told around three
+  claims, each mapped to a specific line on screen (§0.1): **C1** the decision element is on the
+  developer's machine, not rules on a central gateway — every shadowed prompt prints
+  `gateway view (prompt only)` beside `session view (opthub)`, and they disagree on beat 4;
+  **C2** rules and metrics are central and feed the judge — pane ③ opens with `policy v14`
+  pushed to 3 machines, every verdict names the pinned judge and its shadow, and the report shows
+  edge evidence flowing back into the rule; **C3** routing is per-turn by class, never per-session
+  — beats 3 and 5 route with a *scoped* context (`6.1k, not the 51k session`), which is the thing
+  a gateway physically cannot do. Pane ④ is now explicitly *a prompt-only router* rather than
+  "cheapest", so it is the counter-example to C1 rather than a straw man.
+- Same pass re-based the demo numbers on v0.2: `cache-priming` appears as a **detector** (hit
+  96.8%, no bar) instead of the −50% hero the v0.1 mock still carried; `context-lifecycle` is the
+  top lever (−$2.12); routing is −$0.33 marginal vs −$0.43 standalone because context-lifecycle
+  scoped those turns first — a clean R1 illustration. Rate cards are now blind with position-swap
+  and a post-rating reveal (§6.1.1). Session totals unchanged: $4.82 → $1.63 → $0.38.
+
 ## 2026-09-19 · Repo made public
 - README rewritten as the front door: what is built, what the measurements changed, the roadmap
   with a **Done** block, reading order. Cross-repo relative link removed (404 on GitHub).
