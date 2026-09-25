@@ -241,6 +241,31 @@ Replay the golden set against the candidate. Score with a two-part scorer:
 Pass condition: `candidate_score >= baseline_score - policy.accuracy.relative_drop_max` (default
 `0.00` — must tie or win), with n ≥ 30 and a one-sided bootstrap CI that excludes regression.
 
+#### 6.1.1 Judge backends — *added 2026-09-22*
+
+The judge is a pluggable component. One backend is **pinned** in policy and produces the score of
+record; any others are **shadow** judges that score the same pairs and are reported alongside, never
+in place of, the pinned score. Rules that hold for every backend:
+
+- Pinned by **exact version**, never a floating alias (`jev-1.13.0`, not `jev-latest`;
+  `qwen3:32b-q8_0`, not `qwen3:latest`). Changing the pinned judge forces a baseline re-freeze (§13).
+- Never one of the models being optimised *to* (`security.model_allowlist` and `judge` are disjoint).
+- Position-swap on every pair; arms presented in randomised order with identities withheld.
+- A shadow judge earns promotion to pinned only after **agreement ≥ `judge.min_agreement`** with the
+  current pinned judge over ≥ `accuracy.min_samples` pairs. Until then its score is informational.
+- The report names the judge, its version, and the agreement figure if it is a shadow.
+- The judge's own cost and latency are charged to the verify budget (§6.4), not hidden.
+
+| backend | kind | what it returns | cost | sandbox / dev-machine | notes |
+|---|---|---|---|---|---|
+| `claude-opus-5` | API, pinned default | six criteria 1–10 + pairwise preference | paid | egress `api.anthropic.com`, already allow-listed | the score of record today |
+| **`jev`** (TypeSafe System One Choice, `jev-1.13.0`) | API, optional shadow | **n-way choice** over arms with per-arm probabilities and a confidence | paid, key in user config only | egress `api.typesafe.ai`; ~0.3–0.8 s per call | It is a *Choice* primitive, not a scorer: it answers "which arm is better" and cannot produce the 1–10 rubric. Use it for the pairwise half of §6.1 only. Its `confidence` is decisiveness across options, **not** correctness — never gate on it directly. Prior art: `docs/router-comparison.md` §1. |
+| `ollama/<open-weights>` (e.g. `qwen3:32b`, `llama3.3:70b`, `gemma3:27b` — verify current tags) | local, optional shadow | six criteria 1–10 + pairwise | **free** (compute only) | no egress; needs the weights and ≥ 24–48 GB RAM/VRAM depending on model; `template/openmodel/` already serves Ollama | weakest judge, strongest provenance — bit-identical replays a year later. Expect low agreement on subtle diffs; useful as a tie-breaker and for smoke runs at zero API spend. |
+| `gemini-flash` (Google AI Studio free tier), `groq/<model>` (free tier), OpenRouter `:free` models | API, optional shadow | six criteria 1–10 + pairwise | **free tier at time of writing** — rate-limited, may change; verify before relying on it | one egress entry each; keys in user config | fine for shadow scoring on small n; rate limits make them unsuitable as the pinned judge for `min_samples ≥ 30` runs under `daily_usd_cap`. |
+
+A run with **no free-text outputs** never calls any judge; the deterministic checks decide. A run with
+no hidden test suite falls back to the pinned judge only, and the report says so in its verdict.
+
 ### 6.2 Latency gate — two series, not one
 
 TTFT and total wall-clock are **tracked and gated separately**. A caching change is a TTFT win and
@@ -391,8 +416,25 @@ security:
     - claude-opus-5
     - claude-sonnet-5
     - claude-haiku-4-5-20251001
-  judge_model: claude-opus-5          # pinned; never a routing target
+  judge_model: claude-opus-5          # pinned; never a routing target (kept for v0.2 compat; see judge:)
   data_residency: us
+
+judge:                                # added 2026-09-22 — see §6.1.1
+  pinned: claude-opus-5               # score of record; exact version, never an alias
+  min_agreement: 0.85                 # a shadow must agree with pinned this often before promotion
+  shadow:                             # scored alongside, reported, never gating
+    - backend: jev                    # TypeSafe Choice — pairwise only, no 1–10 rubric
+      model: jev-1.13.0
+      endpoint: https://api.typesafe.ai/v1/systemone
+      key: user-config                # never in this file, never in the sandbox image
+      role: pairwise
+    - backend: ollama                 # free, local, no egress
+      model: qwen3:32b
+      role: rubric+pairwise
+    - backend: gemini                 # free tier at time of writing; rate-limited
+      model: gemini-flash-latest      # TODO pin an exact version before trusting scores
+      role: rubric+pairwise
+  egress_extra: [api.typesafe.ai, generativelanguage.googleapis.com]
   never_downgrade:
     - supportbot/pii-extract
 

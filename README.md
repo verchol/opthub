@@ -48,6 +48,7 @@ Pick a session and a lever. The loop ships that session's own working directory 
 - **Arms are named `baseline`, `exp1`, `exp2`…**, each tagged with the one phrase naming what it varies — derived from the arm's *parameters*, never from the label a model wrote for it.
 - **An arm that varies nothing is flagged.** A planner once proposed "frontier, no compaction" when the baseline already had compaction off; the report now says `no change` and calls the resulting delta a noise floor rather than a finding.
 - **Grading is blind.** Six criteria scored 1–10 by a second model, arms presented in randomised order with identities withheld.
+- **The judge is pluggable** (`SPEC.md` §6.1.1). One pinned backend produces the score of record; optional *shadow* judges — TypeSafe's Jev Choice model for the pairwise half, a local open-weights model through Ollama, or a free-tier API — score the same pairs and are reported alongside, never instead. A shadow is promoted only after it agrees with the pinned judge often enough.
 - **Arms are compared against each other, never against the original session.** A replay reaches an answer in five turns where the real session took seven hundred; "cheaper than the original" would be measuring the replay's incompleteness.
 
 The written contract is `docs/report-spec.md` in the implementation repo: the eight blocks in order, and five rules a report may not break.
