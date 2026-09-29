@@ -22,7 +22,8 @@ without an eval; it is here to size the prize, not to propose the change.
 """
 import argparse, collections, csv, datetime as dt, glob, json, os, re
 
-PRICE = {"claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
+PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
+         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
          "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
 SONNET = PRICE["claude-sonnet-5"]
 W5, W1H, READ = 1.25, 2.0, 0.1
@@ -134,6 +135,8 @@ def main():
     cutoff = (dt.datetime.fromisoformat(a.since).replace(tzinfo=dt.timezone.utc) if a.since
               else dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=a.days))
     S = walk(a.root, cutoff)
+    for sid, s in S.items():
+        s["sid"] = sid
     rows = sorted(S.values(), key=lambda x: -x["cost"])
     tot = sum(s["cost"] for s in rows)
 
@@ -172,7 +175,7 @@ def main():
             w = csv.writer(fh)
             w.writerow(["start", "cwd", "entry", "reqs", "models", "ctx_p50", "ctx_max",
                         "cost", "read$", "write$", "out$", "think$",
-                        "A_trim25", "B_effort50", "C_ttl5m", "D_sonnet_ceiling", "first_prompt"])
+                        "A_trim25", "B_effort50", "C_ttl5m", "D_sonnet_ceiling", "first_prompt", "session"])
             for s in rows:
                 ctx = sorted(s["ctx"])
                 A, B, C, D = levers(s)
@@ -181,7 +184,7 @@ def main():
                             ctx[len(ctx)//2], ctx[-1],
                             f"{s['cost']:.4f}", f"{s['read']:.4f}", f"{s['write']:.4f}",
                             f"{s['out']:.4f}", f"{s['think']:.4f}",
-                            f"{A:.4f}", f"{B:.4f}", f"{C:.4f}", f"{D:.4f}", s["prompt"]])
+                            f"{A:.4f}", f"{B:.4f}", f"{C:.4f}", f"{D:.4f}", s["prompt"], s["sid"]])
         print(f"\nwrote {a.csv} ({len(rows)} sessions)")
 
 

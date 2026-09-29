@@ -1,0 +1,51 @@
+{
+  "version": "0.1",
+  "note": "Criteria text is a MEASURED VARIABLE, not fixed harness (see J1/J2: rewording moved Jev confidence 30%->90% on identical inputs). Vary this file, never the evidence. Every axis carries 'unclear' so the model can abstain instead of guessing; an abstention never earns a lever.",
+  "axes": {
+    "urgency": {
+      "question": "How soon was the result of this coding session needed?",
+      "options": {
+        "blocking-now": "Something or someone was blocked until it finished: a broken build, a production problem, a live demo or meeting within hours.",
+        "same-day": "Needed within the working day or before a known near deadline, but nothing was stopped while it ran.",
+        "no-deadline": "Exploration, research, cleanup, documentation or background work with no deadline attached.",
+        "unclear": "The evidence does not show a deadline either way."
+      }
+    },
+    "latency": {
+      "question": "Was a person waiting on each reply while the session ran?",
+      "options": {
+        "interactive": "A person read each reply and answered within a minute or two; slower replies would have cost them time.",
+        "checks-in": "A person started it and came back now and then; long gaps between their messages.",
+        "unattended": "Nobody watched it run: scripted, headless, scheduled or launched by another program.",
+        "unclear": "The evidence does not show whether anyone was waiting."
+      }
+    },
+    "deferral": {
+      "question": "Could this whole session have been queued and run later without costing anyone anything?",
+      "options": {
+        "run-now": "No. Delaying it would have delayed a person or a dependent task.",
+        "within-hours": "Yes, if the result arrived within a few hours.",
+        "overnight": "Yes, even if the result arrived the next morning.",
+        "unclear": "The evidence does not settle it."
+      }
+    },
+    "capability": {
+      "question": "What is the least capable model tier that could have done this session's work to the same standard?",
+      "options": {
+        "frontier": "Needs the strongest model: novel design, hard debugging across many files, long chains of reasoning.",
+        "mid": "A mid-tier model would do: routine features, edits with a clear spec, reviews, known patterns.",
+        "small": "A small fast model would do: lookups, formatting, summaries, short scripted edits, simple classification.",
+        "unclear": "The evidence does not show how hard the work was."
+      }
+    },
+    "context": {
+      "question": "Did later turns of this session need its whole earlier history?",
+      "options": {
+        "continuous": "One continuous task; earlier decisions and files are referred to throughout.",
+        "separable": "A string of mostly independent tasks in one session; each could have started from a fresh or compacted context.",
+        "short": "Too short for history to matter.",
+        "unclear": "The evidence does not show how the history was used."
+      }
+    }
+  }
+}

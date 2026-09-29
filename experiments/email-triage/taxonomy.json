@@ -1,0 +1,48 @@
+{
+  "version": "0.1",
+  "note": "Criteria text is a MEASURED VARIABLE, not fixed harness. Alexei's pi-model-router showed rewording moved Jev confidence 30%->90% on identical inputs. Vary this file, never the evidence, to measure wording sensitivity.",
+  "axes": {
+    "lane": {
+      "question": "Which part of Oleg's life does this belong to?",
+      "options": {
+        "work": "Canarian business: partners, investors, customers, prospects, vendors and billing for work tools, industry reading kept for work, recruiting.",
+        "personal": "Outside the company: family, children's school or camp, personal shopping, hobbies, language learning, personal health or finance, friends.",
+        "both": "Genuinely serves both, such as a tool paid personally but used for the company, or a friend who is also a business contact.",
+        "unclear": "The evidence does not distinguish work from personal."
+      }
+    },
+    "relation": {
+      "question": "Who sent it?",
+      "options": {
+        "known-human": "A real person Oleg has corresponded with before; a reply from him is plausible.",
+        "new-human": "A real person writing for the first time: cold outreach, an introduction, an inbound enquiry.",
+        "automated-transactional": "Machine-generated about Oleg's own account or money: receipt, invoice, calendar invite, auth code, delivery, account alert.",
+        "automated-bulk": "Machine-generated broadcast to many: newsletter, digest, marketing, product announcement, social notification.",
+        "unclear": "The sender's nature cannot be determined."
+      }
+    },
+    "action": {
+      "question": "What does this need from Oleg?",
+      "options": {
+        "reply": "A person is waiting for a written answer from Oleg.",
+        "schedule": "A meeting to accept, decline, move or propose.",
+        "pay-or-sign": "Money or signature: invoice, renewal, failed payment, contract, legal document.",
+        "security": "Account security: login alert, verification code, password reset, breach notice, suspicious activity.",
+        "read-later": "Worth Oleg's attention but needs no action and has no deadline.",
+        "archive": "No action now or later; safe to file away unread."
+      }
+    },
+    "topic": {
+      "question": "What is it about?",
+      "options": {
+        "ai-agents": "LLMs, agents, model releases, agent tooling and evaluation.",
+        "devops-cloud": "Kubernetes, cloud infrastructure, observability, CI/CD, platform engineering.",
+        "business-gtm": "Fundraising, go-to-market, hiring, product strategy, startup operations.",
+        "finance-admin": "Invoices, receipts, subscriptions, taxes, corporate admin.",
+        "personal-life": "Family, children, health, hobbies, personal purchases and travel.",
+        "other": "None of the above."
+      }
+    }
+  },
+  "action_critical": ["reply", "schedule", "pay-or-sign", "security"]
+}

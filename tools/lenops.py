@@ -13,7 +13,8 @@ Read the LEVERS note before quoting any lever — only C is measured.
 import argparse, glob, json, os, sys, datetime as dt
 
 WINDOW = 1_000_000
-PRICE = {"claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
+PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
+         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
          "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
 SONNET = PRICE["claude-sonnet-5"]
 W5, W1H, READ = 1.25, 2.0, 0.1

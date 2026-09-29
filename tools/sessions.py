@@ -31,7 +31,8 @@ Two things this tool does that the others deliberately don't:
 import argparse, collections, csv, datetime as dt, glob, json, os, statistics, sys
 
 # Same list rates and multipliers as tools/savings.py.
-PRICE = {"claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
+PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
+         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
          "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
 W5, W1H, READ = 1.25, 2.0, 0.1
 DEFAULT_MODEL = "claude-opus-5"

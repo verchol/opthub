@@ -1,0 +1,5 @@
+# Jev and the rules baseline need nothing but the stdlib.
+# These are only for the LangChain comparison arms.
+langchain-core>=0.3
+langchain-anthropic>=0.3
+langchain-ollama>=0.2

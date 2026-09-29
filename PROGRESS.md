@@ -170,6 +170,110 @@
 - One measured result worth carrying: the open-weights arm came back **7.1× cheaper and
   18 points worse** on the blind score, and one of the three arms varied nothing.
 
+## 2026-09-29 · J3 → Hub: Triage tab, re-run on Sonnet when Jev cannot answer, sandbox knobs
+- **Work signals** added to C1 (files touched, lines changed, files edited 3+ times, test runs and
+  failures, tool errors, commits — counts from tool calls, no paths or code). With them Jev answers
+  the model question on 22 of 54 sessions (21 Sonnet, 1 Haiku); before, on none.
+- **`unclear` escalates to the sandbox, not to another signal.** 32 sessions queued for
+  `route-cheaper-frontier` (baseline vs Sonnet, blind-judged). `triage-rerun.mjs` (e2b) works the
+  queue: plan-only by default, ≤ $6 per session, a batch cap — the first cap across runs in the
+  harness. A run that produced no comparison is re-queued; "Sonnet scored worse" counts as answered.
+- **Hub → Triage** (e2b `lib/hub-page.mjs`, `/api/triage*` in `hub.mjs`): per-session classes, best
+  and worst case, tasks for separable sessions, work signals, re-run state and a re-run button.
+- **Sandbox knobs** (e2b `lib/arm-config.mjs`): arms can now vary LiteLLM routing (named routes
+  beside `*`), caching (injection points, response cache) and budget (`max_budget`), and Claude Code
+  env, `settings.json` and flags. Six catalog entries use them. Finding while wiring it: with no
+  route, Claude Code's small-fast calls and subagents hit the single upstream, so every Opus
+  baseline has been paying Opus prices for session titles. Routed arms are priced per model.
+- Methodology written up in `docs/demo-thesis.md` §2.1.
+
+## 2026-09-29 · J3 — session triage with Jev (runnable harness)
+- `experiments/session-triage/` — Jev's Choice primitive over Claude Code sessions, five axes
+  in one request: `urgency`, `latency`, `deferral`, `capability`, `context`. Each class unlocks
+  at most one lever (route, context-split, batch), priced and labelled in `src/savings.py`;
+  fast mode for `blocking-now` + `interactive` is reported as **spend**, never netted.
+- **The ledger answers half the question with no model.** 186 SDK sessions are $7.49; 28
+  interactive Opus sessions are $501.31. Rules settle the first group from the entry point and
+  find at most **$4.51**; on the second they answer `unclear`. A classifier can only earn
+  anything on the 28.
+- **Size of the prize** (every session forced into one class): route-mid $302.93, route-small
+  $344.95, context-split $104.51, batch **−$854.31 → $254.40**. Batch is the only lever that can
+  cost more: single-shot requests, best-effort cache inside a batch, and this workload reads
+  96.8% of input from cache (E1-F4). "Could be delayed" pays only on sessions whose cost is not
+  cache reads.
+- Cost is withheld from the classifier on purpose — shown "$137" it would call the session
+  `frontier` for the price, and the saving would measure itself. C0 sends ledger metadata
+  (project *kind*, never the path); C1 adds local transcript features and seven prompt
+  *flags*, with prompt text matched locally and dropped.
+- Tested: rules arm on the pinned ledger, `extract.py` on a synthetic transcript, the Jev
+  adapter against a local mock (asserts no cost/path in the payload, rejects malformed
+  answers). No gold yet: twenty interactive sessions labelled by their owner would be enough
+  to score `jev-C1`.
+- **First real Jev run, same day.** `jev-C0` (pinned E1b ledger, metadata only): 214/214 valid,
+  p50 295 ms, and `unclear` on urgency, deferral and model tier for every session at 0.94–1.0
+  confidence. Where it answered, it matched rules 100%. It declines to guess from a cost ledger.
+  `jev-C1` (live 30-day ledger, 54 sessions, $1,842, plus transcript features): answers
+  urgency/latency/deferral, agrees with rules 87% / 80% / **41%**; deferral confidence median
+  0.23. Model tier stays `unclear` on all 54, so routing unlocks $0. Stacked range
+  −$1,015 → +$666, dominated by batch on cache-heavy sessions. Two sessions are 53% of spend.
+  Prompt flags saturate on long sessions (the top one trips all seven), so "ever mentioned" is
+  a weak signal there; per-segment flags are the next thing to try.
+
+## 2026-09-25 · J2 — email triage with Jev (runnable harness)
+- `experiments/email-triage/` — spec + working code. Jev's Choice primitive is a native fit
+  for classification, so this is the cheapest honest test of whether its decisions are worth
+  anything on a real workload.
+- **Taxonomy: four axes, one request.** The mailbox's existing `triage/*` labels conflate
+  relationship (`vendor`), topic (`devops`) and priority (`priority-low`) in one namespace.
+  Split into `lane` (work/personal — absent today and the thing actually asked for),
+  `relation`, `action` (replaces priority: what to *do*, not how much to care), `topic`.
+  Jev takes all four questions in one call.
+- **Two facts from the real mailbox decided the design.** (1) ~85% of it is bulk, so a
+  constant `archive` answer scores 0.85 accuracy — accuracy is reported only as misleading,
+  and macro-F1 plus action-critical recall decide. (2) The existing labels are not ground
+  truth: one digest carries eight labels including both `priority-low` and `priority-medium`.
+  Treated as a prior, not gold.
+- **The rules baseline is the thing to beat, and it splits cleanly**: abstains on 24%, costs
+  $0 and 0 ms, but action-critical recall is 0.50. It handles the mail that does not matter
+  and misses half the mail that does — so the arm worth building is detector-first (SPEC §6.7):
+  rules first, model only where they abstain.
+- **The hypothesis is the context assist**, not the model: `C0` sees what a gateway sees;
+  `C1` adds local sender history (`i_ever_replied_to_sender`, `addressed_directly`, …) computed
+  from Gmail metadata, never message text. If C1 does not beat C0, claim C1 in
+  `docs/demo-mock-spec.md` loses its best evidence.
+- Arms: `rules` · `jev-C0/C1` · `haiku-C0/C1` (LangChain) · `local-C1` (Ollama, free, no egress).
+  LangChain is used only as the provider seam for the chat baselines; Jev has its own adapter
+  because it is not a chat model, and pretending otherwise would hide the comparison.
+- **Privacy is a decision, not a default.** Redaction before egress, local part reduced to a
+  class not a string, bodies never exported, per-arm egress allowlist, `data/private/`
+  gitignored because this repo is public, and the committed corpus is synthetic. Stated plainly
+  in the spec: this is not a redaction service, which is why the local-only arm exists.
+- Not run against real mail yet: needs a labelled set (~300, rare classes over-sampled) and a
+  `JEV_API_KEY`. 18 synthetic records are a smoke test, not a sample.
+
+## 2026-09-25 · J1 — judge calibration spec (new series)
+- `docs/judge-calibration-spec.md` — **J** series, kept separate from the E series: J1 measures
+  the *judge*, not a cost lever. A small ingest service (`eventd`) is run in two builds under an
+  identical workload by a `loadgen` client in the Docker sandbox; the regression is planted, so
+  the correct verdict is known for every arm.
+- **Reframe worth keeping:** an LLM is the wrong tool for *detecting* a perf regression — a
+  benchmark with a bootstrap CI is better, cheaper and deterministic. The value is the opposite
+  direction: a planted regression gives ground truth, which makes it a known-answer test for the
+  judge opthub already depends on and has never validated.
+- Five arms form a detection curve — `A/A` (noise floor), `tail` (+8% p99), `small` (+15% p95),
+  `gross` (+60% p95), and `improve` (stable is faster) to separate skill from a "B is worse" bias.
+  The `A/A` false-positive rate is the headline number; nothing in opthub measures it today.
+- Criteria wording is a **measured variable** (variants V1–V4), because Alexei's repo already
+  showed wording moved Jev's confidence 30% → 90% on identical inputs
+  (`docs/router-comparison.md` §1).
+- Jev is used in its Choice form only (pairwise, four options incl. `uncertain`), position-swapped,
+  with confidence recorded but never gating. Opus and local Ollama answer the same four options
+  for comparability. Outputs: TPR, FPR, minimum detectable regression, swap stability, wording
+  sensitivity, confidence calibration, cost per decision.
+- This should re-derive `judge.min_agreement` (SPEC §6.1.1), which is currently a guess at 0.85.
+- Stated limit, not a caveat: a numeric bundle is the **easy** case. Passing J1 clears a low bar
+  and does not transfer to grading agent code output.
+
 ## 2026-09-22 · Router prior art + pluggable judge
 - `docs/router-comparison.md` — five model routers (Alexei's `pi-model-router`, RouteLLM, LiteLLM,
   Kong AI Gateway, hosted routers) in one format: purpose, five use cases, sandbox/dev-machine
