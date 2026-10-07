@@ -1,0 +1,1014 @@
+{
+ "version": "0.1",
+ "updated": "2026-10-03",
+ "about": "Every known way to cut what an AI coding agent costs: the parameters each one changes, and its potential on a workload you set. Each estimate is labelled by how much to trust it. Inspired by battleships.dev.",
+ "evidence": {
+  "priced": "arithmetic on published list prices; still a ceiling until measured on your tasks",
+  "measured": "opthub ran it on real sessions; small n, said where it is",
+  "published": "a vendor or practitioner figure for generic workloads, not measured here",
+  "guess": "a stated range with a stated basis and no measurement behind it"
+ },
+ "scenarios": [
+  {
+   "id": "prompt-caching",
+   "name": "Prompt caching",
+   "layer": "caching",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Mark the stable prefix (system prompt, tools, early turns) cacheable so repeat reads bill at 10% of the input price.",
+   "params": [
+    {
+     "knob": "cache_control",
+     "value": "{\"type\":\"ephemeral\"} on the last stable block, or top-level auto-caching",
+     "at": "Claude API"
+    },
+    {
+     "knob": "prefix order",
+     "value": "tools → system → messages; nothing dynamic above the breakpoint",
+     "at": "prompt design"
+    },
+    {
+     "knob": "DISABLE_PROMPT_CACHING",
+     "value": "unset (Claude Code caches by default)",
+     "at": "Claude Code env"
+    },
+    {
+     "knob": "cache_control_injection_points",
+     "value": "[{location: message, role: system}]",
+     "at": "LiteLLM"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "none",
+   "latency": "faster",
+   "opthub": "detector · this workload already hits 96.8% (E1-F4), so nothing is left to win",
+   "caveat": "Worth up to 90% of input cost on a client that does not cache; worth nothing on one that already does.",
+   "kind": "saving"
+  },
+  {
+   "id": "cache-ttl",
+   "name": "Cache TTL: 1 hour instead of 5 minutes",
+   "layer": "caching",
+   "where": [
+    "client"
+   ],
+   "what": "Keep the cached prefix alive across pauses longer than five minutes, at twice the write price instead of 1.25×.",
+   "params": [
+    {
+     "knob": "cache_control.ttl",
+     "value": "\"1h\" (default \"5m\")",
+     "at": "Claude API"
+    }
+   ],
+   "evidence": "measured",
+   "risk": "none",
+   "latency": "faster",
+   "opthub": "measured · the sign flipped twice in an hour; two populations want opposite settings (E1b-F3)",
+   "caveat": "Pays only when gaps between turns are mostly 5–60 minutes. Decide per population by the write:read ratio in dollars, never globally.",
+   "kind": "saving"
+  },
+  {
+   "id": "response-cache",
+   "name": "Exact-match response cache",
+   "layer": "caching",
+   "where": [
+    "gateway"
+   ],
+   "what": "Answer a byte-identical request from the proxy's cache instead of calling the model.",
+   "params": [
+    {
+     "knob": "cache / cache_params.ttl",
+     "value": "true / 600",
+     "at": "LiteLLM litellm_settings"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "low",
+   "latency": "faster",
+   "opthub": "catalog arm litellm-response-cache · not yet run",
+   "caveat": "Agent turns almost never repeat byte for byte. It pays for retries, re-runs and repeated CI jobs.",
+   "kind": "saving"
+  },
+  {
+   "id": "semantic-cache",
+   "name": "Semantic cache",
+   "layer": "caching",
+   "where": [
+    "gateway"
+   ],
+   "what": "Answer a near-duplicate prompt from a vector store of earlier answers.",
+   "params": [
+    {
+     "knob": "ai-semantic-cache",
+     "value": "enabled, cache_ttl 300, similarity threshold",
+     "at": "Kong plugin"
+    },
+    {
+     "knob": "vectordb / embeddings",
+     "value": "redis or pgvector, an embedding model",
+     "at": "Kong plugin config"
+    }
+   ],
+   "evidence": "published",
+   "risk": "medium",
+   "latency": "faster",
+   "opthub": "catalog · runnable:false, needs a gateway in the request path",
+   "caveat": "Published 30–50% is for support and FAQ traffic. Coding sessions rarely repeat a question; a near match with different files underneath is a wrong answer.",
+   "kind": "saving"
+  },
+  {
+   "id": "cache-prewarm",
+   "name": "Cache pre-warming",
+   "layer": "caching",
+   "where": [
+    "client"
+   ],
+   "what": "Send a max_tokens 0 request ahead of the first real turn so the prefix is cached when the user arrives.",
+   "params": [
+    {
+     "knob": "max_tokens",
+     "value": "0 on a warm-up request with the same prefix",
+     "at": "Claude API"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "none",
+   "latency": "faster",
+   "opthub": "—",
+   "caveat": "A latency lever: it pays one cache write early and saves nothing on cost.",
+   "kind": "latency"
+  },
+  {
+   "id": "model-upgrade",
+   "name": "Move to the newer, cheaper model version",
+   "layer": "model",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Claude Opus 5.5 lists at $4/$20 per million tokens against Opus 5's $5/$25, with the same context and tokenizer.",
+   "params": [
+    {
+     "knob": "model",
+     "value": "claude-opus-5-5",
+     "at": "Claude API / ANTHROPIC_MODEL"
+    },
+    {
+     "knob": "output_config.effort",
+     "value": "set explicitly: its default is medium, one level below Opus 5",
+     "at": "Claude API"
+    },
+    {
+     "knob": "thinking",
+     "value": "omit or {type: adaptive}; it cannot be disabled",
+     "at": "Claude API"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "priced · this machine already runs 10 of 65 sessions on Opus 5.5",
+   "caveat": "Breaking changes to handle: forced tool_choice returns 400, thinking cannot be disabled. Re-check quality on your own tasks.",
+   "kind": "saving"
+  },
+  {
+   "id": "route-whole-task",
+   "name": "Route whole tasks to a mid model",
+   "layer": "model",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Send every request of a task that a mid model can handle to Sonnet instead of Opus.",
+   "params": [
+    {
+     "knob": "model",
+     "value": "claude-sonnet-5",
+     "at": "Claude API / ANTHROPIC_MODEL"
+    },
+    {
+     "knob": "model_list \"*\"",
+     "value": "bedrock/…sonnet…",
+     "at": "LiteLLM"
+    },
+    {
+     "knob": "ai-proxy-advanced targets",
+     "value": "priority balancer → Sonnet",
+     "at": "Kong"
+    }
+   ],
+   "evidence": "measured",
+   "risk": "high",
+   "latency": "slower",
+   "opthub": "measured · 2 sandbox re-runs: Sonnet took 2× the turns and cost 2.4–3.9× more; one scored 27 points worse (J3)",
+   "caveat": "The per-token price falls 60%. The per-task price can rise, because a weaker model takes more turns. Only a re-run tells you which.",
+   "kind": "saving"
+  },
+  {
+   "id": "route-side-calls",
+   "name": "Route subagents and background calls",
+   "layer": "model",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Keep the coding loop on the frontier model; send Task subagents and Claude Code's small calls (titles, summaries) to cheaper models.",
+   "params": [
+    {
+     "knob": "CLAUDE_CODE_SUBAGENT_MODEL",
+     "value": "claude-sonnet-5 (or a proxy alias)",
+     "at": "Claude Code env"
+    },
+    {
+     "knob": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+     "value": "claude-haiku-4-5 (or a proxy alias)",
+     "at": "Claude Code env"
+    },
+    {
+     "knob": "routes",
+     "value": "alias → model beside the \"*\" upstream",
+     "at": "LiteLLM model_list"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "LLM Light profile laptop-guarded · catalog arm litellm-route-side-calls · routing verified on mock upstreams",
+   "caveat": "Without a route, an Opus baseline pays Opus prices for session titles. A subagent doing real reasoning may do it worse on Sonnet.",
+   "kind": "saving"
+  },
+  {
+   "id": "cascade",
+   "name": "Cascade: try small, escalate on failure",
+   "layer": "model",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Answer with the cheap model first and re-ask the frontier model only when a check fails.",
+   "params": [
+    {
+     "knob": "fallbacks",
+     "value": "[{tier-mid: [tier-frontier]}]",
+     "at": "LiteLLM router_settings"
+    },
+    {
+     "knob": "escalation check",
+     "value": "tests pass / schema valid / confidence",
+     "at": "your harness"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "slower",
+   "opthub": "—",
+   "caveat": "Every escalation pays twice. It saves only when the check is cheap and the small model passes it most of the time.",
+   "kind": "saving"
+  },
+  {
+   "id": "local-offload",
+   "name": "Offload to an open-weights model",
+   "layer": "model",
+   "where": [
+    "self-hosted",
+    "gateway"
+   ],
+   "what": "Serve part of the work from a local or serverless open-weights model (Qwen3-Coder, Llama) behind the same API.",
+   "params": [
+    {
+     "knob": "model",
+     "value": "ollama_chat/qwen3-coder or bedrock/qwen.qwen3-coder-480b…",
+     "at": "LiteLLM"
+    },
+    {
+     "knob": "MAX_THINKING_TOKENS",
+     "value": "0 for models without thinking",
+     "at": "Claude Code env"
+    }
+   ],
+   "evidence": "measured",
+   "risk": "high",
+   "latency": "slower",
+   "opthub": "measured n=1 · 7.1× cheaper and 18 points worse on the blind score",
+   "caveat": "Cheap is easy; doing the same job is the question. Needs a quality gate on every routed class.",
+   "kind": "saving"
+  },
+  {
+   "id": "advisor",
+   "name": "Advisor pattern",
+   "layer": "model",
+   "where": [
+    "client"
+   ],
+   "what": "A mid model executes; the frontier model is consulted as a tool only on the hard steps.",
+   "params": [
+    {
+     "knob": "model",
+     "value": "claude-sonnet-5 (executor)",
+     "at": "Claude API"
+    },
+    {
+     "knob": "advisor tool",
+     "value": "advisor model claude-opus-5; must be at least as capable as the executor",
+     "at": "Claude API tools"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "Advisor calls are billed at the frontier rate. The win depends on how few steps need it.",
+   "kind": "saving"
+  },
+  {
+   "id": "plan-execute",
+   "name": "Plan on the frontier, execute on mid",
+   "layer": "model",
+   "where": [
+    "client"
+   ],
+   "what": "One frontier call writes the plan; a mid model carries it out step by step.",
+   "params": [
+    {
+     "knob": "planner model",
+     "value": "claude-opus-5",
+     "at": "your harness"
+    },
+    {
+     "knob": "executor model",
+     "value": "claude-sonnet-5",
+     "at": "your harness"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "A bad plan is executed faithfully and cheaply. Overlaps the advisor pattern; do not count both.",
+   "kind": "saving"
+  },
+  {
+   "id": "distill",
+   "name": "Distil or fine-tune a small model",
+   "layer": "model",
+   "where": [
+    "self-hosted",
+    "provider"
+   ],
+   "what": "Train a small model on the frontier model's answers for one narrow, high-volume task.",
+   "params": [
+    {
+     "knob": "training set",
+     "value": "frontier outputs on your task, labelled",
+     "at": "offline"
+    },
+    {
+     "knob": "serving",
+     "value": "small model endpoint",
+     "at": "provider / self-hosted"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "faster",
+   "opthub": "recommended for LLM Light's classifier (distil Jev) in docs/demo-thesis.md",
+   "caveat": "Weeks of work and a training bill. Only for one narrow task at volume.",
+   "kind": "saving"
+  },
+  {
+   "id": "effort",
+   "name": "Lower the effort level",
+   "layer": "reasoning",
+   "where": [
+    "client"
+   ],
+   "what": "Ask for less thinking and fewer, more consolidated tool calls on routine work.",
+   "params": [
+    {
+     "knob": "output_config.effort",
+     "value": "medium or low (default high)",
+     "at": "Claude API"
+    },
+    {
+     "knob": "--effort",
+     "value": "medium | low",
+     "at": "Claude Code flag"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "faster",
+   "opthub": "catalog arms effort-medium, effort-low · E3 will measure",
+   "caveat": "Routine work often holds at medium. Hard reasoning gets shallower exactly where it was needed.",
+   "kind": "saving"
+  },
+  {
+   "id": "thinking-cap",
+   "name": "Cap thinking tokens",
+   "layer": "reasoning",
+   "where": [
+    "client"
+   ],
+   "what": "Put a ceiling on how many tokens the model may think per turn.",
+   "params": [
+    {
+     "knob": "MAX_THINKING_TOKENS",
+     "value": "8000",
+     "at": "Claude Code env"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "faster",
+   "opthub": "catalog arm claude-thinking-cap · LLM Light sandbox-lean, ci-strict",
+   "caveat": "Thinking is billed as output. Overlaps the effort lever; do not count both.",
+   "kind": "saving"
+  },
+  {
+   "id": "output-length",
+   "name": "Shorter output",
+   "layer": "reasoning",
+   "where": [
+    "client"
+   ],
+   "what": "Ask for terse answers, structured output, diffs instead of whole files.",
+   "params": [
+    {
+     "knob": "max_tokens",
+     "value": "sized to the task",
+     "at": "Claude API"
+    },
+    {
+     "knob": "output_config.format",
+     "value": "JSON schema",
+     "at": "Claude API"
+    },
+    {
+     "knob": "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+     "value": "a ceiling",
+     "at": "Claude Code env"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "low",
+   "latency": "faster",
+   "opthub": "—",
+   "caveat": "A cap that truncates mid-answer forces a retry, which costs more than it saved.",
+   "kind": "saving"
+  },
+  {
+   "id": "task-budget",
+   "name": "Task budget",
+   "layer": "reasoning",
+   "where": [
+    "client"
+   ],
+   "what": "Give the agent a token budget for the whole task so it paces itself and finishes instead of running long.",
+   "params": [
+    {
+     "knob": "output_config.task_budget",
+     "value": "{type: tokens, total: 64000}",
+     "at": "Claude API (beta task-budgets-2026-03-13)"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "Bounds the long tail of runaway tasks; average tasks are unaffected.",
+   "kind": "saving"
+  },
+  {
+   "id": "split-sessions",
+   "name": "Split sessions between tasks",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Start a fresh session, or clear it, when the work moves to an unrelated task, so later turns stop re-sending dead history.",
+   "params": [
+    {
+     "knob": "/clear",
+     "value": "between unrelated tasks",
+     "at": "Claude Code"
+    },
+    {
+     "knob": "new session",
+     "value": "per task",
+     "at": "workflow"
+    }
+   ],
+   "evidence": "measured",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "top-ranked lever (E1-F5: 52.9% of spend is sessions with median context ≥250k) · J3 marks separable sessions; the largest held 16 tasks",
+   "caveat": "Needs the person or a classifier to notice the topic changed. Saving counted at 25–50% of the history cost of separable sessions.",
+   "kind": "saving"
+  },
+  {
+   "id": "compaction",
+   "name": "Compaction",
+   "layer": "context",
+   "where": [
+    "client",
+    "provider"
+   ],
+   "what": "Summarise earlier turns when the context grows past a threshold.",
+   "params": [
+    {
+     "knob": "context_management.edits",
+     "value": "[{type: compact_20260112}]",
+     "at": "Claude API (beta compact-2026-01-12)"
+    },
+    {
+     "knob": "/compact or --autocompact",
+     "value": "100k (Claude Code accepts 'auto' or 100k–1M)",
+     "at": "Claude Code"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "same",
+   "opthub": "catalog arm context-compaction",
+   "caveat": "Each compaction pays for a summary and a fresh cache write. A summary can drop the detail a later turn needed.",
+   "kind": "saving"
+  },
+  {
+   "id": "context-editing",
+   "name": "Clear old tool results",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Drop old tool results or thinking blocks from the history before each request.",
+   "params": [
+    {
+     "knob": "context_management.edits",
+     "value": "[{type: clear_tool_uses_20250919}]",
+     "at": "Claude API (beta context-management-2025-06-27)"
+    }
+   ],
+   "evidence": "published",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "A context-window tool, not a saving: each clear rewrites the cached history. In Anthropic's own measured run it cost more than it saved.",
+   "kind": "saving"
+  },
+  {
+   "id": "prefix-trim",
+   "name": "Drop unused tools and MCP servers",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Send only the tool definitions a task can use. Every tool schema is re-sent on every turn.",
+   "params": [
+    {
+     "knob": "--disallowed-tools",
+     "value": "tools the task never needs",
+     "at": "Claude Code flag"
+    },
+    {
+     "knob": "--strict-mcp-config",
+     "value": "load only the MCP servers named for this run",
+     "at": "Claude Code flag"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "low",
+   "latency": "faster",
+   "opthub": "savings.py lever A (prefix-trim) · E2 will measure",
+   "caveat": "Removing a tool the task turns out to need costs a failed turn.",
+   "kind": "saving"
+  },
+  {
+   "id": "tool-search",
+   "name": "Load tools on demand",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Mark most tools deferred and give the model a search tool; definitions load only when found.",
+   "params": [
+    {
+     "knob": "defer_loading",
+     "value": "true on rarely used tools",
+     "at": "Claude API tools"
+    },
+    {
+     "knob": "tool_search_tool_regex_20251119",
+     "value": "one non-deferred search tool",
+     "at": "Claude API tools"
+    }
+   ],
+   "evidence": "published",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "Pays with many MCP tools. Overlaps dropping unused tools; do not count both.",
+   "kind": "saving"
+  },
+  {
+   "id": "retrieval",
+   "name": "Retrieve instead of stuffing",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Fetch the relevant files or passages per turn instead of keeping whole documents in context.",
+   "params": [
+    {
+     "knob": "retrieval",
+     "value": "search / embeddings over the repo or docs",
+     "at": "your harness"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "Workload dependent. Coding agents already read files on demand.",
+   "kind": "saving"
+  },
+  {
+   "id": "prompt-compression",
+   "name": "Prompt compression",
+   "layer": "context",
+   "where": [
+    "gateway"
+   ],
+   "what": "Compress prompts with a model or heuristic before they are sent.",
+   "params": [
+    {
+     "knob": "compressor",
+     "value": "LLMLingua, headroom proxy",
+     "at": "gateway sidecar"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "medium",
+   "latency": "slower",
+   "opthub": "headroom is installed in the sandbox template · not measured",
+   "caveat": "Changing the prefix breaks the prompt cache. On a cache-heavy workload it can cost more than it saves.",
+   "kind": "saving"
+  },
+  {
+   "id": "dedupe-reads",
+   "name": "Stop re-reading the same files",
+   "layer": "context",
+   "where": [
+    "client"
+   ],
+   "what": "Avoid reading the same file into context again when it has not changed.",
+   "params": [
+    {
+     "knob": "agent instructions",
+     "value": "prefer targeted reads (offset/limit) and grep over full re-reads",
+     "at": "CLAUDE.md"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "low",
+   "latency": "faster",
+   "opthub": "—",
+   "caveat": "Hard to enforce from outside the agent.",
+   "kind": "saving"
+  },
+  {
+   "id": "batch",
+   "name": "Batch API for work that can wait",
+   "layer": "request",
+   "where": [
+    "client"
+   ],
+   "what": "Send requests nobody is waiting on through the Message Batches API at half price.",
+   "params": [
+    {
+     "knob": "endpoint",
+     "value": "POST /v1/messages/batches",
+     "at": "Claude API"
+    },
+    {
+     "knob": "deferral",
+     "value": "only sessions nobody waits on",
+     "at": "policy"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "low",
+   "latency": "slower",
+   "opthub": "J3 · best case 50% of deferrable spend; worst case negative when the cache is lost",
+   "caveat": "Batch requests are single-shot: no tool loop inside a batch, and cache hits are best-effort. On a cache-heavy agent it can cost more.",
+   "kind": "saving"
+  },
+  {
+   "id": "fewer-turns",
+   "name": "Fewer round trips",
+   "layer": "request",
+   "where": [
+    "client"
+   ],
+   "what": "Do more per turn: parallel tool calls, or let code call tools in a loop without a model turn each time.",
+   "params": [
+    {
+     "knob": "parallel tool use",
+     "value": "on (default); return all results in one message",
+     "at": "Claude API"
+    },
+    {
+     "knob": "allowed_callers",
+     "value": "[\"code_execution_20260120\"] on your tools",
+     "at": "Claude API (programmatic tool calling)"
+    }
+   ],
+   "evidence": "published",
+   "risk": "low",
+   "latency": "faster",
+   "opthub": "—",
+   "caveat": "Every saved turn saves one full re-send of the context. Needs tools designed for it.",
+   "kind": "saving"
+  },
+  {
+   "id": "failed-requests",
+   "name": "Stop paying for failed requests",
+   "layer": "request",
+   "where": [
+    "client",
+    "gateway"
+   ],
+   "what": "Cut retries, timeouts and requests aborted after tokens were billed.",
+   "params": [
+    {
+     "knob": "max_retries / timeout",
+     "value": "per route",
+     "at": "Anthropic SDK"
+    },
+    {
+     "knob": "streaming",
+     "value": "for long outputs, so a timeout does not discard a paid answer",
+     "at": "Claude API"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "none",
+   "latency": "same",
+   "opthub": "—",
+   "caveat": "Needs the retry rate measured first.",
+   "kind": "saving"
+  },
+  {
+   "id": "preflight",
+   "name": "Count tokens before sending",
+   "layer": "request",
+   "where": [
+    "client"
+   ],
+   "what": "Reject or trim a request that would be unusually large before it is billed.",
+   "params": [
+    {
+     "knob": "POST /v1/messages/count_tokens",
+     "value": "before large requests",
+     "at": "Claude API"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "none",
+   "latency": "slower",
+   "opthub": "—",
+   "caveat": "Adds a call. Useful only as a guard against outliers.",
+   "kind": "saving"
+  },
+  {
+   "id": "fast-mode",
+   "name": "Fast mode",
+   "layer": "request",
+   "where": [
+    "client"
+   ],
+   "what": "The same model at up to 2.5× output speed, at twice the price. A spend, for urgent interactive work.",
+   "params": [
+    {
+     "knob": "speed",
+     "value": "\"fast\" (beta fast-mode-2026-02-01)",
+     "at": "Claude API, Opus 5 / 5.5"
+    },
+    {
+     "knob": "/fast",
+     "value": "on",
+     "at": "Claude Code"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "none",
+   "latency": "faster",
+   "opthub": "J3 flags blocking-now + interactive sessions as where paying more is justified",
+   "caveat": "Shown as spend. Never net it against savings.",
+   "kind": "spend"
+  },
+  {
+   "id": "turn-cap",
+   "name": "Cap agent turns and stop loops",
+   "layer": "workflow",
+   "where": [
+    "client"
+   ],
+   "what": "Stop an agent that loops instead of letting its context, and cost, grow.",
+   "params": [
+    {
+     "knob": "--max-turns",
+     "value": "40",
+     "at": "Claude Code flag"
+    },
+    {
+     "knob": "loop detector",
+     "value": "flag repeated identical tool calls",
+     "at": "your harness"
+    }
+   ],
+   "evidence": "measured",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "measured · loops were 1.4% of spend on one developer's month (E1-F2)",
+   "caveat": "Bounds the tail. An unfinished task is scored as unfinished.",
+   "kind": "saving"
+  },
+  {
+   "id": "budgets",
+   "name": "Budgets and rate limits",
+   "layer": "governance",
+   "where": [
+    "gateway",
+    "client"
+   ],
+   "what": "Hard spend ceilings per run, key, team or day.",
+   "params": [
+    {
+     "knob": "max_budget / budget_duration",
+     "value": "1.5 / 1d",
+     "at": "LiteLLM"
+    },
+    {
+     "knob": "--max-budget-usd",
+     "value": "per run",
+     "at": "Claude Code flag"
+    },
+    {
+     "knob": "ai-rate-limiting-advanced",
+     "value": "strategy: cost",
+     "at": "Kong"
+    }
+   ],
+   "evidence": "priced",
+   "risk": "low",
+   "latency": "same",
+   "opthub": "catalog arm litellm-proxy-budget · triage re-run batch cap",
+   "caveat": "A guard: it bounds the worst case and saves nothing on a normal day. --max-budget-usd stops only after it is crossed.",
+   "kind": "guard"
+  },
+  {
+   "id": "showback",
+   "name": "Cost attribution and showback",
+   "layer": "governance",
+   "where": [
+    "gateway"
+   ],
+   "what": "Tag every request with team and project and show each team its spend.",
+   "params": [
+    {
+     "knob": "metadata / tags",
+     "value": "team, project, user",
+     "at": "LiteLLM / Kong"
+    },
+    {
+     "knob": "dashboard",
+     "value": "per team, per project",
+     "at": "FinOps"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "none",
+   "latency": "same",
+   "opthub": "Hub → Sessions and Triage do this per session today",
+   "caveat": "Indirect: people change behaviour when they see the bill.",
+   "kind": "saving"
+  },
+  {
+   "id": "provider-choice",
+   "name": "Choose where the model is served",
+   "layer": "governance",
+   "where": [
+    "provider"
+   ],
+   "what": "The same model is billed differently on the Claude API, Bedrock, Vertex AI and Foundry.",
+   "params": [
+    {
+     "knob": "endpoint",
+     "value": "Claude API, Claude Platform on AWS, Bedrock, Vertex, Foundry",
+     "at": "contract"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "none",
+   "latency": "same",
+   "opthub": "the sandbox runs on Bedrock, laptops on the Claude API",
+   "caveat": "Partner pricing differs by contract and region; features differ by platform (fast mode is Claude API only).",
+   "kind": "saving"
+  },
+  {
+   "id": "sandbox-idle",
+   "name": "Shut down idle sandboxes",
+   "layer": "infra",
+   "where": [
+    "sandbox"
+   ],
+   "what": "Pause or stop an agent sandbox while the agent waits on a model call or a person.",
+   "params": [
+    {
+     "knob": "idle timeout",
+     "value": "seconds, not the 30-minute default",
+     "at": "sandbox create options"
+    },
+    {
+     "knob": "pause / resume",
+     "value": "between turns",
+     "at": "sandbox provider"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "none",
+   "latency": "slower",
+   "opthub": "E2B arms run with a 30-minute sandbox timeout",
+   "caveat": "A cold start costs seconds per resume. Compare providers' per-second pricing at battleships.dev.",
+   "kind": "saving"
+  },
+  {
+   "id": "sandbox-rightsize",
+   "name": "Right-size sandbox machines",
+   "layer": "infra",
+   "where": [
+    "sandbox"
+   ],
+   "what": "Give each sandbox the vCPU and RAM its workload uses, not the template default.",
+   "params": [
+    {
+     "knob": "template cpu / memory",
+     "value": "measured from runs",
+     "at": "sandbox template"
+    }
+   ],
+   "evidence": "guess",
+   "risk": "low",
+   "latency": "slower",
+   "opthub": "template/e2b.Dockerfile is a bigger box for sidecars",
+   "caveat": "An undersized box turns a CPU wait into a longer, costlier model session.",
+   "kind": "saving"
+  },
+  {
+   "id": "selfhost-quant",
+   "name": "Quantise self-hosted models",
+   "layer": "infra",
+   "where": [
+    "self-hosted"
+   ],
+   "what": "Serve open-weights models at lower precision to fit cheaper hardware.",
+   "params": [
+    {
+     "knob": "quantization",
+     "value": "AWQ / GPTQ / FP8",
+     "at": "vLLM, Ollama tags (q4, q8)"
+    }
+   ],
+   "evidence": "published",
+   "risk": "medium",
+   "latency": "faster",
+   "opthub": "template/openmodel serves Ollama",
+   "caveat": "Only for self-hosted spend. Lower precision can cost quality on hard tasks.",
+   "kind": "saving"
+  },
+  {
+   "id": "selfhost-serving",
+   "name": "Serving efficiency (self-hosted)",
+   "layer": "infra",
+   "where": [
+    "self-hosted"
+   ],
+   "what": "Continuous batching, prefix caching and speculative decoding on your own GPUs.",
+   "params": [
+    {
+     "knob": "engine flags",
+     "value": "continuous batching, enable prefix caching, speculative decoding",
+     "at": "vLLM / SGLang"
+    }
+   ],
+   "evidence": "published",
+   "risk": "none",
+   "latency": "faster",
+   "opthub": "—",
+   "caveat": "Only for self-hosted spend. Throughput gains need steady traffic.",
+   "kind": "saving"
+  }
+ ]
+}

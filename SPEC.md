@@ -1,7 +1,9 @@
 # opthub — Phase 1 Spec
 
-**Status:** draft v0.2 · **Date:** 2026-09-03 · **Owner:** oleg@canarian.io
-**Supersedes:** v0.1 (2026-08-24). Rebuilt against measured data — see §2 for what changed and why.
+**Status:** draft v0.4 · **Date:** 2026-09-30 · **Owner:** oleg@canarian.io
+**Supersedes:** v0.3 (2026-09-29), v0.2 (2026-09-03), v0.1 (2026-08-24). v0.2 rebuilt the spec against measured data (§2).
+v0.3 adds where sessions are stored today and how they are centralised and scaled (§5.3–§5.5).
+v0.4 opens epic RO, runtime optimization: `opt claude optimize` and LLM Ultra Light (§16, `docs/runtime-optimization.md`).
 
 ---
 
@@ -220,6 +222,181 @@ being recorded.
 **Retention is opthub's own policy, not the host application's.** Captured traces live in
 `.opthub/cas/` until a `opthub gc` the user runs deliberately. An analysis that cannot be re-run is
 not evidence.
+
+### 5.3 Where sessions live today — *added in v0.3, as built on 2026-09-29*
+
+Everything below is on **one machine**. Nothing is shared between developers, and nothing survives
+the machine.
+
+| # | what | where | written by | kept for | holds | sensitivity |
+|---|---|---|---|---|---|---|
+| 1 | **Transcripts** | `~/.claude/projects/<cwd-slug>/<session-id>.jsonl`; subagents as sidechain records and `agent-*.jsonl` | Claude Code | **30 days** by default (`cleanupPeriodDays`), deleted silently; this machine set 3650 on 2026-09-29 — a per-machine fix, not a policy | every prompt, reply, tool call and tool output, usage per request | **high** — file contents, and `!` shell input verbatim (an API key was recorded this way on 2026-09-29) |
+| 2 | Session index | memory of the hub process, rebuilt from #1 on every `/api/sessions` (`lib/sessions-index.mjs`, `lib/watch.mjs`) | `opt hub` | process lifetime | cost, context, tools, artifacts per session | medium — first prompt shown as `intent` |
+| 3 | Session-end signal | `$STATE/results/.session-log.jsonl` | Stop hook `hooks/on-session-end.mjs` | forever | session id, cwd, time | low |
+| 4 | Ledger | `experiments/session-triage/data/private/ledger.csv` | `tools/savings.py` | until overwritten | cost split, model mix, context, `first_prompt`, session id | medium |
+| 5 | Features, tasks | `…/data/private/features.jsonl`, `tasks.jsonl` | `extract.py`, `tasks.py` | until overwritten | counts and yes/no flags; task titles (prompt text, scrubbed) | low / medium |
+| 6 | Classification | `$STATE/results/triage.json` | `export_hub.py` | until overwritten | Jev's classes, best/worst case, re-run queue | medium (task titles) |
+| 7 | Experiment runs | `$STATE/results/exprun-*/`, `optrun-*/`, `replay-*/` | `optimize.mjs`, `replay-real.mjs` | forever | arm configs, costs, diffs, verdicts, report | medium — code produced by arms |
+| 8 | Pinned ledgers | `docs/data/*.csv` (this repo, public) | by hand, stripped | forever | the runs of record, no prompts, `~` paths | low |
+
+`$STATE` is the e2b checkout, or `OPT_HOME` when set (the brew wrapper sets `~/.opthub`).
+
+**What this layout cannot do**, in order of cost:
+
+1. **Sandbox sessions are invisible.** Arms run `claude --no-session-persistence` inside an E2B
+   microVM, so their transcript dies with the VM; only the result JSON comes back. Phase 2's claim
+   (§3.3 of `docs/demo-thesis.md`) is about exactly those sessions.
+2. **The evidence expires.** #1 deletes itself at 30 days by default (§2.3), and #4–#6 are recomputed
+   from it. Raising `cleanupPeriodDays` (this machine: 3650) fixes one machine; it does not make the
+   evidence shared, durable beyond a disk, or present on any machine that has not been configured.
+3. **One developer, one machine.** No team view, no cross-machine comparison, no central budget.
+4. **Raw and derived data sit side by side**, so sharing the derived half means reasoning about the
+   raw half every time.
+5. **No identity or schema.** A path is the project key (`~/workspace/demos/opthub`), which differs
+   per machine; files have no version field.
+
+### 5.4 Centralising — raw stays at the edge, derived records travel
+
+**The rule:** transcripts never leave the machine that produced them. What travels is the
+**derived session record** J3 already computes — numbers, flags and classes — plus experiment
+results. That turns "centralise the sessions" from a data-exfiltration question into a metrics
+question.
+
+| tier | contents | lives | leaves the machine? |
+|---|---|---|---|
+| **raw** | transcripts (#1), captured traces (§5.2) | edge: `~/.claude/projects`, archived into `.opthub/cas/` before the 30-day TTL | **never** by default; opt-in encrypted archive per developer |
+| **derived** | one session record (below) | edge, then central | **yes** — counts, flags, classes; no text |
+| **derived + text** | task titles, first request | edge; central only if the org opts in | opt-in, scrubbed (secret patterns, e-mail, `KEY=value`, home paths) |
+| **results** | experiment runs: configs, costs, verdicts; arm diffs optional | central | yes |
+
+**The session record** (`schema: opthub.session/1`) — assembled from what #4–#6 already hold:
+
+```yaml
+schema: opthub.session/1
+session_id: 8b28d80d-…            # Claude Code's UUID — globally unique already
+org: canarian                     # tenancy
+developer: dev_7f3a               # pseudonym; the mapping stays with the org's IdP
+machine: mac_19c2                 # stable per install
+environment: laptop | sandbox | ci
+project: { remote_hash: sha256(git remote), label: "demos/opthub" }   # not a path
+window: { start, end, span_min, resumed_days }
+usage: { requests, models: {claude-opus-5: 593}, ctx_p50, ctx_max,
+         cost: { total, cache_read, cache_write, output, thinking } }
+features: { reply_gap_p50, topic_breaks, tool_share: {…}, prompt_flags: {…}, work_signals: {…} }
+artifacts: { count, bytes, kinds: [html, py] }        # names only if text is opted in
+classes: { urgency, latency, deferral, capability, context,
+           classifier: { model: jev-1.13.0, taxonomy: 0.1, confidence: {…} } }
+saving: { best, worst, levers: [context-split, batch] }
+rerun: { needed, experiment, verdict_ref }
+```
+
+Record size measured on this machine: **~0.9 KB median, 3.8 KB max** (65 sessions). Idempotency key:
+`(session_id, sha256(record))` — a resumed session re-ships and replaces its record.
+
+**Three sources feed it, in order of preference:**
+
+1. **Transcript sweep** (built): `savings.py` → `extract.py` → `tasks.py` → classify. Complete, but
+   only as durable as #1.
+2. **Claude Code telemetry** (to verify): Claude Code can export OpenTelemetry metrics and events
+   (per-request model, tokens, cost; tool results) when `CLAUDE_CODE_ENABLE_TELEMETRY=1` and an
+   OTLP exporter are set. That gives usage without parsing files and reaches sandboxes. Confirm the
+   current event set against Claude Code's monitoring docs before depending on it.
+3. **Capture proxy** (§5.2, specced): wire truth, including the title-generation calls no
+   transcript records.
+
+**Collection on each machine — `opt ship`:**
+
+- Triggered by the Stop hook that already exists (#3), plus a sweep on `opt hub start`, so a
+  missed hook costs a delay, not data.
+- Computes the record locally, applies the org's scrub policy, signs it with the machine key, and
+  POSTs it. Offline: queue in `.opthub/outbox/`, retry with backoff.
+- `opt ship --dry` prints exactly what would leave, field by field, and the hub shows the same view.
+- In a **sandbox**: drop `--no-session-persistence` (or copy `~/.claude/projects` out before
+  teardown), run `opt ship` inside the VM with `environment: sandbox`, then let the transcript
+  die with the VM. Only the record comes back. This closes gap 1.
+
+### 5.5 Architecture at scale
+
+```mermaid
+flowchart LR
+  subgraph EDGE["Edge — laptops, CI runners, sandboxes"]
+    T["transcripts<br/>~/.claude/projects"] --> X["opt ship<br/>derive · scrub · sign"]
+    O["OTel export<br/>(optional)"] --> X
+    X --> OB[".opthub/outbox<br/>offline queue"]
+    P["policy vN<br/>(cached)"] -.-> CC["Claude Code<br/>/optimize"]
+  end
+  OB -->|HTTPS, signed| ING["Ingest API<br/>stateless · idempotent"]
+  subgraph CENTRAL["Central — per org"]
+    ING --> DB[("Postgres<br/>session records · runs · budgets")]
+    ING --> OBJ[("Object store<br/>run artifacts · opt-in raw archives, encrypted per developer")]
+    DB --> CLS["Classifier service<br/>Jev, batched · or distilled model"]
+    CLS --> DB
+    DB --> Q["Re-run queue<br/>budget ledger"]
+    Q --> W["Workers<br/>optimize.mjs → E2B"]
+    W --> DB
+    W --> OBJ
+    DB --> HUB["Hub (multi-tenant)<br/>Sessions · Triage · Runs · ROI"]
+    DB --> POL["Policy service<br/>classes · never_downgrade · judge"]
+  end
+  POL -->|policy vN| P
+```
+
+| component | responsibility | scales by | replaces today's |
+|---|---|---|---|
+| `opt ship` | derive, scrub, sign, queue, send | one per machine | nothing — new |
+| Ingest API | validate schema, dedupe, write | stateless replicas behind a load balancer | nothing |
+| Postgres | records, runs, budgets, policy versions; row-level security per org/team | partition `session_record` by month; read replicas for the hub | `triage.json`, `results/*/status.json` |
+| Object store | run artifacts, reports, opt-in raw archives | unbounded | `results/` dirs |
+| Classifier service | one Jev call per new or changed record; re-classify on a taxonomy version bump; key held centrally, never on laptops | batch size, rate limit | `run.py` on a laptop with a pasted key |
+| Re-run queue + workers | run `unclear` sessions in E2B, blind-judge, write verdicts | worker count × E2B concurrency; **bounded by the budget ledger, not by hardware** | `triage-rerun.mjs` + a lock file |
+| Budget ledger | per org/team daily cap, charged at *actual* spend after each arm | — | the $20 batch cap in one process |
+| Policy service | versioned policy pushed to the edge (§8) | cacheable, tiny | `config/optimizations.json` in a checkout |
+| Hub | same UI, reading Postgres, scoped by role | stateless replicas | `opt hub` over local files (stays, for offline and single-developer use) |
+
+**Sizing, from this machine's numbers.** One developer: ~1.8 sessions/day (65 in 36 days), 64
+requests per session at the median, ~1 KB per record.
+
+| | 1 developer | 100 developers | 1,000 developers |
+|---|--:|--:|--:|
+| session records / day | ~2 | ~180 | ~1,800 |
+| record storage / year | ~1 MB | ~70 MB | ~700 MB |
+| per-request rows / day (if request-level events are kept) | ~120 | ~12k | ~120k |
+| Jev calls / day (one per record) | ~2 | ~180 | ~1,800 |
+| re-runs / day at the measured 60% `unclear` rate | ~1 | ~110 | ~1,100 |
+| **re-run spend / day at the measured $5–10 each** | ~$8 | **~$800** | **~$8,000** |
+
+Storage, ingest and classification are trivial at every size — Postgres holds all of it. **The
+re-runs are the cost that scales**, which is why the architecture puts a budget ledger in front of
+the queue and why the classifier's `unclear` rate is the number to drive down: each point of it is
+worth ~$80/day at 1,000 developers. In practice: re-run a *sample* per (project × class) cell, not
+every session, and reuse a verdict across sessions in the same cell until the policy or the model
+changes. At ~120k request rows a day, move request-level events to a column store (ClickHouse or
+partitioned Postgres) and keep session records in Postgres.
+
+**Management.**
+
+- **Retention per tier:** raw — the host's 30 days, or the developer's own encrypted archive;
+  derived records — 13 months (a full year of seasonality); run results — kept, because a verdict
+  whose inputs are gone is not evidence (§6.5).
+- **Access:** a developer sees their own sessions in full; a team lead sees team records and
+  aggregates; FinOps sees cost fields only. Enforced by row-level security, not by the UI.
+- **Deletion:** by `session_id`, `developer` or `project` — removes records and any opt-in text;
+  run results keep only aggregates.
+- **Schema:** `schema` is on every record; the ingest API accepts N and N-1; classifications
+  carry the classifier and taxonomy versions, so a wording change re-classifies instead of mixing.
+- **Audit:** the ingest log is append-only and hash-chained, the same design as the journal (§9.2).
+
+**Rollout.**
+
+| stage | who | what is added | today's pieces reused |
+|---|---|---|---|
+| **A — one machine** (now) | one developer | nothing | all of §5.3 |
+| **B — team** | 5–20 developers | `opt ship`, one Postgres, the hub reading it, sandbox shipping | J3 derivation, hub UI, `triage-rerun.mjs` as the worker |
+| **C — organisation** | many teams | tenancy, IdP pseudonyms, budget ledger, classifier service, policy service | the same record schema |
+
+The schema is the contract that makes B and C additive: define it now, write it locally in stage
+A (`triage.json` becomes a list of `opthub.session/1` records), and each later stage only adds a
+place to send it.
 
 ---
 
@@ -531,6 +708,9 @@ opthub proposals apply <id> [--as-pr]
 opthub proposals reject <id> --reason "..."
 opthub rollback <apply-id>
 
+opthub claude optimize [dir]         # runtime optimization: Claude Code in the sandbox behind ULT  [v0.4, §16]
+opthub claude optimize audit --verify # decisions of a live run; check the hash chain               [v0.4]
+
 opthub report --since 7d             # the dashboard, in terminal
 opthub policy show | lint
 opthub resume
@@ -641,7 +821,9 @@ host's own transcript store lost $46.25 of this window while you were watching.
    real diff in the source? Leaning source diff for T1/T2, lock file for T0.
 3. **Journal per-repo or per-machine?** E1 sharpened this: cost concentrates in *sessions*, which
    are per-machine, and cross-project routing insight needs the machine view. v0.1 specced
-   per-repo. **Now leaning per-machine (`~/.opthub/`) with per-repo policy.**
+   per-repo. **Now leaning per-machine (`~/.opthub/`) with per-repo policy.** v0.3: per-machine at
+   the edge, and a central store of derived session records keyed by session id and a project
+   identity derived from the git remote, not the path (§5.4).
 4. **Does the agent need write access to a scratch worktree** for optimizers that must run the repo's
    own tests? Would widen the trust boundary; deferred past Phase 1.
 5. **What is the right sub-window count `k` for the stability gate?** Default 5 is a guess. Needs an
@@ -666,3 +848,29 @@ python3 tools/savings.py  --since 2026-07-30 --top 15 \
   **No longer reproducible** (§2.3).
 - **E1b run of record** — 2026-09-03, `docs/data/e1b-sessions.csv`, 214 sessions, $508.80.
   Will also decay. That is the finding, not a caveat.
+
+---
+
+## 16. Runtime optimization — epic RO (*added in v0.4*)
+
+Phase 1 measures a session after it happened. Epic RO acts while it happens: `opt claude optimize` starts
+Claude Code inside the Docker sandbox with the developer's terminal attached, and every request goes
+through **LLM Ultra Light (ULT)**, a router inside the sandbox boundary. ULT classifies each request
+(rules, then Jev when rules are unsure, with per-project context persisted between sessions), decides
+`keep`, `route` to a cheaper remote model, or `local` to an Ollama model, and writes every decision
+to a hash-chained audit log (§9.2 format). The agent is a level of the command,
+`opt <agent> optimize`, so agents other than Claude Code can be added.
+
+Three rules carry over from the measurements:
+
+1. **Shadow first.** The default mode records decisions and changes nothing. Routing is opt-in.
+2. **Cache-aware economics.** A main-thread route re-buys the prefix uncached (94–99.9% of Claude
+   Code input is cache reads, `docs/evidence-catalog.md`), so a route needs an estimated saving,
+   and a routed thread stays on its target.
+3. **The credential stays out of the agent.** ULT holds it; the agent container has a dummy key and
+   reaches nothing but ULT and the egress proxy.
+
+The full epic — stories, components, flags, configuration, audit schema, what is deferred and why —
+is `docs/runtime-optimization.md`. Implementation lives in `sandbox/e2b`: `optimize-live.mjs`,
+`ult.mjs`, `lib/ult/`, `config/ult.default.json`.
+

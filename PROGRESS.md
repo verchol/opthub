@@ -170,6 +170,57 @@
 - One measured result worth carrying: the open-weights arm came back **7.1× cheaper and
   18 points worse** on the blind score, and one of the three arms varied nothing.
 
+## 2026-10-04 · Hub Sessions tab priced by the atlas — and a 3× cost bug fixed
+- The Sessions tab's potential now comes from the Optimization Atlas (e2b `lib/atlas.mjs`, engine copied
+  to `assets/atlas/`). Each session is the workload: requests, context, output, thinking, cache hit and
+  model measured from its transcript; mid-model share, waiting, mixed tasks and urgency from Jev's
+  Triage classes; the rest atlas defaults, labelled. Headline: the safest single lever by worst case.
+- **Bug found while anchoring:** `lib/sessions-index.mjs` priced every Opus request at $15/$75 and Fable
+  at $3/$15, so every Opus 5 session showed 3× its cost. The hub's total fell from $5,951 to $1,919 once
+  priced per exact model from the atlas table (in line with Triage's $1,971). `lib/potential.mjs` had
+  the same stale rates and is no longer used by the hub or the snapshot tool.
+- Remaining known difference: the hub bills every cache write at 1.25×; Claude Code's 1-hour writes
+  bill at 2×, which `tools/savings.py` counts. Small on this machine; not yet reconciled.
+
+## 2026-10-04 · Optimization Atlas (`docs/atlas/`)
+- 38 optimization scenarios in 8 layers (caching, model choice, reasoning & output, context, request &
+  API, agent workflow, governance, infrastructure), each with the exact parameters it changes (knob,
+  value, where), quality risk, latency effect, opthub evidence and a caveat. Inspired by battleships.dev.
+- `engine.js` prices every scenario against a workload you set — best and worst case in $/month — and
+  says how. Ranked by worst case by default: what you can count on, not what a vendor quotes.
+- Trust labels: 5 measured (opthub), 8 priced, 6 published, 19 guess. Measured worst cases are kept
+  even when they are large losses: routing whole tasks to Sonnet is −$4.7k/month on the default
+  workload, from J3's re-runs where the Sonnet arm cost 2.4× and 3.9× more per task.
+- On the default (a 10-person team on this machine's measured month, ~$9.9k/month), the safest lever
+  is moving Opus 5 → Opus 5.5: 20% list-price drop, worst case $956/month.
+- Published with `scenarios.json`, `engine.js` and `llms.txt` beside the page for agents.
+
+## 2026-09-30 · LLM Light profiles (e2b: config, renderer, hook, CLI, Hub → Profiles)
+- Five profiles in `config/llmlight-profiles.json`: laptop-guarded, laptop-balanced, sandbox-lean,
+  ci-strict, frontier-governed — each a bundle of classifier, routing rules, cache, budget, audit, and
+  Claude Code settings. Rules route to tiers (frontier/mid/small); the target maps tiers to models.
+- `assets/llmlight_router.py` is a LiteLLM `CustomLogger`: per request it classifies the call from the
+  model name Claude Code asked for (`llmlight-background`, `llmlight-subagent`, else main), applies the
+  rules and never_downgrade keywords, rewrites the model to a tier, and audits numbers only.
+- Tested on LiteLLM 1.103 with mock upstreams: all four routing cases correct, confirmed against
+  LiteLLM's own served-deployment record. Sandbox (Bedrock) configs for three profiles load cleanly.
+- A routed arm is priced from the hook's audit (LiteLLM's `response_cost` per served tier), because
+  Claude Code's `modelUsage` names the model *before* routing and would price every call as requested.
+- Not yet run against a real upstream or in an E2B arm.
+
+## 2026-09-29 · SPEC v0.3 — session storage, centralisation, scale
+- `SPEC.md` §5.3 inventories where sessions live today (eight places, one machine, 30-day raw TTL)
+  and what that cannot do. The worst gap: sandbox arms run with `--no-session-persistence`, so
+  sandbox sessions — Phase 2's whole claim — leave no transcript at all.
+- §5.4: raw stays at the edge; a ~1 KB derived record (`opthub.session/1`, built from what J3
+  already computes) travels. Three sources: transcript sweep (built), Claude Code OTel (to verify),
+  capture proxy (specced). `opt ship` on the existing Stop hook, offline outbox, dry-run view.
+- §5.5: ingest → Postgres + object store → classifier service → budgeted re-run queue → hub and
+  policy service. Sized from this machine: storage and classification are trivial at 1,000
+  developers; **re-runs are the cost that scales** (~$8k/day at the measured 60% `unclear` rate and
+  $5–10 per re-run), so the budget ledger sits in front of the queue and verdicts are reused per
+  (project × class) cell.
+
 ## 2026-09-29 · J3 → Hub: Triage tab, re-run on Sonnet when Jev cannot answer, sandbox knobs
 - **Work signals** added to C1 (files touched, lines changed, files edited 3+ times, test runs and
   failures, tool errors, commits — counts from tool calls, no paths or code). With them Jev answers
@@ -322,3 +373,26 @@
   50%, first real G2 exercise) · E4 does the TTL result invert on loop-shaped traffic? (UC-6) ·
   E5 context-lifecycle replay (ranks UC-8) · E6 calibrate the stability gate's `k ∈ {3,5,10}`
   (SPEC §14 open question 5).
+
+## 2026-09-30 · Epic RO opened — runtime optimization (`opt claude optimize`, LLM Ultra Light)
+- `docs/runtime-optimization.md` (new) and `SPEC.md` → **v0.4** §16: `opt claude optimize` starts Claude Code in
+  the Docker sandbox with the developer's terminal attached; every request goes through **ULT**, a router
+  inside the sandbox boundary that classifies (rules → Jev when unsure → persisted per-project context),
+  decides keep / route / local (Ollama), and writes a hash-chained audit log. Shadow mode is the default.
+  The provider credential lives only in the ULT container; the agent holds a dummy key.
+- Implementation in `sandbox/e2b` (uncommitted): `optimize-live.mjs`, `ult.mjs`, `lib/ult/*`,
+  `config/ult.default.json`, `template/claude/commands/optimize.md`, `test/ult.test.mjs` (69 checks, in
+  `npm test`), `opt claude optimize` wired into `opt.mjs` (agent as a command level; `opt optimize` kept as an alias).
+- **Live:** a real session routed `non-coding/summarize` to Haiku 4.5: $0.0645 vs $0.2581 at Opus 5.5 on
+  the same usage. It took four fixes, one per `400` Haiku returned (adaptive thinking, effort in two
+  places, mid-conversation system messages, betas): routing needs a per-model adapter, not a model swap.
+- First request with global MCP servers: 123 tools, 152k tokens, $0.76 in 1-hour cache writes before any
+  work. Cache writes are now priced by TTL.
+- Docker path proven up to the provider; blocked on an expired OAuth token in `sandbox/e2b/.env`.
+- Open: a parallel session built **LLM Light** (LiteLLM + Python hook + profiles) in the same repo.
+  Convergence proposed in `docs/runtime-optimization.md` §10, not done.
+- Same day: a status line shows the mode inside Claude Code (`opthub ROUTE · <class> → <model> · saved $…`);
+  startup got a progress display, a credential check that fails in under a second on a rejected token
+  (the `.env` OAuth token is expired), parallel steps and background container removal — **4.2 s** to
+  Claude Code on a Docker Desktop running 51 other containers.
+

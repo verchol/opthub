@@ -7,7 +7,7 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
 
 ## Layout
 
-- `SPEC.md` — the spec, versioned (currently **v0.2**). §2 lists what v0.1 claimed that measurement killed.
+- `SPEC.md` — the spec, versioned (currently **v0.4**). §2 lists what v0.1 claimed that measurement killed.
 - `PROGRESS.md` — dated log, newest **last**. Add an entry when a measurement changes a claim.
 - `README.md` — front door and roadmap.
 - `docs/` — `experiments.md` (E1/E1b), `optimizers.md` + `optimizers-cookbook.md` (levers),

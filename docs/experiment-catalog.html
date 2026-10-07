@@ -1,0 +1,878 @@
+<title>opthub Experiment Catalog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: the hub's catalog view: grey rail on the left (families), white list in the middle, mono labels, outlined status pills. */
+:root{
+  --bg:#ffffff; --rail:#f1f3f2; --fg:#1d2321; --muted:#5f6a66; --line:#dfe4e2; --soft:#f7f9f8;
+  --accent:#1f7a6c; --accent-soft:#e3f2ef;
+  --warn:#a8641a; --warn-soft:#fbf0e2;
+  --crit:#b23a3a; --crit-soft:#fbe9e9;
+  --info:#5b4fa8; --info-soft:#eeecf9;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141917; --rail:#1b2220; --fg:#e4ebe8; --muted:#97a39e; --line:#2c3633; --soft:#1a201e;
+  --accent:#5cc4b2; --accent-soft:#16332e; --warn:#e0a35a; --warn-soft:#3a2a16;
+  --crit:#ec8a8a; --crit-soft:#3d1f1f; --info:#a99ef0; --info-soft:#26223f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --rail:#1b2220; --fg:#e4ebe8; --muted:#97a39e; --line:#2c3633; --soft:#1a201e;
+  --accent:#5cc4b2; --accent-soft:#16332e; --warn:#e0a35a; --warn-soft:#3a2a16;
+  --crit:#ec8a8a; --crit-soft:#3d1f1f; --info:#a99ef0; --info-soft:#26223f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans);margin:0}
+.app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100%}
+aside{background:var(--rail);border-right:1px solid var(--line);padding:24px 16px;display:flex;flex-direction:column;gap:20px}
+.brand{font:600 15px var(--sans)}
+.brand small{display:block;font:12px var(--mono);color:var(--muted);margin-top:2px}
+.rail{display:flex;flex-direction:column;gap:2px}
+.rail button{all:unset;cursor:pointer;display:flex;justify-content:space-between;padding:6px 10px;border-left:2px solid transparent;color:var(--muted);font-size:14px}
+.rail button:hover{color:var(--fg)}
+.rail button[aria-pressed="true"]{color:var(--fg);border-left-color:var(--accent);background:var(--bg)}
+.rail button:focus-visible,.btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rail .n{font:12px var(--mono);font-variant-numeric:tabular-nums}
+.railhead{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 10px 6px}
+main{padding-block:28px 64px;padding-inline:32px;min-width:0}
+h1{font:600 26px/1.2 var(--sans);margin:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;text-wrap:balance}
+.chip{font:12px var(--mono);border:1px solid var(--line);padding:2px 8px;border-radius:3px;color:var(--muted);font-weight:400}
+.sub{font:13px var(--mono);color:var(--muted);margin:6px 0 20px}
+.intro{max-width:70ch;color:var(--fg);margin:0 0 20px}
+.tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--line);margin-bottom:20px}
+.tile{padding:12px 16px;border-right:1px solid var(--line)}
+.tile:last-child{border-right:0}
+.tile b{display:block;font:600 22px var(--sans);font-variant-numeric:tabular-nums}
+.tile span{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.bar input,.bar select{font:13px var(--sans);color:var(--fg);background:var(--bg);border:1px solid var(--line);padding:8px 10px;border-radius:3px;min-width:0}
+.bar input{flex:1 1 220px}
+.btn{font:13px var(--mono);color:var(--accent);background:var(--bg);border:1px solid var(--accent);padding:8px 12px;border-radius:3px;cursor:pointer}
+.btn:hover{background:var(--accent-soft)}
+.count{font:12px var(--mono);color:var(--muted);margin-bottom:8px}
+.list{border-top:1px solid var(--line)}
+details.exp{border-bottom:1px solid var(--line)}
+details.exp summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,220px) 140px minmax(0,1fr) 130px 120px;gap:16px;padding:14px 8px;align-items:start}
+details.exp summary::-webkit-details-marker{display:none}
+details.exp summary:hover{background:var(--soft)}
+details.exp[open] summary{background:var(--soft)}
+.id{font:500 13px var(--mono);word-break:break-word}
+.id small{display:block;font:12px var(--sans);color:var(--muted);margin-top:2px;font-weight:400}
+.fam{font:12px var(--mono);border:1px solid var(--line);padding:1px 7px;border-radius:3px;justify-self:start;color:var(--fg)}
+.what{font-size:14px;min-width:0}
+.pill{font:12px var(--mono);padding:1px 8px;border-radius:3px;border:1px solid;justify-self:start;white-space:nowrap}
+.s-runnable{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.s-gateway{color:var(--crit);border-color:var(--crit);background:var(--crit-soft)}
+.s-proposed{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.s-offline{color:var(--info);border-color:var(--info);background:var(--info-soft)}
+.body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 32px;padding:4px 8px 22px}
+.body h4{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+.body p{margin:0;font-size:14px;max-width:68ch}
+.body .full{grid-column:1/-1}
+.sel{display:flex;flex-wrap:wrap;gap:6px}
+.sel code{font:12px var(--mono);background:var(--soft);border:1px solid var(--line);padding:1px 6px;border-radius:3px}
+.vlist{display:flex;flex-direction:column;gap:6px}
+.v{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:14px}
+.v code{font:500 12px var(--mono);color:var(--accent)}
+.v.sec code{color:var(--muted)}
+.basis{font:12px var(--mono);color:var(--muted)}
+.lbl{font:11px var(--mono);border:1px solid var(--line);padding:0 5px;border-radius:3px;margin-right:4px}
+section.legend{margin-top:48px}
+h2{font:600 19px var(--sans);margin:0 0 4px}
+.legend .sub{margin-bottom:14px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px}
+th{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--soft)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td code{font:500 12px var(--mono);color:var(--accent)}
+.rules{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.rules div{border-top:2px solid var(--fg);padding-top:10px;font-size:14px}
+.rules b{display:block;font:500 13px var(--mono);margin-bottom:4px}
+.empty{padding:24px 8px;color:var(--muted)}
+.save{font:12px var(--mono);font-variant-numeric:tabular-nums;display:flex;flex-direction:column;gap:4px;min-width:0}
+.save b{font-weight:500;font-size:13px}
+.save .meter{height:4px;background:var(--line);border-radius:2px;overflow:hidden;width:100%;max-width:120px}
+.save .meter i{display:block;height:100%;background:var(--accent)}
+.save.neg b{color:var(--crit)}
+.save .un{color:var(--muted)}
+.dg{font:11px var(--mono);color:var(--info);margin-top:2px}
+figure.fig{margin:0;border:1px solid var(--line);background:var(--soft);padding:16px;border-radius:3px;min-width:0}
+figure.fig svg{display:block;width:100%;height:auto;max-width:760px;color:var(--fg);font-family:var(--mono)}
+figure.fig figcaption{font-size:13px;color:var(--muted);margin-top:10px;max-width:72ch}
+figure.top{margin:0 0 24px}
+.svgwrap{overflow-x:auto}
+svg text{fill:currentColor;font-size:12px}
+svg .t-s{font-size:11px}
+svg .t-m{fill:var(--muted)}
+svg .t-a{fill:var(--accent)}
+svg .t-c{fill:var(--crit)}
+svg .ln{stroke:currentColor;fill:none;stroke-width:1.5}
+svg .ln-m{stroke:var(--muted);fill:none;stroke-width:1.5}
+svg .ln-a{stroke:var(--accent);fill:none;stroke-width:2}
+svg .ln-c{stroke:var(--crit);fill:none;stroke-width:1.5}
+svg .dash{stroke-dasharray:5 4}
+svg .bx{fill:var(--bg);stroke:currentColor;stroke-width:1.2}
+svg .bx-a{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+svg .bx-m{fill:var(--bg);stroke:var(--muted);stroke-width:1.2;stroke-dasharray:4 3}
+svg .bx-c{fill:var(--crit-soft);stroke:var(--crit);stroke-width:1.2}
+svg .f-a{fill:var(--accent)} svg .f-c{fill:var(--crit)} svg .f-m{fill:var(--muted)} svg .f-l{fill:var(--line)}
+svg .f-as{fill:var(--accent);opacity:.18} svg .f-i{fill:var(--info)}
+svg .mk{fill:currentColor} svg .mk-a{fill:var(--accent)} svg .mk-m{fill:var(--muted)} svg .mk-c{fill:var(--crit)}
+.chk{font:13px var(--sans);display:flex;align-items:center;gap:6px;color:var(--muted)}
+.note{font:12px var(--mono);color:var(--muted);margin:-8px 0 16px}
+.toast{font:12px var(--mono);color:var(--accent)}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  aside{border-right:0;border-bottom:1px solid var(--line);padding:16px}
+  .rail{flex-direction:row;flex-wrap:wrap;gap:4px}
+  .rail button{border-left:0;border-bottom:2px solid transparent;padding:4px 8px}
+  .rail button[aria-pressed="true"]{border-bottom-color:var(--accent)}
+  .rail .n{margin-left:6px}
+  main{padding-inline:16px}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tile{border-bottom:1px solid var(--line)}
+  details.exp summary{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}
+  details.exp summary .id{grid-column:1;grid-row:1}
+  details.exp summary .pill{grid-column:2;grid-row:1}
+  details.exp summary .fam{grid-column:1;grid-row:2}
+  details.exp summary .save{grid-column:2;grid-row:2;align-items:flex-end}
+  details.exp summary .what{grid-column:1/-1;grid-row:3}
+  .body{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <aside>
+    <div class="brand">Optimization Hub<small>experiment catalog · v0.2</small></div>
+    <div>
+      <div class="railhead">Family</div>
+      <nav class="rail" id="rail" aria-label="Filter by family"></nav>
+    </div>
+  </aside>
+  <main>
+    <h1>Experiments <span class="chip">Catalog</span></h1>
+    <div class="sub">every experiment opthub can run · which session to replay · how the result is verified</div>
+    <p class="intro">Each experiment takes one real Claude Code session, changes one thing, and checks whether the job still gets done for less money. Open a row to see which session to use, how the result is checked, and how much it could save.</p>
+
+    <figure class="fig top" id="pipeline"></figure>
+
+    <div class="tiles" id="tiles"></div>
+    <p class="note">Potential saving is measured on the pinned E1b month: 214 sessions, $508.80 at API list price (docs/data/e1b-sessions.csv). Each figure is that lever alone. Figures do not add up.</p>
+
+    <div class="bar">
+      <label for="q" hidden>Search</label>
+      <input id="q" type="search" placeholder="filter id, lever, session…">
+      <label for="fStatus" hidden>Status</label>
+      <select id="fStatus"></select>
+      <label for="fVer" hidden>Verification</label>
+      <select id="fVer"></select>
+      <label for="fSort" hidden>Order</label>
+      <select id="fSort"><option value="">catalog order</option><option value="save">largest saving first</option></select>
+      <label class="chk" for="fDia"><input type="checkbox" id="fDia"> with diagram</label>
+      <button class="btn" id="copy" type="button">copy JSON</button>
+      <span class="toast" id="toast" aria-live="polite"></span>
+    </div>
+    <div class="count" id="count"></div>
+    <div class="list" id="list"></div>
+
+    <section class="legend" id="verification">
+      <h2>Verification mechanisms</h2>
+      <div class="sub">primary decides the verdict · secondary is reported next to it</div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>code</th><th>mechanism</th><th>what it proves</th><th>state</th><th>source</th></tr></thead>
+        <tbody id="vtable"></tbody>
+      </table></div>
+    </section>
+
+    <div class="rules">
+      <div><b>n = 1 is not a finding</b>Three repeats per arm is the minimum before a verdict is quoted. Identical runs flip about 5% of outcomes (arXiv 2608.23023, via docs/evidence-catalog.md).</div>
+      <div><b>Arms vs arms</b>A replay can finish in five turns where the real session took seven hundred. Comparing to the original measures the replay's incompleteness.</div>
+      <div><b>Every saving is labelled</b><span class="lbl">priced</span>re-priced tokens, a ceiling · <span class="lbl">guess</span>stated basis · <span class="lbl">detector</span>measured, says no · or measured.</div>
+      <div><b>One variable per arm</b>Stacked arms are only readable after each single-lever arm has run on the same session. Attribution is marginal, in applied order (SPEC R1).</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const V = {
+  ART:   {name:"Artifact check",           proves:"The arm produced the requested files. Files, lines, bytes and tests measured from the diff. Cost is not compared until this passes.", state:"built",  src:"report → delivered"},
+  TEST:  {name:"Deterministic checks",     proves:"Run the task's tests, schema, regex and tool-call arity checks. Fast, free, and runs before any judge.", state:"spec'd", src:"SPEC §6.1"},
+  BLIND: {name:"Blind rubric judge",       proves:"Six criteria scored 1–10 by a pinned model. Arms in randomised order, identities and prices withheld.", state:"built",  src:"report → blind score"},
+  PAIR:  {name:"Pairwise + position swap", proves:"Which arm is better, asked twice with the order swapped to cancel position bias.", state:"spec'd", src:"SPEC §6.1"},
+  SHADOW:{name:"Shadow judges",            proves:"Jev, a local Ollama model or a free-tier API score the same pairs. Reported with their agreement rate, never as the score of record.", state:"spec'd", src:"SPEC §6.1.1"},
+  REP:   {name:"Repeats + A/A floor",      proves:"Each arm ×3, plus a no-change arm. The gap between identical arms is the noise floor a real delta must clear.", state:"built",  src:"report → what changed"},
+  STAB:  {name:"Stability gate",           proves:"Same proposal on k = 5 sub-windows. The sign must never flip and the bootstrap CI must exclude 0.", state:"spec'd", src:"SPEC §6.5"},
+  COST:  {name:"Cost + turns gate",        proves:"Cost falls and turns stay within the lever's bound. Catches levers that save per turn and lose per task.", state:"built",  src:"config/optimizations.json gates"},
+  LAT:   {name:"Latency gate",             proves:"TTFT p95 and total p95 gated separately, each ≤ 1.05× baseline.", state:"spec'd", src:"SPEC §6.2"},
+  TRACE: {name:"Behaviour diff",           proves:"Counts re-reads of the same file, re-runs of the same command and tool errors per arm. This is where compaction and truncation fail.", state:"proposed", src:"evidence-catalog falsifiers"},
+  WIRE:  {name:"Wire / proxy evidence",    proves:"What the request actually carried: cache hit rate, cache_control, proxy stats, router audit log. Proves the lever fired.", state:"built",  src:"LiteLLM, headroom /stats, audit.mjs"},
+  SEC:   {name:"Security gate",            proves:"No new egress, target model on the allowlist, no redaction weakened, no new tool granted.", state:"spec'd", src:"SPEC §6.3"},
+  PRICE: {name:"Offline re-pricing",       proves:"This session's own tokens re-priced under the lever. No spend, no sandbox. A ceiling, labelled priced.", state:"built",  src:"tools/savings.py, costmodel.py"},
+  TRUTH: {name:"Planted ground truth",     proves:"The difference is planted, so the right verdict is known. Measures false positives on A/A and the detection curve.", state:"spec'd", src:"docs/judge-calibration-spec.md"},
+  LABEL: {name:"Labelled set + recall",    proves:"Classifier output against hand labels. Recall on the classes that cost money, not overall accuracy.", state:"built",  src:"experiments/*-triage"},
+  GWJ:   {name:"Gateway judge",            proves:"Kong ai-llm-as-judge samples live responses and scores them 1–100. Continuous, and itself a cost.", state:"needs gateway", src:"template/kong"}
+};
+
+const STATUS = {runnable:"runnable", gateway:"needs gateway", proposed:"proposed", offline:"offline · no spend"};
+
+const E = [
+// ---------- model routing
+{id:"route-cheaper-frontier", title:"Route to a cheaper frontier model", fam:"model-routing", status:"runnable",
+ what:"The whole task goes to Sonnet instead of Opus.",
+ value:"The largest single price lever, and the one most likely to fail the accuracy gate. A blocked routing proposal is still a useful answer.",
+ session:["model = opus-5","kind = code","artifacts ≥ 1","context < 200k","potential = high"],
+ why:"Opus sessions that produced files give the judge something concrete to grade. Keep context under 200k so price tiers stay comparable.",
+ primary:["ART","BLIND","REP"], secondary:["PAIR","SHADOW","COST","TRACE"],
+ gate:"Judge score drops ≤ 1/10 against baseline.",
+ basis:"$302.52 ceiling on the E1 month (59.5%)", label:"priced"},
+{id:"route-open-weights", title:"Route to open weights (Qwen3-Coder-480B)", fam:"model-routing", status:"runnable",
+ what:"Serverless Qwen3-Coder-480B on Bedrock, behind LiteLLM, with Claude Code unchanged.",
+ value:"Shows where open weights hold on real work. The expected failure is tool-calling reliability, not code quality.",
+ session:["kind = code","artifacts ≥ 1","turns 20–200","mechanical edits"],
+ why:"Mechanical multi-file edits are where the hypothesis says it holds. Pick one session that needs a plan as a counter-case.",
+ primary:["ART","BLIND","REP"], secondary:["TEST","TRACE","COST"],
+ gate:"Judge ≥ baseline − 2, and the requested files exist.",
+ basis:"~14× cheaper per input token (catalog hypothesis)", label:"guess"},
+{id:"route-open-weights-small", title:"Route to small open weights (Qwen3-Coder-30B)", fam:"model-routing", status:"runnable",
+ what:"The cheapest model on the shelf, capped at $2 per arm.",
+ value:"Finds the floor. It is not expected to pass. It shows how cheap a failed run looks when nobody checks the artifacts.",
+ session:["kind = code","single-file task","turns < 50"],
+ why:"A small task gives the small model a fair chance. On anything multi-file it is expected to loop or stop short.",
+ primary:["ART"], secondary:["BLIND","COST","TRACE"],
+ gate:"Artifacts must be non-empty before cost is compared.",
+ basis:"~70× cheaper per input token (catalog hypothesis)", label:"guess"},
+{id:"litellm-route-side-calls", title:"Route subagents and side calls to Sonnet", fam:"model-routing", status:"runnable",
+ what:"The main loop stays on its model. Subagents, titles and summaries go to Sonnet through a LiteLLM route.",
+ value:"Splits routing per request, which a whole-task swap cannot do. The coding loop is untouched, so quality risk is concentrated in subagents.",
+ session:["model = opus-5","uses Task / subagents","kind = code or explore"],
+ why:"Only sessions that spawn subagents have anything to route. Without a route an Opus baseline pays Opus prices for session titles.",
+ primary:["BLIND","WIRE","REP"], secondary:["ART","COST"],
+ gate:"Judge drops ≤ 1/10 against baseline.",
+ basis:"subagent share of spend, per session", label:"priced"},
+{id:"subagent-haiku", title:"Subagents on Haiku", fam:"model-routing", status:"proposed",
+ what:"CLAUDE_CODE_SUBAGENT_MODEL=haiku with FORCE=1, or an Explore agent with model: haiku.",
+ value:"Read-only exploration returns a short summary to a strong parent, so a cheap model may be enough. Highest quality risk of the client-side levers.",
+ session:["kind = explore","uses Task / subagents","review or search-heavy"],
+ why:"Exploration and review sessions are where subagents do the reasoning. A missed security finding is the failure to look for.",
+ primary:["BLIND","PAIR","REP"], secondary:["TRACE","COST","SHADOW"],
+ gate:"No missed findings in the blind comparison; per-task cost falls.",
+ basis:"evidence-catalog rank 4; public 30–60% claims are blog-grade", label:"guess"},
+{id:"cheap-reviewer", title:"Downgraded reviewer subagent", fam:"model-routing", status:"runnable",
+ what:"A cheaper reviewer subagent gates completion. No other scaffolding changes.",
+ value:"Tests whether a cheap second pair of eyes catches enough to be worth its tokens.",
+ session:["kind = code","artifacts ≥ 1","tests present"],
+ why:"The reviewer needs something to review. Sessions with tests let the deterministic check catch what the reviewer misses.",
+ primary:["TEST","BLIND","REP"], secondary:["ART","COST"],
+ gate:"Tests pass at least as often as baseline; cost of review < cost it saves.",
+ basis:"scenario cheap-reviewer.md", label:"guess"},
+{id:"bedrock-parity", title:"Same model, different provider", fam:"model-routing", status:"runnable",
+ what:"Opus served through AWS Bedrock instead of the Anthropic API, same price card.",
+ value:"An A/A test on the billing path. It should show no quality difference; if it does, the sandbox is measuring the provider.",
+ session:["any session already run as baseline","artifacts ≥ 1"],
+ why:"Reuse a session with a recorded baseline so the delta is only the provider.",
+ primary:["REP","BLIND"], secondary:["LAT","WIRE"],
+ gate:"Judge gap within the A/A noise floor.",
+ basis:"scenario anthropic-bedrock.md", label:"guess"},
+{id:"ult-runtime-router", title:"Per-request runtime router", fam:"model-routing", status:"proposed",
+ what:"opt claude optimize puts the LLM Ultra Light router in the request path of a live session.",
+ value:"Moves routing from replay to the live loop. The router's audit log is the evidence of what it decided and why.",
+ session:["live session","kind = code","model = opus-5"],
+ why:"Run on a fresh session, then replay the same request with the router off as the baseline arm.",
+ primary:["WIRE","BLIND","REP"], secondary:["LAT","SEC","COST"],
+ gate:"Audit log shows routing fired; judge drops ≤ 1/10.",
+ basis:"docs/runtime-optimization.md (epic RO)", label:"guess"},
+
+// ---------- context lifecycle
+{id:"context-compaction", title:"Auto-compact the context window", fam:"context-lifecycle", status:"runnable",
+ what:"Same model; Claude Code compacts at 100k instead of carrying every turn.",
+ value:"Acts on the top lever. Long sessions re-read their whole history from cache on every turn.",
+ session:["median context ≥ 250k","turns ≥ 200","kind = code"],
+ why:"On short sessions compaction is a no-op that costs one summarisation. The money is in the long ones.",
+ primary:["ART","BLIND","COST","REP"], secondary:["TRACE","WIRE"],
+ gate:"Artifacts still satisfy the request; saving exceeds the summarisation cost.",
+ basis:"53.9% of E1 spend was requests at ≥ 250k context", label:"priced"},
+{id:"autocompact-250k", title:"Lower the auto-compact threshold", fam:"context-lifecycle", status:"proposed",
+ what:"autoCompactWindow 250000 or CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=25, against the ~967K default.",
+ value:"The top-ranked replay candidate. Claude Code's default leaves the largest dollar pool untouched.",
+ session:["median context ≥ 250k","model = opus-5","1M-context session"],
+ why:"Only sessions that pass 250k are touched. Watch for lost file tracking after compaction.",
+ primary:["COST","BLIND","REP"], secondary:["TRACE","WIRE","STAB"],
+ gate:"Net dollars fall after compaction calls and cache re-writes are counted.",
+ basis:"evidence-catalog rank 1", label:"guess"},
+{id:"compaction-plus-cheap-model", title:"Cheap model + compaction", fam:"context-lifecycle", status:"runnable",
+ what:"Qwen3-Coder-480B with compaction on.",
+ value:"Shows whether the two cheapest levers compound or cancel.",
+ session:["same session as route-open-weights","same session as context-compaction"],
+ why:"Readable only after both single-lever arms have run on this session.",
+ primary:["ART","BLIND","REP"], secondary:["COST","TRACE"],
+ gate:"Interpreted only against both single-lever results.",
+ basis:"catalog stacked arm", label:"guess"},
+{id:"context-reset-120k", title:"Context reset simulation (E5)", fam:"context-lifecycle", status:"offline",
+ what:"Re-price the longest sessions as if they were compacted or reset at 120k.",
+ value:"Ranks the context-lifecycle lever without spending anything. Tells you which sessions are worth a real replay.",
+ session:["the two 250k+ sessions","top cost decile"],
+ why:"Free, so run it first. It produces the shortlist for context-compaction.",
+ primary:["PRICE"], secondary:["STAB"],
+ gate:"No verdict on quality. It only sizes the prize.",
+ basis:"docs/experiments.md E5", label:"priced"},
+{id:"tool-output-caps", title:"Cap tool output", fam:"context-lifecycle", status:"proposed",
+ what:"bashOutputMaxChars 16000, MAX_MCP_OUTPUT_TOKENS 10000, file-read caps, plus a log-digging subagent.",
+ value:"Verbose tool results are carried in every later turn. This is the deterministic lever with the best public evidence.",
+ session:["Bash-heavy","test or build logs","median context ≥ 150k"],
+ why:"Sessions that run builds and tests produce the long outputs this clips.",
+ primary:["TEST","TRACE","COST"], secondary:["BLIND","REP"],
+ gate:"No rise in re-runs or re-reads; failing-test detail is not lost.",
+ basis:"evidence-catalog rank 2", label:"guess"},
+{id:"tool-search", title:"Defer MCP schemas with tool search", fam:"context-lifecycle", status:"gateway",
+ what:"ENABLE_TOOL_SEARCH=true behind a gateway that forwards tool_reference.",
+ value:"Gateway sessions carry full MCP schemas every turn. This exposes a hidden cost of adopting a gateway.",
+ session:["custom ANTHROPIC_BASE_URL","many MCP servers"],
+ why:"Sessions with a small tool prefix have nothing to save. Check the prefix first.",
+ primary:["WIRE","COST","BLIND"], secondary:["TRACE"],
+ gate:"Schema savings exceed any extra cache invalidations.",
+ basis:"evidence-catalog rank 3", label:"guess"},
+{id:"headroom-proxy", title:"Context-compaction proxy", fam:"context-lifecycle", status:"runnable",
+ what:"Headroom proxy sits between Claude Code and the model. Same prompt, different transport.",
+ value:"Tests compaction done outside the client, which works for agents you cannot reconfigure.",
+ session:["median context ≥ 150k","kind = code"],
+ why:"The proxy only has something to compact on long contexts.",
+ primary:["WIRE","ART","BLIND"], secondary:["COST","LAT","REP"],
+ gate:"Proxy /stats show compaction fired; judge holds.",
+ basis:"scenario headroom.md", label:"guess"},
+
+// ---------- prefix
+{id:"prefix-trim", title:"Slim the prefix", fam:"prefix", status:"proposed",
+ what:"Shrink CLAUDE.md; --exclude-dynamic-system-prompt-sections for headless runs.",
+ value:"The static prefix is re-read on every turn, so trimming it cuts the cache-read line almost proportionally.",
+ session:["large CLAUDE.md","turns ≥ 100","cache reads dominate cost"],
+ why:"Many turns multiply the saving. A session that relies on project conventions shows the failure mode.",
+ primary:["BLIND","COST","REP"], secondary:["TRACE"],
+ gate:"No turns spent rediscovering conventions; judge holds.",
+ basis:"lever A = $104.51 at an assumed 25% trim", label:"guess"},
+{id:"tool-schema-slimming", title:"Strip unused tool schemas", fam:"prefix", status:"proposed",
+ what:"--strict-mcp-config and a project-only tool set, so unused MCP schemas leave the prefix.",
+ value:"Smaller prefix and a cleaner tool choice. The case for it may be accuracy more than cost.",
+ session:["many MCP servers","few distinct tools used"],
+ why:"Pick sessions whose tool tags show few tools used against a large configured set.",
+ primary:["WIRE","BLIND","REP"], secondary:["COST","TRACE"],
+ gate:"No tool the session needed is missing from the arm.",
+ basis:"docs/optimizers.md §3.3", label:"guess"},
+{id:"prefix-anatomy", title:"Prefix anatomy (E2)", fam:"prefix", status:"offline",
+ what:"Split cache-read tokens into system prompt, tool schemas, CLAUDE.md, history and tool results.",
+ value:"Replaces the assumed 25% trim with a measured one, and ranks every prefix lever.",
+ session:["all sessions in window","needs wire capture"],
+ why:"A measurement over the whole population, not a replay.",
+ primary:["WIRE","PRICE"], secondary:[],
+ gate:"No verdict. It sets the size of prefix-trim and tool-schema-slimming.",
+ basis:"docs/experiments.md E2", label:"detector"},
+
+// ---------- effort & output
+{id:"effort-medium", title:"Lower the reasoning effort", fam:"effort", status:"runnable",
+ what:"Same model, --effort medium.",
+ value:"The lowest-risk lever. Its ceiling is small, which is the point: it shows developers that effort is not where the money is.",
+ session:["kind = code","thinking share high","artifacts ≥ 1"],
+ why:"Sessions with a large thinking share have the most to lose and the most to save.",
+ primary:["COST","BLIND","REP"], secondary:["TRACE"],
+ gate:"Cost falls and turns rise ≤ 25%.",
+ basis:"output ≈ 19% of E1 cost", label:"priced"},
+{id:"effort-low", title:"Minimum reasoning effort", fam:"effort", status:"runnable",
+ what:"--effort low.",
+ value:"Finds the floor of the within-model lever. Expected to win on mechanical edits and lose where a plan is needed.",
+ session:["mechanical edits","one planning-heavy counter-case"],
+ why:"Run both shapes so the result shows where the line is.",
+ primary:["BLIND","TEST","REP"], secondary:["COST","TRACE"],
+ gate:"Judge score does not drop at all.",
+ basis:"catalog hypothesis", label:"guess"},
+{id:"claude-thinking-cap", title:"Cap thinking tokens", fam:"effort", status:"runnable",
+ what:"MAX_THINKING_TOKENS=8000.",
+ value:"Thinking is billed as output. Saves on hard tasks, which is also where it hurts most.",
+ session:["thinking share high","kind = code"],
+ why:"Only sessions that think past 8k tokens per turn are affected.",
+ primary:["BLIND","REP"], secondary:["COST","TRACE"],
+ gate:"Judge drops ≤ 1/10.",
+ basis:"thinking tokens = 5.4% of E1b spend", label:"priced"},
+{id:"effort-sweep", title:"Effort sweep (E3)", fam:"effort", status:"runnable",
+ what:"The same request at low, medium, high and xhigh, three repeats each.",
+ value:"Replaces the invented effort saving with a curve, and is the first full exercise of the accuracy gate.",
+ session:["3–5 sessions with tests","mixed kinds"],
+ why:"Sessions with tests give each effort level a pass/fail, not only a judge score.",
+ primary:["TEST","BLIND","REP","STAB"], secondary:["COST","LAT"],
+ gate:"Quality-per-dollar curve with CIs; no single point estimate.",
+ basis:"docs/experiments.md E3", label:"guess"},
+{id:"fast-mode-detector", title:"Mid-session fast-mode detector", fam:"effort", status:"offline",
+ what:"Find turns where fast mode was enabled mid-session and the prefix was re-billed.",
+ value:"A detector. If transcripts show no mid-session enables it says no, and the lever is dropped.",
+ session:["all sessions in window"],
+ why:"A scan over transcripts, no replay.",
+ primary:["PRICE"], secondary:["WIRE"],
+ gate:"Emit nothing if there are no mid-session enables.",
+ basis:"evidence-catalog rank 8", label:"detector"},
+
+// ---------- agent behaviour (prompt)
+{id:"terse-context", title:"Compress the prompt", fam:"agent-behaviour", status:"runnable",
+ what:"An appended instruction: work from the files, do not restate the spec or echo file contents.",
+ value:"Client-side approximation of Kong's prompt compressor. Cheapest possible experiment: a paragraph of text.",
+ session:["kind = code","long assistant messages","artifacts ≥ 1"],
+ why:"Sessions where the agent restates and summarises a lot have the most to trim.",
+ primary:["BLIND","COST","REP"], secondary:["ART"],
+ gate:"Judge holds; output tokens fall.",
+ basis:"approximation; the real compressor needs a gateway", label:"guess"},
+{id:"plan-first", title:"Plan before code", fam:"agent-behaviour", status:"runnable",
+ what:"The agent writes a numbered behaviour checklist before any code.",
+ value:"Tests whether up-front planning costs less than rework. Can win on quality and lose on cost, or the reverse.",
+ session:["kind = code","spec-driven task","tests present"],
+ why:"A task with a spec gives the checklist something to enumerate and the tests something to check.",
+ primary:["TEST","BLIND","REP"], secondary:["COST","TRACE"],
+ gate:"Tests pass at least as often; cost within the noise floor or lower.",
+ basis:"scenario plan-first.md", label:"guess"},
+{id:"batch-checks", title:"One scripted verification", fam:"agent-behaviour", status:"runnable",
+ what:"Collapse verification into one scripted call instead of many one-off probes.",
+ value:"Each probe is a round trip whose output re-enters the context. Fewer probes, shorter history.",
+ session:["Bash-heavy","many short tool calls","kind = code"],
+ why:"Sessions with many probe-style Bash calls show the effect.",
+ primary:["TRACE","COST","REP"], secondary:["TEST","BLIND"],
+ gate:"Fewer tool calls, tests unchanged.",
+ basis:"scenario batch-checks.md", label:"guess"},
+{id:"uber-factory", title:"Full factory stack", fam:"agent-behaviour", status:"runnable",
+ what:"Medium effort, compaction at 400k, slim prefix, strict MCP, cheap reviewer and a verify skill, all at once.",
+ value:"Shows the best case when everything is on. The answer is the total, not the attribution.",
+ session:["kind = code","median context ≥ 150k","tests present"],
+ why:"Run after the single-lever arms on the same session, or the result cannot be split.",
+ primary:["TEST","BLIND","COST","REP"], secondary:["TRACE","WIRE"],
+ gate:"Reported as a stack; marginal savings come from the single-lever runs.",
+ basis:"scenario uber-factory.md", label:"guess"},
+
+// ---------- caching
+{id:"litellm-cache-inject", title:"Force prompt caching at the proxy", fam:"caching", status:"runnable",
+ what:"LiteLLM adds cache_control to every request.",
+ value:"Proves rather than assumes that caching is already saturated. Pays only for clients that do not cache.",
+ session:["any session","one non-Claude-Code client if available"],
+ why:"On Claude Code it is expected to move nothing. That result is the finding.",
+ primary:["WIRE","COST"], secondary:[],
+ gate:"Cost only. A detector if it moves nothing.",
+ basis:"cache hit rate 96.8% on E1", label:"detector"},
+{id:"litellm-response-cache", title:"Exact-match response cache", fam:"caching", status:"runnable",
+ what:"LiteLLM answers byte-identical requests from cache for 10 minutes.",
+ value:"Measures how often agent turns repeat exactly. Matters for retries and repeated runs of the same task.",
+ session:["retried or repeated tasks","sdk-cli loops"],
+ why:"Interactive sessions rarely repeat. Loop-shaped traffic is where a hit can happen.",
+ primary:["WIRE","BLIND"], secondary:["ART","COST"],
+ gate:"Judge does not drop; hit count reported.",
+ basis:"catalog hypothesis: near zero on one task", label:"guess"},
+{id:"semantic-cache", title:"Semantic cache at the gateway", fam:"caching", status:"gateway",
+ what:"Kong embeds each prompt and serves a stored response for a near-duplicate.",
+ value:"Settles the vendor claim on coding traffic. Expected near zero on interactive sessions; a loose threshold returns stale answers.",
+ session:["repeated cross-session prompts","sdk-cli loops"],
+ why:"Only repeated, similar traffic can hit. Measure the false-positive rate as well as the hit rate.",
+ primary:["WIRE","BLIND","TEST"], secondary:["SEC"],
+ gate:"No stale answer the judge or tests detect.",
+ basis:"evidence-catalog: saves roughly nothing on Claude Code traffic", label:"detector"},
+{id:"ttl-by-population", title:"Cache TTL per session shape", fam:"caching", status:"offline",
+ what:"5m TTL where cache write:read > 2.0, 1h where it is < 0.5.",
+ value:"The portfolio-level TTL answer flipped sign repeatedly. Split by population, it is stable.",
+ session:["write:read > 2.0","write:read < 0.5"],
+ why:"The predicate is measured per session, so the selection is the experiment.",
+ primary:["PRICE","STAB"], secondary:["WIRE"],
+ gate:"Sign constant on all 5 sub-windows; CI excludes 0.",
+ basis:"+$12.75 over the E1b window for the 5m segment", label:"priced"},
+{id:"subagent-ttl-1h", title:"1h cache TTL for subagents", fam:"caching", status:"proposed",
+ what:"subagentPromptCacheTtl: 1h (and promptCacheTtl for API-key users).",
+ value:"Every idle gap of 5–60 minutes forces a full re-write at 5m. One avoided re-write pays the premium.",
+ session:["uses subagents","idle gaps 5–60 min"],
+ why:"Depends entirely on the idle-gap distribution, which only these transcripts can supply.",
+ primary:["PRICE","WIRE","STAB"], secondary:["COST"],
+ gate:"Avoided re-writes exceed the extra write premium.",
+ basis:"evidence-catalog rank 5", label:"guess"},
+
+// ---------- governance
+{id:"claude-max-turns", title:"Cap agent turns", fam:"governance", status:"runnable",
+ what:"--max-turns 40.",
+ value:"Bounds the worst case on sessions that loop. No saving on tasks that finish in under 40 turns.",
+ session:["turns ≥ 200","loop-shaped"],
+ why:"Only long sessions hit the cap. The judge scores whatever exists when it stops.",
+ primary:["ART","BLIND"], secondary:["COST"],
+ gate:"Judge drops ≤ 1/10.",
+ basis:"governance, not a saving", label:"guess"},
+{id:"litellm-proxy-budget", title:"Hard spend cap at the proxy", fam:"governance", status:"runnable",
+ what:"LiteLLM refuses requests past $1.50, counted where requests are served.",
+ value:"Makes the cost of stopping early visible next to the cost it prevents.",
+ session:["any session over $1.50 at baseline"],
+ why:"Below the cap nothing happens.",
+ primary:["ART","BLIND"], secondary:["WIRE"],
+ gate:"Governance; reported, not gated.",
+ basis:"bounds the worst case", label:"guess"},
+{id:"token-rate-limit", title:"Token rate limit at the gateway", fam:"governance", status:"gateway",
+ what:"Kong ai-rate-limiting-advanced per provider, sliding window.",
+ value:"A cost ceiling, not a cost cut. A 429 mid-task can trigger retries that cost more than the limit saved.",
+ session:["high-cost sessions","sdk-cli loops"],
+ why:"The limit must sit above the p99 session, or it is an availability change.",
+ primary:["TRACE","ART"], secondary:["COST","LAT"],
+ gate:"Limit above p99 session; no retry storm.",
+ basis:"governance, not a saving", label:"guess"},
+{id:"batch-deferral", title:"Defer to the Batch API", fam:"governance", status:"offline",
+ what:"Queue sessions that could wait overnight at −50% price.",
+ value:"The biggest-sounding discount and the only lever that can cost more: batch loses the cache this workload depends on.",
+ session:["entry = sdk-cli","deferral = overnight","cache reads low"],
+ why:"Only sessions whose cost is not cache reads can win. The J3 labels pick them.",
+ primary:["PRICE","LABEL"], secondary:["STAB"],
+ gate:"Floor must be positive for the selected population.",
+ basis:"J3: floor −$854.31, ceiling $254.40", label:"priced"},
+
+// ---------- trust & measurement
+{id:"aa-noise-floor", title:"A/A noise floor", fam:"measurement", status:"runnable",
+ what:"Baseline against baseline under two labels, three repeats.",
+ value:"The single most useful row. Any lever whose delta is inside this gap has not been measured.",
+ session:["every session before its first lever run"],
+ why:"Run once per session; it sets the bar for all other arms on that session.",
+ primary:["REP","BLIND"], secondary:["SHADOW","COST"],
+ gate:"Judge declares no winner; cost gap reported as the floor.",
+ basis:"report flags a no-change arm as a noise floor", label:"detector"},
+{id:"judge-calibration", title:"Judge calibration on a planted regression (J1)", fam:"measurement", status:"proposed",
+ what:"A service under load with a regression of known size; the judge sees blinded evidence.",
+ value:"Gives every judge backend a false-positive rate and a detection curve, and replaces the guessed min_agreement of 0.85.",
+ session:["synthetic: eventd + loadgen"],
+ why:"Ground truth must be planted. No real session has a known answer.",
+ primary:["TRUTH","PAIR"], secondary:["SHADOW","REP"],
+ gate:"Falsified if A/A false positives > 0.10 or swap flips > 15%.",
+ basis:"docs/judge-calibration-spec.md", label:"guess"},
+{id:"shadow-judge-agreement", title:"Shadow judge agreement", fam:"measurement", status:"proposed",
+ what:"Jev, a local Ollama model and a free-tier API score the same pairs as the pinned judge.",
+ value:"Decides which judges are trustworthy and which are free enough to run on every arm.",
+ session:["≥ 30 pairs from completed runs"],
+ why:"Reuse pairs from runs already graded by the pinned judge. No new sandbox spend.",
+ primary:["SHADOW","PAIR"], secondary:["TRUTH"],
+ gate:"Promotion only at agreement ≥ min_agreement over ≥ 30 pairs.",
+ basis:"SPEC §6.1.1", label:"guess"},
+{id:"judge-wording", title:"Criteria wording sensitivity", fam:"measurement", status:"proposed",
+ what:"Same evidence, criteria reworded; does the verdict move?",
+ value:"Rewording moved one router's confidence from about 30% to about 90% on identical inputs. A judge that moves more on wording than on evidence is an anti-signal.",
+ session:["pairs with a known verdict (A/A or J1)"],
+ why:"Needs pairs where the right answer is already known.",
+ primary:["TRUTH","PAIR"], secondary:["SHADOW"],
+ gate:"Wording effect < A/A false-positive rate.",
+ basis:"docs/router-comparison.md §1", label:"guess"},
+{id:"session-triage", title:"Session triage: rules vs Jev (J3)", fam:"measurement", status:"runnable",
+ what:"Label each session for urgency, latency, deferral, capability and context; rules first, Jev on what rules cannot settle.",
+ value:"The labels unlock routing, batch and context-split per session. Rules settle the cheap sessions; the classifier earns its keep only on interactive ones.",
+ session:["entry = cli","model = opus-5","rules answer = unclear"],
+ why:"The 28 interactive sessions carry $501.31; the 186 SDK sessions carry $7.49.",
+ primary:["LABEL","PRICE"], secondary:["SHADOW"],
+ gate:"An unclear label never unlocks a lever.",
+ basis:"experiments/session-triage (pinned ledger)", label:"priced"},
+{id:"gateway-judge", title:"Score every response at the gateway", fam:"measurement", status:"gateway",
+ what:"Kong ai-llm-as-judge samples responses and a second model scores them.",
+ value:"Turns 'did the cheap model hold up' into a continuous number in production, not a replay.",
+ session:["live gateway traffic"],
+ why:"Sampling rate must keep judging cheaper than the saving it verifies.",
+ primary:["GWJ"], secondary:["SHADOW","COST"],
+ gate:"Judging cost < verified saving.",
+ basis:"catalog gateway-judge", label:"guess"},
+
+// ---------- safety
+{id:"sanitize", title:"Strip secrets at the gateway", fam:"safety", status:"gateway",
+ what:"Kong ai-sanitizer redacts sensitive fields in request and response bodies.",
+ value:"Not a saving. It is the reason a gateway is acceptable in the request path, and it must not cost quality.",
+ session:["sessions touching config or credentials files"],
+ why:"Redacting something the model needed produces a confidently wrong answer.",
+ primary:["SEC","BLIND"], secondary:["ART","TEST"],
+ gate:"No redaction weakened; judge holds.",
+ basis:"catalog sanitize", label:"guess"}
+];
+
+const FAMS = ["model-routing","context-lifecycle","prefix","effort","agent-behaviour","caching","governance","measurement","safety"];
+
+// Potential saving on the pinned E1b month ($508.80, 214 sessions). Source per entry in `note`.
+// v = dollars, p = % of month, txt = display override, label = priced | guess | detector | measured n=1 | n/a
+const MONTH = 508.80;
+const POOL250 = {v:274.37,p:53.9,label:"priced",ceil:true,note:"Spend in sessions with median context ≥ 250k (2 sessions). The lever acts on this pool; the saving is a fraction of it, and E5 sizes that fraction."};
+const SAVE = {
+  "route-cheaper-frontier":{v:302.52,p:59.5,label:"priced",ceil:true,note:"Ledger column D: every Opus token re-priced at Sonnet 5. A ceiling that assumes a smaller model uses the same tokens."},
+  "route-open-weights":{txt:"−86.0% cost",label:"measured n=1",note:"One Auto run (optrun-0af9622d): the cheap open-weights arm cost $0.0534 against a $0.38 baseline, and blind quality fell 54 → 36. One run, so this is not a finding."},
+  "route-open-weights-small":{label:"guess",note:"~70× cheaper per input token. Expected to fail the artifact check first."},
+  "litellm-route-side-calls":{label:"unmeasured",note:"The ledger does not split subagent and title spend from the main loop. Wire capture (E2) is needed."},
+  "subagent-haiku":{label:"guess",note:"Public claims of 30–60% are blog-grade (evidence-catalog rank 4)."},
+  "cheap-reviewer":{label:"unmeasured",note:"Can raise cost: the reviewer is an extra call."},
+  "bedrock-parity":{v:0,txt:"$0 by design",label:"n/a",note:"Same price card. This experiment tests the provider path, not a saving."},
+  "ult-runtime-router":{label:"unmeasured",note:"Per-request routing. The ceiling is the routing column, $302.52."},
+  "context-compaction":POOL250, "autocompact-250k":POOL250, "context-reset-120k":POOL250,
+  "compaction-plus-cheap-model":{label:"unmeasured",note:"Read only after both single-lever arms."},
+  "tool-output-caps":{v:246.38,p:48.4,label:"priced",ceil:true,note:"Acts on cache reads ($246.38, 48.4% of the month). The tool-result share of those reads is unmeasured until E2."},
+  "tool-search":{label:"unmeasured",note:"Only sessions behind a gateway carry undeferred MCP schemas."},
+  "headroom-proxy":{label:"unmeasured",note:"Proxy /stats report what it compacted."},
+  "prefix-trim":{v:104.51,p:20.5,label:"guess",note:"Ledger column A: cache-read dollars × an assumed 25% trim. The 25% is invented; E2 replaces it."},
+  "tool-schema-slimming":{txt:"−2.7% marginal",label:"priced",note:"tools/costmodel.py: −2.7% applied after caching, −7.4% if measured first. On the model's reference workload, not on this ledger."},
+  "prefix-anatomy":{txt:"sizes A",label:"n/a",note:"A measurement. It turns prefix-trim's guess into a number."},
+  "effort-medium":{v:13.72,p:2.7,label:"guess",note:"Ledger column B: thinking dollars × an assumed 50% cut."},
+  "effort-low":{v:13.72,p:2.7,label:"guess",note:"Same column B as effort-medium. The low setting may cut more and cost turns."},
+  "claude-thinking-cap":{v:27.45,p:5.4,label:"priced",ceil:true,note:"All thinking tokens on the ledger. The ceiling if every thinking token were removed."},
+  "effort-sweep":{v:13.72,p:2.7,label:"guess",note:"Column B is the number this sweep replaces."},
+  "fast-mode-detector":{label:"detector",note:"Says no if transcripts show no mid-session enables."},
+  "terse-context":{label:"unmeasured",note:"tools/costmodel.py rejected aggressive prompt compaction (−12.6% marginal, failed the gate). This milder prompt is unmeasured."},
+  "plan-first":{label:"unmeasured",note:"May raise cost and lower rework."},
+  "batch-checks":{label:"unmeasured",note:"Fewer probe round trips; size unknown."},
+  "uber-factory":{label:"unmeasured",note:"A stack. Marginal savings come from single-lever runs."},
+  "litellm-cache-inject":{v:0,txt:"≈ $0",label:"detector",note:"Cache hit rate is already 96.8%."},
+  "litellm-response-cache":{label:"guess",note:"Near zero on one interactive task."},
+  "semantic-cache":{v:0,txt:"≈ $0",label:"detector",note:"Interactive coding sessions rarely repeat prompts across sessions."},
+  "ttl-by-population":{v:12.75,p:+(12.75/MONTH*100).toFixed(1),label:"priced",note:"5m TTL on write:read > 2.0 sessions only (SPEC §6.6). Applied to every session, the same lever reads +$11.05 on E1b and −$4.24 on E1: the sign flips."},
+  "subagent-ttl-1h":{label:"unmeasured",note:"Depends on the idle-gap distribution."},
+  "claude-max-turns":{v:0,txt:"cap, not a cut",label:"n/a",note:"Changes the worst case, not the mean."},
+  "litellm-proxy-budget":{v:0,txt:"cap, not a cut",label:"n/a",note:"Changes the worst case, not the mean."},
+  "token-rate-limit":{v:0,txt:"cap, not a cut",label:"n/a",note:"Changes the worst case, not the mean."},
+  "batch-deferral":{v:254.40,lo:-854.31,txt:"−$854.31 → $254.40",label:"priced",note:"J3: every session forced to overnight batch. The floor is negative because batch loses the cache."},
+  "aa-noise-floor":{txt:"spends",label:"n/a",note:"Costs one extra arm per session. It sets the bar every saving has to clear."},
+  "judge-calibration":{txt:"spends",label:"n/a",note:"Measures the judge, not a lever."},
+  "shadow-judge-agreement":{txt:"≈ free",label:"n/a",note:"Reuses graded pairs; local and free-tier judges cost nothing per call."},
+  "judge-wording":{txt:"spends",label:"n/a",note:"Measures the judge, not a lever."},
+  "session-triage":{txt:"unlocks levers",label:"n/a",note:"Labels gate routing, batch and context-split per session."},
+  "gateway-judge":{txt:"spends",label:"n/a",note:"The judge is itself a model call."},
+  "sanitize":{v:0,txt:"$0",label:"n/a",note:"A safety control."}
+};
+
+// ---------- diagrams: inline SVG, colored through page tokens
+let NID=0;
+const mk=(cls)=>{const id="ah"+(++NID);return [id,`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="${cls}"/></marker>`]};
+const T=(x,y,s,cls="",anchor="start")=>`<text x="${x}" y="${y}" text-anchor="${anchor}" class="${cls}">${s}</text>`;
+const B=(x,y,w,h,cls,l1,l2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" class="${cls}"/>`+
+  (l1?T(x+w/2,y+(l2?h/2-3:h/2+4),l1,"","middle"):"")+(l2?T(x+w/2,y+h/2+13,l2,"t-s t-m","middle"):"");
+const svg=(w,h,label,body)=>`<div class="svgwrap"><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)}">${body}</svg></div>`;
+const fig=(label,body,w,h,cap)=>`<figure class="fig">${svg(w,h,label,body)}<figcaption>${cap}</figcaption></figure>`;
+
+const FIGS = {
+pipeline(){
+  const [a,ma]=mk("mk"),[b,mb]=mk("mk-a"),[c,mc]=mk("mk-c");
+  const W=124,G=28,X=(i)=>10+i*(W+G),Y=44,H=76;
+  const steps=[
+    ["Inspect","read the session","cost · size · tools","bx"],
+    ["Classify","what kind of work?","long · coding · search","bx"],
+    ["Decide","pick one change","e.g. cheaper model","bx-a"],
+    ["Verify","re-run it both ways","did it finish the job?","bx"],
+    ["Compare","against the baseline","cheaper? as good?","bx"]];
+  let s=`<defs>${ma}${mb}${mc}</defs>`;
+  steps.forEach(([t,l1,l2,cls],i)=>{const x=X(i);
+    s+=T(x,Y-12,"STEP "+(i+1),"t-s t-m");
+    s+=`<rect x="${x}" y="${Y}" width="${W}" height="${H}" rx="3" class="${cls}"/>`;
+    s+=T(x+12,Y+24,t,i===2?"t-a":"")+T(x+12,Y+46,l1,"t-s")+T(x+12,Y+63,l2,"t-s t-m");
+    if(i<4) s+=`<line x1="${x+W}" y1="${Y+H/2}" x2="${X(i+1)-2}" y2="${Y+H/2}" class="ln" marker-end="url(#${a})"/>`;
+  });
+  const vx=X(3),cx=X(4),y1=150,y2=192,h=30;
+  s+=`<path d="M${vx+W/2},${Y+H} V${y1-2}" class="ln-m"/>`;
+  s+=`<rect x="${vx}" y="${y1}" width="${W}" height="${h}" rx="3" class="bx"/>`+T(vx+10,y1+20,"baseline × 3","t-s");
+  s+=`<rect x="${vx}" y="${y2}" width="${W}" height="${h}" rx="3" class="bx-a"/>`+T(vx+10,y2+20,"with change × 3","t-s");
+  s+=`<path d="M${cx+W/2},${Y+H} V${y1+h/2} H${cx+16}" class="ln-a" marker-end="url(#${b})"/>`;
+  s+=`<rect x="${cx+18}" y="${y1}" width="${W-18}" height="${h}" rx="3" class="bx-a"/>`+T(cx+28,y1+20,"keep it","t-s t-a");
+  s+=`<path d="M${cx+W/2},${y1+h} V${y2+h/2} H${cx+16}" class="ln-c" marker-end="url(#${c})"/>`;
+  s+=`<rect x="${cx+18}" y="${y2}" width="${W-18}" height="${h}" rx="3" class="bx-c"/>`+T(cx+28,y2+20,"drop it","t-s t-c");
+  s+=T(X(0),y1+20,"Steps 1–3 only read data and cost nothing.","t-s t-m");
+  s+=T(X(0),y1+38,"Steps 4–5 run in a sandbox and cost money.","t-s t-m");
+  return fig("How an experiment works: inspect a session, classify it, decide on one change, verify by re-running it both ways, then compare against the baseline and keep or drop the change.",
+  s,760,236,"Every experiment follows the same five steps. Read a real session, sort it by the kind of work, pick one change that could make it cheaper, then re-run the task twice in a sandbox: once unchanged (the baseline) and once with the change, three times each. Keep the change only if it is cheaper and does the job as well. The re-runs are compared with each other, not with the original session, because a re-run is usually shorter than the real thing.")},
+
+compaction(){
+  return fig("Context carried per request: the baseline ratchets up every turn; the compacting arm drops back at the threshold, and the shaded area is context no longer re-read.",
+  `<line x1="50" y1="200" x2="620" y2="200" class="ln"/><line x1="50" y1="200" x2="50" y2="24" class="ln"/>
+  ${T(620,220,"turns →","t-s t-m","end")}${T(56,20,"context carried per request","t-s t-m")}
+  <line x1="50" y1="120" x2="620" y2="120" class="ln-m dash"/>${T(56,114,"compaction threshold","t-s t-m")}
+  <polygon points="311,120 610,40 610,150 516,175 516,120 311,175" class="f-as"/>
+  <polyline points="50,190 610,40" class="ln"/>${T(604,34,"baseline: carries every turn","t-s","end")}
+  <polyline points="50,190 311,120 311,175 516,120 516,175 610,150" class="ln-a"/>
+  <circle cx="311" cy="175" r="4" class="f-c"/><circle cx="516" cy="175" r="4" class="f-c"/>
+  ${T(320,192,"summary call + cache re-write","t-s t-c")}
+  ${T(566,104,"not re-read","t-s t-a","middle")}`,
+  640,230,"Each request re-reads the whole conversation from cache, so cost per turn grows with the context. Compaction trades the shaded area (context no longer re-read on every turn) for a summary call and a cache re-write at each drop, shown as red dots. It wins only when the shaded area outweighs the red dots and the arm still delivers. The shape is schematic.")},
+
+routing(){
+  const [a,ma]=mk("mk-m"),[b,mb]=mk("mk-a"),[c,mc]=mk("mk");
+  return fig("Model routing: Claude Code sends the same /v1/messages call to a proxy; the baseline arm reaches Opus, the lever arm reaches a cheaper model.",
+  `<defs>${ma}${mb}${mc}</defs>
+  ${B(10,72,130,56,"bx","Claude Code","unchanged")}
+  ${B(220,72,140,56,"bx","LiteLLM proxy","or Kong ai-proxy")}
+  ${B(470,18,160,52,"bx-m","Opus","baseline arm")}
+  ${B(470,130,160,52,"bx-a","Sonnet · Qwen","lever arm")}
+  <line x1="140" y1="100" x2="218" y2="100" class="ln" marker-end="url(#${c})"/>${T(179,92,"/v1/messages","t-s t-m","middle")}
+  <path d="M360,92 H410 V44 H468" class="ln-m dash" marker-end="url(#${a})"/>
+  <path d="M360,108 H410 V156 H468" class="ln-a" marker-end="url(#${b})"/>
+  ${T(416,38,"same tokens, list price","t-s t-m")}${T(416,200,"lower $/token, maybe more turns","t-s t-a")}`,
+  640,210,"Routing changes one edge: which model the proxy calls. The client and the request stay the same. The risk sits in that edge. A cheaper model can take more turns or call tools less reliably, so the arm is judged on delivered work and total cost, not on price per token.")},
+
+sidecalls(){
+  const [a,ma]=mk("mk"),[b,mb]=mk("mk-a");
+  return fig("Side-call routing: the main coding loop still reaches Opus, while subagents and title or summary calls are routed to Sonnet.",
+  `<defs>${ma}${mb}</defs>
+  <rect x="10" y="20" width="170" height="180" rx="3" class="bx"/>${T(95,40,"Claude Code session","","middle")}
+  ${B(24,54,142,36,"bx","main loop")}${B(24,104,142,36,"bx-a","Task subagents")}${B(24,154,142,36,"bx-a","titles · summaries")}
+  <rect x="260" y="20" width="120" height="180" rx="3" class="bx"/>${T(320,40,"LiteLLM","","middle")}${T(320,56,"routes","t-s t-m","middle")}
+  ${B(480,44,150,52,"bx","Opus","* upstream")}${B(480,134,150,52,"bx-a","Sonnet","route-sonnet")}
+  <path d="M166,72 H478" class="ln" marker-end="url(#${a})"/>
+  <path d="M166,122 H300 V158 H478" class="ln-a" marker-end="url(#${b})"/>
+  <path d="M166,172 H300 V164" class="ln-a"/>
+  ${T(420,64,"coding loop untouched","t-s t-m","middle")}${T(420,152,"rerouted","t-s t-a","middle")}`,
+  640,215,"A per-request split. Without a route, every side call goes to the '*' upstream, so an Opus session pays Opus prices for its own session titles. The quality risk is in subagents that do real reasoning, such as review or search over a large repo.")},
+
+toolcaps(){
+  const lane=(y0,tool,name,cls)=>{let s=T(10,y0-34,name,"t-s t-m");for(let i=0;i<6;i++){const x=110+i*85,base=20+i*4,h=base+(i>=1?tool:0);
+    s+=`<rect x="${x}" y="${y0-base}" width="56" height="${base}" class="f-l"/>`;
+    if(i>=1)s+=`<rect x="${x}" y="${y0-h}" width="56" height="${tool}" class="${cls}"/>`;}
+    return s};
+  let ticks="";for(let i=0;i<6;i++)ticks+=T(138+i*85,226,"turn "+(i+1),"t-s t-m","middle");
+  return fig("Tool output caps: a long log returned at turn 2 is re-read on every later turn; capped, a much smaller block is carried forward.",
+  lane(110,44,"baseline","f-c")+lane(206,12,"capped","f-a")+ticks+
+  T(10,96,"long log output","t-s t-c")+T(10,192,"clipped log","t-s t-a")+
+  `<rect x="10" y="226" width="0" height="0"/>`,
+  640,236,"Grey is the rest of the context. The coloured block is one long tool result. It is paid on every later turn, not once. The failure to watch for: the agent re-runs the command to get the clipped detail back. The behaviour diff (TRACE) counts those re-runs.")},
+
+prefix(){
+  const seg=(x,y,w,cls,l)=>`<rect x="${x}" y="${y}" width="${w}" height="34" class="${cls}" stroke="var(--bg)" stroke-width="2"/>`+(w>=l.length*7+10?T(x+w/2,y+22,l,"t-s","middle"):"");
+  const row=(y,ws)=>{let x=110,s="";const n=["system","tool schemas","CLAUDE.md","history","new"],c=["f-l","f-l","f-l","f-l","f-i"];ws.forEach((w,i)=>{s+=seg(x,y,w,i===4?"bx-a":"bx",n[i]);x+=w});return [s,x]};
+  const [r1,e1]=row(36,[70,140,100,180,40]),[r2,e2]=row(116,[70,56,44,180,40]);
+  return fig("Prefix trim: the same request with smaller tool schemas and CLAUDE.md; everything before the new turn is re-read from cache on every request.",
+  T(10,58,"baseline","t-s t-m")+r1+T(10,138,"trimmed","t-s t-m")+r2+
+  `<rect x="${e2}" y="116" width="${e1-e2}" height="34" class="f-as"/>`+T((e1+e2)/2,138,"removed","t-s t-a","middle")+
+  `<line x1="110" y1="170" x2="${e1-40}" y2="170" class="ln-m"/>`+T((110+e1-40)/2,188,"re-read from cache on every turn","t-s t-m","middle"),
+  640,200,"Everything left of the new turn is the cached prefix, re-read on every request. A token cut from it is saved once per turn. Segment widths are illustrative. E2 (prefix anatomy) measures the real shares, and until then the 25% trim is a guess.")},
+
+costmix(){
+  const W=560,x0=60,r=246.38,w=171.67,o=90.75,th=27.45,sc=W/MONTH;
+  const xr=x0,xw=xr+r*sc,xo=xw+w*sc,xe=xo+o*sc,xt=xe-th*sc;
+  return fig(`Where the E1b month's $508.80 went: cache reads $246.38, cache writes $171.67, output $90.75 including $27.45 of thinking. Effort levers act only on output.`,
+  `<rect x="${xr}" y="70" width="${r*sc}" height="40" class="f-l" stroke="var(--bg)" stroke-width="2"/>
+  <rect x="${xw}" y="70" width="${w*sc}" height="40" class="f-l" stroke="var(--bg)" stroke-width="2" opacity=".6"/>
+  <rect x="${xo}" y="70" width="${o*sc}" height="40" class="bx-a"/>
+  <rect x="${xt}" y="70" width="${th*sc}" height="40" class="f-a"/>
+  ${T(xr+r*sc/2,95,"cache read $246.38","t-s","middle")}${T(xw+w*sc/2,95,"cache write $171.67","t-s","middle")}
+  ${T(xo+4,128,"output $90.75","t-s")}${T(xe,146,"thinking $27.45","t-s t-a","end")}
+  <path d="M${xo},60 V50 H${xe} V60" class="ln-a"/>${T((xo+xe)/2,42,"effort · thinking cap","t-s t-a","middle")}
+  <path d="M${xr},60 V50 H${xo-4} V60" class="ln-m"/>${T((xr+xo)/2,42,"compaction · prefix · routing act here","t-s t-m","middle")}`,
+  640,160,"Bar widths are to scale (docs/data/e1b-sessions.csv). Lowering effort can only touch the teal slice, 17.8% of spend. Thinking, the solid part of it, is 5.4%. The biggest saving available from an effort lever is smaller than the cache-read line it leaves alone.")},
+
+ttl(){
+  const X=(t)=>40+t*9.4, reqs=[0,2,14,17,57,59];
+  const lane=(y,name,rew)=>{let s=`<line x1="40" y1="${y}" x2="610" y2="${y}" class="ln-m"/>`+T(40,y-24,name,"t-s t-m");
+    reqs.forEach((t,i)=>{const w=i===0||rew.includes(t);s+=w?`<rect x="${X(t)-6}" y="${y-6}" width="12" height="12" class="f-c"/>`:`<circle cx="${X(t)}" cy="${y}" r="5" class="f-a"/>`});return s};
+  return fig("Cache TTL: with idle gaps of 12 and 40 minutes, a 5-minute TTL forces two extra cache re-writes; a 1-hour TTL writes once at a higher rate.",
+  lane(70,"5m TTL · write at 1.25× input",[14,57])+lane(150,"1h TTL · write at 2.0× input",[])+
+  T(X(8),100,"12 min idle","t-s t-c","middle")+T(X(37),100,"40 min idle","t-s t-c","middle")+
+  T(X(14)+10,62,"re-write","t-s t-c")+T(X(57)+10,62,"re-write","t-s t-c")+
+  `<rect x="430" y="176" width="10" height="10" class="f-c"/>`+T(446,185,"cache write","t-s")+
+  `<circle cx="540" cy="181" r="5" class="f-a"/>`+T(550,185,"cache hit","t-s")+
+  T(40,200,"minutes →","t-s t-m"),
+  640,210,"The idle gaps decide which TTL wins. Long gaps favour 1h; short, bursty work favours 5m. Applied to every session, the sign of this lever flipped between runs. Split by write:read ratio, each group has a stable answer, which is why the experiment selects sessions by that ratio.")},
+
+batch(){
+  const sc=800,row=(y,v,cls,l,r)=>`<rect x="200" y="${y}" width="${v*sc}" height="26" class="${cls}"/>`+T(190,y+18,l,"t-s","end")+T(206+v*sc,y+18,r,"t-s","start");
+  return fig("Price of re-reading context: interactive cache hit 0.1× input price, batch with a cache hit 0.05×, batch with a cache miss 0.5× — five times the interactive price.",
+  T(200,20,"price paid to re-read one context token, × base input","t-s t-m")+
+  row(36,0.1,"f-a","interactive, cache hit","0.1×")+row(76,0.05,"f-a","batch, cache hit","0.05×")+row(116,0.5,"f-c","batch, cache miss","0.5×")+
+  `<line x1="200" y1="30" x2="200" y2="150" class="ln-m"/>`,
+  640,160,"Batch halves the price, but cache hits inside a batch are best-effort. This workload reads 96.8% of its input from cache, so one miss turns the largest line item from 0.1× into 0.5×. That is why J3's batch floor is −$854.31 and only sessions without heavy cache reads should be deferred.")},
+
+aa(){
+  const y=(q)=>180-q*2.4, cols=[["baseline",[51,53,54],"f-m"],["baseline (A/A)",[50,52,55],"f-m"],["lever: inside",[50,53,54],"f-a"],["lever: outside",[36,39,41],"f-c"]];
+  let s=`<rect x="70" y="${y(55)}" width="560" height="${y(50)-y(55)}" class="f-as"/>`+T(626,y(55)-6,"A/A noise floor","t-s t-a","end");
+  cols.forEach(([n,qs,c],i)=>{const x=140+i*140;qs.forEach((q,j)=>s+=`<circle cx="${x-12+j*12}" cy="${y(q)}" r="5" class="${c}"/>`);s+=T(x,200,n,"t-s","middle")});
+  s+=`<line x1="70" y1="20" x2="70" y2="184" class="ln-m"/>`+T(64,y(60)+4,"score","t-s t-m","end");
+  s+=T(420,y(55)-24,"noise, not a result","t-s t-m","middle")+T(560,y(41)+24,"a result","t-s t-c","middle");
+  return fig("A/A noise floor: three repeats of baseline and of an identical A/A arm set a band; a lever whose scores sit inside it has not been measured.",s,640,210,
+  "Blind scores per repeat (illustrative). Two runs of the same configuration still differ. That spread is the floor any lever must clear before its delta counts. The report already flags an arm that changes nothing and calls its gap a noise floor.")},
+
+semcache(){
+  const [a,ma]=mk("mk"),[b,mb]=mk("mk-a"),[c,mc]=mk("mk-m");
+  return fig("Semantic cache: each prompt is embedded and looked up; within the distance threshold a stored answer is served, otherwise the model is called and the answer stored.",
+  `<defs>${ma}${mb}${mc}</defs>
+  ${B(10,76,110,48,"bx","request")}${B(160,76,110,48,"bx","embed","titan v2")}
+  <polygon points="380,60 440,100 380,140 320,100" class="bx"/>${T(380,96,"distance","t-s","middle")}${T(380,110,"< threshold?","t-s","middle")}
+  ${B(500,20,130,48,"bx-c","stored answer","may be stale")}${B(500,132,130,48,"bx","model","then store")}
+  <line x1="120" y1="100" x2="158" y2="100" class="ln" marker-end="url(#${a})"/>
+  <line x1="270" y1="100" x2="318" y2="100" class="ln" marker-end="url(#${a})"/>${T(294,92,"vector","t-s t-m","middle")}
+  <path d="M410,80 V44 H498" class="ln-c" marker-end="url(#${a})"/>${T(452,38,"hit","t-s t-c","middle")}
+  <path d="M410,120 V156 H498" class="ln" marker-end="url(#${a})"/>${T(452,174,"miss","t-s t-m","middle")}`,
+  640,200,"The threshold is the whole experiment. A loose one serves an answer to a question whose files have since changed. Measure the hit rate and the stale-answer rate together, with tests or the judge. On interactive coding traffic the expected hit rate is near zero.")}
+};
+const FIGMAP = {
+  "context-compaction":"compaction","autocompact-250k":"compaction","context-reset-120k":"compaction","headroom-proxy":"compaction",
+  "route-cheaper-frontier":"routing","route-open-weights":"routing","route-open-weights-small":"routing","bedrock-parity":"routing","ult-runtime-router":"routing",
+  "litellm-route-side-calls":"sidecalls","subagent-haiku":"sidecalls",
+  "tool-output-caps":"toolcaps","prefix-trim":"prefix","tool-schema-slimming":"prefix","prefix-anatomy":"prefix",
+  "effort-medium":"costmix","effort-low":"costmix","claude-thinking-cap":"costmix","effort-sweep":"costmix",
+  "ttl-by-population":"ttl","subagent-ttl-1h":"ttl","batch-deferral":"batch",
+  "aa-noise-floor":"aa","judge-wording":"aa","shadow-judge-agreement":"aa",
+  "semantic-cache":"semcache","litellm-response-cache":"semcache"
+};
+
+const $ = (s)=>document.querySelector(s);
+function esc(s){return String(s).replace(/[&<>"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+let fam = "all";
+try{ fam = localStorage.getItem("expcat.fam") || "all" }catch(e){}
+
+function tiles(){
+  const n=(s)=>E.filter((e)=>e.status===s).length;
+  $("#tiles").innerHTML=[
+    [E.length,"experiments"],[n("runnable"),"runnable"],[n("offline"),"offline · free"],
+    [n("gateway"),"need gateway"],[E.filter((e)=>FIGMAP[e.id]).length,"with diagram"]
+  ].map(([v,l])=>`<div class="tile"><b>${v}</b><span>${l}</span></div>`).join("");
+}
+function rail(){
+  const items=[["all",E.length],...FAMS.map((f)=>[f,E.filter((e)=>e.fam===f).length])];
+  $("#rail").innerHTML=items.map(([f,c])=>`<button type="button" data-f="${f}" aria-pressed="${f===fam}">${f}<span class="n">${c}</span></button>`).join("");
+  $("#rail").querySelectorAll("button").forEach((b)=>b.onclick=()=>{fam=b.dataset.f;try{localStorage.setItem("expcat.fam",fam)}catch(e){};rail();render()});
+}
+function selects(){
+  $("#fStatus").innerHTML=`<option value="">any status</option>`+Object.entries(STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+  $("#fVer").innerHTML=`<option value="">any verification</option>`+Object.entries(V).map(([k,v])=>`<option value="${k}">${k} · ${v.name}</option>`).join("");
+}
+const money=(v)=>"$"+v.toFixed(2);
+function saveCell(e){
+  const s=SAVE[e.id]||{label:"unmeasured"};
+  if(s.txt) return `<span class="save${s.lo<0?" neg":""}"><b>${esc(s.txt)}</b><span class="lbl">${esc(s.label)}</span></span>`;
+  if(s.v>0) return `<span class="save"><b>${s.ceil?"≤ ":""}${money(s.v)} · ${s.p}%</b><span class="meter"><i style="width:${Math.min(100,s.p)}%"></i></span><span class="lbl">${esc(s.label)}</span></span>`;
+  return `<span class="save"><b class="un">—</b><span class="lbl">${esc(s.label)}</span></span>`;
+}
+function vrow(code,sec){const v=V[code];return `<div class="v${sec?" sec":""}"><code>${code}</code><span>${esc(v.name)} <span class="basis">· ${esc(v.state)}</span></span></div>`}
+function card(e){
+  const s=SAVE[e.id]||{label:"unmeasured",note:""}, f=FIGMAP[e.id];
+  return `<details class="exp" data-id="${e.id}"><summary>
+    <span class="id">${esc(e.id)}<small>${esc(e.title)}</small>${f?`<span class="dg">◇ diagram</span>`:""}</span>
+    <span class="fam">${esc(e.fam)}</span>
+    <span class="what">${esc(e.what)}</span>
+    ${saveCell(e)}
+    <span class="pill s-${e.status}">${STATUS[e.status]}</span>
+  </summary><div class="body">
+    <div class="full"><h4>Value</h4><p>${esc(e.value)}</p></div>
+    ${f?`<div class="full"><h4>How it works</h4><div class="figslot" data-fig="${f}"></div></div>`:""}
+    <div><h4>Session to replay</h4><div class="sel">${e.session.map((x)=>`<code>${esc(x)}</code>`).join("")}</div><p style="margin-top:8px">${esc(e.why)}</p></div>
+    <div><h4>Verification</h4><div class="vlist">${e.primary.map((c)=>vrow(c,false)).join("")}${e.secondary.map((c)=>vrow(c,true)).join("")}</div></div>
+    <div><h4>Potential saving</h4><p>${saveCell(e)}</p><p class="basis" style="margin-top:6px">${esc(s.note||"")}</p></div>
+    <div><h4>Pass condition</h4><p>${esc(e.gate)}</p><p class="basis" style="margin-top:6px"><span class="lbl">${esc(e.label)}</span>${esc(e.basis)}</p></div>
+  </div></details>`;
+}
+function filtered(){
+  const q=$("#q").value.trim().toLowerCase(), st=$("#fStatus").value, vr=$("#fVer").value, dia=$("#fDia").checked;
+  const l=E.filter((e)=>(fam==="all"||e.fam===fam)&&(!st||e.status===st)&&(!vr||e.primary.includes(vr)||e.secondary.includes(vr))&&
+    (!dia||FIGMAP[e.id])&&(!q||JSON.stringify(e).toLowerCase().includes(q)));
+  if($("#fSort").value==="save") l.sort((a,b)=>((SAVE[b.id]||{}).v||-1)-((SAVE[a.id]||{}).v||-1));
+  return l;
+}
+function render(){
+  const list=filtered();
+  $("#count").textContent=`${list.length} of ${E.length} shown`;
+  $("#list").innerHTML=list.length?list.map(card).join(""):`<div class="empty">No experiment matches these filters. Clear the search or pick another family.</div>`;
+  $("#list").querySelectorAll("details").forEach((d)=>d.addEventListener("toggle",()=>{
+    const slot=d.querySelector(".figslot"); if(d.open&&slot&&!slot.innerHTML) slot.innerHTML=FIGS[slot.dataset.fig]();
+  }));
+}
+function vtable(){
+  $("#vtable").innerHTML=Object.entries(V).map(([k,v])=>`<tr><td><code>${k}</code></td><td>${esc(v.name)}</td><td>${esc(v.proves)}</td><td>${esc(v.state)}</td><td class="basis">${esc(v.src)}</td></tr>`).join("");
+}
+$("#q").oninput=render; $("#fStatus").onchange=render; $("#fVer").onchange=render; $("#fSort").onchange=render; $("#fDia").onchange=render;
+$("#copy").onclick=async()=>{
+  const list=filtered().map((e)=>({...e,saving:SAVE[e.id]||null,diagram:FIGMAP[e.id]||null}));
+  const text=JSON.stringify({month:{sessions:214,usd:MONTH,source:"docs/data/e1b-sessions.csv"},verification:V,experiments:list},null,2);
+  try{await navigator.clipboard.writeText(text);$("#toast").textContent=`Copied ${list.length} experiments as JSON`}
+  catch(e){$("#toast").textContent="Copy blocked here. Select the rows manually."}
+};
+$("#pipeline").outerHTML=FIGS.pipeline().replace('class="fig"','class="fig top"');
+tiles();rail();selects();render();vtable();
+// open one diagrammed experiment so the first view shows a mechanism
+const first=$("#list details[data-id='context-compaction']"); if(first) first.open=true;
+</script>

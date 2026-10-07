@@ -1,0 +1,321 @@
+<title>Optimization Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  --bg:#F3F5F5;--card:#FFFFFF;--rail:#ECEFEF;--ink:#12181A;--mut:#5A6B6E;--rule:#D7DEDE;
+  --ac:#0E6E65;--ac-soft:#DDEFEC;--warn:#A8611F;--warn-soft:#F6E9DA;--bad:#B3402B;--bad-soft:#F6E0DB;
+  --d:'Archivo',system-ui,sans-serif;--m:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;--b:'Source Serif 4',Georgia,serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#0D1214;--card:#151B1E;--rail:#101618;--ink:#E3EAE9;--mut:#8B9C9E;--rule:#232D30;
+  --ac:#46BFAF;--ac-soft:#143430;--warn:#E2A462;--warn-soft:#33260F;--bad:#E58B72;--bad-soft:#3A1C15}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#0D1214;--card:#151B1E;--rail:#101618;--ink:#E3EAE9;--mut:#8B9C9E;--rule:#232D30;
+  --ac:#46BFAF;--ac-soft:#143430;--warn:#E2A462;--warn-soft:#33260F;--bad:#E58B72;--bad-soft:#3A1C15}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--b)}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:20px;padding-block:28px 72px;display:grid;gap:30px}
+h1,h2,h3{font-family:var(--d);margin:0;text-wrap:balance;letter-spacing:-.015em}
+h1{font-size:34px;font-weight:800;line-height:1.1}
+h2{font-size:21px;font-weight:800}
+h3{font-size:16px;font-weight:700}
+p{margin:0;max-width:68ch}
+.eyebrow,.k{font:500 11px/1.2 var(--m);letter-spacing:.07em;text-transform:uppercase;color:var(--mut)}
+.num{font-family:var(--m);font-variant-numeric:tabular-nums}
+.mut{color:var(--mut)}
+.save{color:var(--ac)}.loss{color:var(--bad)}.spend{color:var(--warn)}
+header{display:grid;gap:10px}
+.lede{font-size:17px;color:var(--mut);max-width:72ch}
+.lede a{color:var(--ac)}
+.layout{display:grid;grid-template-columns:330px minmax(0,1fr);gap:26px;align-items:start}
+@media (max-width:920px){.layout{grid-template-columns:1fr}}
+/* estimator */
+.est{background:var(--card);border:1px solid var(--rule);padding:16px;display:grid;gap:16px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:920px){.est{position:static;max-height:none}}
+.est fieldset{border:0;margin:0;padding:0;display:grid;gap:10px}
+.est legend{font:700 13px var(--d);padding:0;margin-bottom:2px}
+.f{display:grid;gap:3px}
+.f label{display:flex;justify-content:space-between;gap:8px;font-size:13px;line-height:1.3}
+.f label .v{font:500 12px var(--m);color:var(--ac);white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--ac);margin:0}
+select{font:13px var(--m);color:var(--ink);background:var(--card);border:1px solid var(--rule);padding:5px 6px;width:100%}
+.est .reset{font:500 12px var(--m);background:none;border:1px solid var(--rule);color:var(--mut);padding:6px 10px;cursor:pointer;justify-self:start}
+.est .reset:hover{color:var(--ink);border-color:var(--ac)}
+/* summary */
+.right{display:grid;gap:18px;min-width:0}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--rule);padding:12px 14px;display:grid;gap:4px}
+.tile b{font:500 23px/1.1 var(--m);font-variant-numeric:tabular-nums}
+.tile .s{font-size:12.5px;color:var(--mut);line-height:1.35}
+.mix{display:grid;gap:6px}
+.mixbar{display:flex;height:14px;border:1px solid var(--rule);background:var(--rail)}
+.mixbar span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font:12px var(--m);color:var(--mut)}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px}
+/* controls */
+.ctl{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 11.5px var(--m);border:1px solid var(--rule);background:var(--card);color:var(--mut);padding:4px 9px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip:focus-visible,.row summary:focus-visible,select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.ctl select{width:auto}
+/* list */
+.list{display:grid;border:1px solid var(--rule);background:var(--card)}
+.row{border-bottom:1px solid var(--rule)}
+.row:last-child{border-bottom:0}
+.row summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:34px minmax(0,1.6fr) minmax(150px,1.2fr) 92px 92px;gap:12px;align-items:center;padding:11px 14px}
+.row summary::-webkit-details-marker{display:none}
+.row summary:hover{background:var(--rail)}
+.rank{font:500 12px var(--m);color:var(--mut)}
+.nm{display:grid;gap:4px;min-width:0}
+.nm b{font:700 15px/1.25 var(--d)}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.pill{font:500 10.5px var(--m);border:1px solid var(--rule);color:var(--mut);padding:1px 6px;white-space:nowrap}
+.pill.priced{color:var(--ac);border-color:var(--ac)}
+.pill.measured{background:var(--ac);color:var(--card);border-color:var(--ac)}
+.pill.published{color:var(--warn);border-color:var(--warn)}
+.pill.guess{border-style:dashed}
+.pill.r-high{color:var(--bad);border-color:var(--bad)}.pill.r-medium{color:var(--warn);border-color:var(--warn)}
+.pill.spendk{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.bar{position:relative;height:18px}
+.bar .zero{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--ink);opacity:.5}
+.bar .neg,.bar .pos{position:absolute;top:4px;height:10px}
+.bar .neg{background:var(--bad)}.bar .pos{background:var(--ac)}
+.bar .spendbar{background:var(--warn)}
+.amt{text-align:right;font:500 13px/1.2 var(--m);font-variant-numeric:tabular-nums}
+.amt small{display:block;font-size:11px;color:var(--mut);font-weight:400}
+.det{padding:4px 14px 16px 60px;display:grid;gap:12px;font-size:14.5px}
+.det .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.params{width:100%;border-collapse:collapse;font-size:13px}
+.params th,.params td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+.params th{font:500 10.5px var(--m);letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.params td:first-child,.params td:nth-child(2){font:12.5px var(--m);overflow-wrap:anywhere}
+.tbl{overflow-x:auto}
+.note{font-size:13.5px;color:var(--mut)}
+.empty{padding:28px;text-align:center;color:var(--mut);font:13px var(--m)}
+@media (max-width:640px){
+  .row summary{grid-template-columns:26px minmax(0,1fr) 84px;}
+  .row summary .bar,.row summary .amt.w{display:none}
+  .det{padding-left:14px}
+  h1{font-size:27px}
+}
+/* sections */
+section{display:grid;gap:12px}
+.mv td:last-child{display:flex;flex-wrap:wrap;gap:5px}
+.files{display:grid;gap:8px}
+.file{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;align-items:baseline;border-top:1px solid var(--rule);padding-top:8px}
+.file code{font:13px var(--m);color:var(--ac)}
+pre{font:12.5px/1.5 var(--m);background:var(--card);border:1px solid var(--rule);padding:12px;overflow-x:auto;margin:0}
+.loaded{background:var(--ac-soft);border:1px solid var(--ac);padding:10px 14px;font-size:14px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.loaded button{font:500 12px var(--m);background:var(--card);border:1px solid var(--rule);color:var(--ink);padding:4px 10px;cursor:pointer}
+footer{font-size:13px;color:var(--mut);display:grid;gap:6px;border-top:1px solid var(--rule);padding-top:16px}
+footer a,section a{color:var(--ac)}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">opthub · optimization atlas</div>
+    <h1>Every way to cut what an AI agent costs</h1>
+    <div class="loaded" id="loaded" hidden></div>
+    <p class="lede">Set your workload on the left. Each optimization is priced against it, best case and worst case, with the exact parameters it changes and how far to trust the number. Opthub’s own measurements are used wherever we have them. Inspired by <a href="https://battleships.dev/">battleships.dev</a>.</p>
+  </header>
+
+  <div class="layout">
+    <form class="est" id="est" aria-label="Your workload"></form>
+
+    <div class="right">
+      <div class="summary" id="summary"></div>
+      <div class="mix" id="mix"></div>
+
+      <div class="ctl">
+        <label class="k" for="sort">Sort</label>
+        <select id="sort">
+          <option value="worst">by what you can count on (worst case)</option>
+          <option value="best">by the most it could save (best case)</option>
+          <option value="layer">by layer</option>
+        </select>
+        <div class="chips" id="layers" aria-label="Layer"></div>
+      </div>
+      <div class="ctl">
+        <span class="k">Trust</span><div class="chips" id="trust"></div>
+        <span class="k">Risk</span><div class="chips" id="risk"></div>
+      </div>
+      <div class="list" id="list"></div>
+      <p class="note">Savings overlap. Two levers acting on the same tokens cannot both take the same dollar, so the rows are ranked and never added up. Green is a saving, red a loss, amber a spend.</p>
+    </div>
+  </div>
+
+  <section>
+    <h2>Every parameter that moves the cost</h2>
+    <p class="note">The inputs on the left, your current value, and which optimizations each one changes.</p>
+    <div class="tbl"><table class="params mv" id="moves"></table></div>
+  </section>
+
+  <section>
+    <h2>How far to trust each figure</h2>
+    <div class="tbl"><table class="params" id="evidence"></table></div>
+  </section>
+
+  <section>
+    <h2>For agents</h2>
+    <p class="note">The same data as files, published next to this page. Read them relative to the page’s address.</p>
+    <div class="files">
+      <div class="file"><code>scenarios.json</code><span>Every scenario: layer, where it applies, the parameters it changes (knob, value, where), trust label, quality risk, latency effect, opthub evidence, caveat.</span></div>
+      <div class="file"><code>engine.js</code><span>The pricing engine as pure functions. <span class="num">AtlasEngine.evaluate(workload, scenarios)</span> returns best and worst case per scenario, with the sentence that explains each.</span></div>
+      <div class="file"><code>llms.txt</code><span>A plain-text summary for language models: what the atlas is, the files, the workload fields and the trust labels.</span></div>
+    </div>
+<pre>const E = require('./engine.js'), { scenarios } = require('./scenarios.json')
+const w = { ...E.defaults(), devs: 25, model: 'claude-opus-5', hit: 80 }
+E.evaluate(w, scenarios).sort((a, b) => b.worst - a.worst).slice(0, 5)</pre>
+  </section>
+
+  <footer>
+    <div>Prices are Anthropic list rates per million tokens, input / output: Opus 5 $5 / $25, Opus 5.5 $4 / $20, Sonnet 5 $2 / $10, Haiku 4.5 $1 / $5, Fable 5.1 $10 / $50. Cache reads bill at 0.1× input, 5-minute cache writes at 1.25×, Batch at 0.5×, fast mode at 2×. Partner platforms (Bedrock, Vertex AI) price separately.</div>
+    <div>Workload defaults approximate one developer’s measured month in opthub, scaled to a team of ten. Measured figures come from <span class="num">SPEC.md</span> §2 and the J3 session triage. They are small samples and say so.</div>
+  </footer>
+</div>
+
+<script>
+__ENGINE__
+const DATA = __DATA__;
+const E = globalThis.AtlasEngine;
+const LAYERS = {caching:'Caching',model:'Model choice',reasoning:'Reasoning & output',context:'Context',request:'Request & API',workflow:'Agent workflow',governance:'Governance',infra:'Infrastructure'};
+const TRUST = ['measured','priced','published','guess'];
+const RISK = ['none','low','medium','high'];
+const KEY = 'atlas-v1';
+let W = E.defaults(), sortBy = 'worst', layerOn = new Set(Object.keys(LAYERS)), trustOn = new Set(TRUST), riskOn = new Set(RISK), open = new Set();
+try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.W) { W = { ...W, ...s.W }; sortBy = s.sortBy || sortBy } } catch (e) {}
+/* Opened from the opthub hub with one session's workload: ?w=<base64url JSON>&s=<label>.
+   Only known fields are taken, numbers are clamped to each slider's range. */
+let FROM = null
+try {
+  const q = new URLSearchParams(location.search), raw = q.get('w')
+  if (raw) {
+    const j = JSON.parse(atob(raw.replace(/-/g, '+').replace(/_/g, '/')))
+    for (const p of E.PARAMS) {
+      if (!(p.id in j)) continue
+      if (p.options) { if (p.options.includes(j[p.id])) W[p.id] = j[p.id] }
+      else if (Number.isFinite(Number(j[p.id]))) W[p.id] = Math.min(p.max, Math.max(p.min, Number(j[p.id])))
+    }
+    FROM = (q.get('s') || 'a session').slice(0, 80)
+  }
+} catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ W, sortBy })) } catch (e) {} };
+
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = (v, d) => { const a = Math.abs(v), s = a >= 10000 ? Math.round(a).toLocaleString('en-US') : a.toLocaleString('en-US', { minimumFractionDigits: d ?? (a < 100 ? 2 : 0), maximumFractionDigits: d ?? (a < 100 ? 2 : 0) }); return (v < -0.005 ? '−$' : '$') + s };
+const pct = (v) => (v < -0.0005 ? '−' : '') + Math.abs(v * 100).toFixed(1) + '%';
+const cls = (v, kind) => kind === 'spend' && v < 0 ? 'spend' : v > 0.005 ? 'save' : v < -0.005 ? 'loss' : 'mut';
+const fmtVal = (p, v) => p.options ? (E.PRICES[v] ? E.PRICES[v].label : v) : p.unit === '%' ? v + '%' : p.unit === '$/month' ? money(v, 0) : p.unit === 'tokens' ? (v >= 1000 ? (v / 1000).toLocaleString('en-US') + 'k' : v) + ' tokens' : v + (p.unit && p.unit !== 'people' ? ' ' + p.unit : '');
+
+function buildForm() {
+  const groups = {}
+  for (const p of E.PARAMS) (groups[p.group] = groups[p.group] || []).push(p)
+  document.getElementById('est').innerHTML = '<div class="eyebrow">Your workload</div>' + Object.entries(groups).map(([g, ps]) =>
+    '<fieldset><legend>' + esc(g) + '</legend>' + ps.map((p) => p.options
+      ? '<div class="f"><label for="p-' + p.id + '">' + esc(p.label) + '</label><select id="p-' + p.id + '" data-p="' + p.id + '">' + p.options.map((o) => '<option value="' + o + '"' + (o === W[p.id] ? ' selected' : '') + '>' + esc(E.PRICES[o].label) + ' · $' + E.PRICES[o].in + '/$' + E.PRICES[o].out + '</option>').join('') + '</select></div>'
+      : '<div class="f"><label for="p-' + p.id + '">' + esc(p.label) + ' <span class="v" id="v-' + p.id + '">' + esc(fmtVal(p, W[p.id])) + '</span></label><input type="range" id="p-' + p.id + '" data-p="' + p.id + '" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '" value="' + W[p.id] + '"></div>').join('') + '</fieldset>').join('')
+    + '<button type="button" class="reset" id="reset">Reset to the measured defaults</button>'
+}
+
+function chips(id, items, set, label) {
+  document.getElementById(id).innerHTML = items.map((x) => '<button type="button" class="chip" data-g="' + id + '" data-v="' + x + '" aria-pressed="' + set.has(x) + '">' + esc(label ? label(x) : x) + '</button>').join('')
+}
+
+function render() {
+  const b = E.baseline(W)
+  const rows = E.evaluate(W, DATA.scenarios)
+  const shown = rows.filter((r) => layerOn.has(r.layer) && trustOn.has(r.evidence) && riskOn.has(r.risk))
+  if (sortBy === 'worst') shown.sort((a, b) => b.worst - a.worst || b.best - a.best)
+  else if (sortBy === 'best') shown.sort((a, b) => b.best - a.best || b.worst - a.worst)
+  else shown.sort((a, b) => Object.keys(LAYERS).indexOf(a.layer) - Object.keys(LAYERS).indexOf(b.layer) || b.worst - a.worst)
+
+  const sure = rows.filter((r) => r.kind === 'saving' && (r.evidence === 'priced' || r.evidence === 'measured') && r.worst > 0).sort((a, b) => b.worst - a.worst)[0]
+  document.getElementById('summary').innerHTML =
+    '<div class="tile"><span class="k">Monthly cost</span><b>' + money(b.total, 0) + '</b><span class="s">' + money(b.perDev, 0) + ' per developer · ' + Math.round(b.reqs).toLocaleString('en-US') + ' requests</span></div>'
+    + '<div class="tile"><span class="k">Per request</span><b>' + money(b.llm / Math.max(1, b.reqs), 3) + '</b><span class="s">' + esc(b.price.label) + ', ' + Math.round(W.ctx / 1000) + 'k context, ' + W.hit + '% cached</span></div>'
+    + '<div class="tile"><span class="k">Safest single lever</span><b class="save">' + (sure ? money(sure.worst, 0) : '—') + '</b><span class="s">' + (sure ? esc(sure.name) + ', worst case, ' + sure.evidence : 'no priced or measured lever saves money here') + '</span></div>'
+    + '<div class="tile"><span class="k">Scenarios</span><b>' + shown.length + ' / ' + rows.length + '</b><span class="s">shown with the filters below</span></div>'
+
+  const parts = [['Cache reads', b.read, 'var(--ac)'], ['Cache writes', b.write, 'color-mix(in srgb, var(--ac) 45%, var(--rail))'], ['Output', b.out - b.think, 'var(--ink)'], ['Thinking', b.think, 'var(--mut)'], ['Sandboxes', b.sandbox, 'var(--warn)'], ['Self-hosted', b.selfhost, 'var(--bad)']].filter((p) => p[1] > 0)
+  document.getElementById('mix').innerHTML = '<span class="k">Where the money goes</span><div class="mixbar">' + parts.map(([n, v, c]) => '<span style="width:' + (100 * v / b.total) + '%;background:' + c + '" title="' + esc(n) + ' ' + money(v, 0) + '"></span>').join('') + '</div>'
+    + '<div class="legend">' + parts.map(([n, v, c]) => '<span><i style="background:' + c + '"></i>' + esc(n) + ' ' + money(v, 0) + ' · ' + pct(v / b.total) + '</span>').join('') + '</div>'
+
+  const neg = Math.min(0, ...shown.map((r) => r.worst)), posMax = Math.max(0, ...shown.map((r) => r.best))
+  const span = (posMax - neg) || 1, X = (v) => 100 * (v - neg) / span
+  document.getElementById('list').innerHTML = shown.length ? shown.map((r, i) => {
+    const lo = Math.min(r.worst, r.best), hi = Math.max(r.worst, r.best)
+    let bars = ''
+    if (r.kind === 'spend') bars = '<span class="neg spendbar" style="left:' + X(lo) + '%;width:' + Math.max(0.6, X(0) - X(lo)) + '%"></span>'
+    else {
+      if (lo < 0) bars += '<span class="neg" style="left:' + X(lo) + '%;width:' + (X(Math.min(hi, 0)) - X(lo)) + '%"></span>'
+      if (hi > 0) bars += '<span class="pos" style="left:' + X(Math.max(lo, 0)) + '%;width:' + Math.max(0.6, X(hi) - X(Math.max(lo, 0))) + '%"></span>'
+    }
+    return '<details class="row" data-id="' + r.id + '"' + (open.has(r.id) ? ' open' : '') + '><summary>'
+      + '<span class="rank">' + (i + 1) + '</span>'
+      + '<span class="nm"><b>' + esc(r.name) + '</b><span class="tags"><span class="pill">' + esc(LAYERS[r.layer]) + '</span>'
+      + '<span class="pill ' + r.evidence + '">' + r.evidence + '</span>'
+      + (r.risk !== 'none' ? '<span class="pill r-' + r.risk + '">' + r.risk + ' quality risk</span>' : '')
+      + (r.kind !== 'saving' ? '<span class="pill spendk">' + r.kind + '</span>' : '')
+      + '<span class="pill">' + esc(r.where.join(' · ')) + '</span></span></span>'
+      + '<span class="bar" aria-hidden="true"><span class="zero" style="left:' + X(0) + '%"></span>' + bars + '</span>'
+      + '<span class="amt w ' + cls(r.worst, r.kind) + '">' + money(r.worst, 0) + '<small>worst</small></span>'
+      + '<span class="amt ' + cls(r.best, r.kind) + '">' + money(r.best, 0) + '<small>best · ' + pct(r.bestPct) + '</small></span>'
+      + '</summary><div class="det">'
+      + '<p>' + esc(r.what) + '</p>'
+      + '<div class="tbl"><table class="params"><thead><tr><th>Parameter</th><th>Set it to</th><th>Where</th></tr></thead><tbody>'
+      + r.params.map((p) => '<tr><td>' + esc(p.knob) + '</td><td>' + esc(p.value) + '</td><td>' + esc(p.at) + '</td></tr>').join('') + '</tbody></table></div>'
+      + '<div class="grid2"><div><div class="k">How it is priced here</div><p>' + esc(r.basis) + '</p></div>'
+      + '<div><div class="k">Opthub evidence</div><p>' + esc(r.opthub) + '</p></div>'
+      + '<div><div class="k">Watch out</div><p>' + esc(r.caveat) + '</p></div>'
+      + '<div><div class="k">Latency</div><p>' + esc(r.latency) + '</p></div></div>'
+      + '</div></details>'
+  }).join('') : '<div class="empty">No scenario matches these filters.</div>'
+
+  document.getElementById('moves').innerHTML = '<thead><tr><th>Parameter</th><th>Your value</th><th>Moves</th></tr></thead><tbody>' + E.PARAMS.map((p) => {
+    const m = E.MOVES[p.id], names = m === '*' ? ['every scenario (scale)'] : (m || []).map((id) => (DATA.scenarios.find((s) => s.id === id) || { name: id }).name)
+    return '<tr><td>' + esc(p.label) + '</td><td>' + esc(fmtVal(p, W[p.id])) + '</td><td>' + names.map((n) => '<span class="pill">' + esc(n) + '</span>').join('') + '</td></tr>'
+  }).join('') + '</tbody>'
+  for (const p of E.PARAMS) { const el = document.getElementById('v-' + p.id); if (el) el.textContent = fmtVal(p, W[p.id]) }
+}
+
+document.getElementById('evidence').innerHTML = '<thead><tr><th>Label</th><th>Means</th><th>Scenarios</th></tr></thead><tbody>' + TRUST.map((t) =>
+  '<tr><td><span class="pill ' + t + '">' + t + '</span></td><td>' + esc(DATA.evidence[t]) + '</td><td class="num">' + DATA.scenarios.filter((s) => s.evidence === t).length + '</td></tr>').join('') + '</tbody>'
+
+if (FROM) {
+  const el = document.getElementById('loaded')
+  el.hidden = false
+  el.innerHTML = '<b>Loaded from the opthub hub: ' + esc(FROM) + '.</b> The workload is that one session, measured from its transcript and classified by Jev, so the figures below are dollars of this session, not a month. <button type="button" id="unload">Back to the team defaults</button>'
+}
+buildForm()
+chips('layers', Object.keys(LAYERS), layerOn, (x) => LAYERS[x])
+chips('trust', TRUST, trustOn)
+chips('risk', RISK, riskOn)
+document.getElementById('sort').value = sortBy
+render()
+
+document.getElementById('est').addEventListener('input', (e) => {
+  const k = e.target.dataset.p; if (!k) return
+  const p = E.PARAMS.find((x) => x.id === k)
+  W[k] = p.options ? e.target.value : Number(e.target.value)
+  save(); render()
+})
+document.getElementById('est').addEventListener('click', (e) => {
+  if (e.target.id !== 'reset') return
+  W = E.defaults(); save(); buildForm(); render()
+})
+document.addEventListener('click', (e) => { if (e.target.id !== 'unload') return; W = E.defaults(); document.getElementById('loaded').hidden = true; save(); buildForm(); render() })
+document.getElementById('sort').addEventListener('change', (e) => { sortBy = e.target.value; save(); render() })
+document.addEventListener('click', (e) => {
+  const c = e.target.closest('.chip'); if (!c) return
+  const set = { layers: layerOn, trust: trustOn, risk: riskOn }[c.dataset.g], v = c.dataset.v
+  if (set.has(v) && set.size === 1) { for (const x of c.parentElement.querySelectorAll('.chip')) set.add(x.dataset.v) }
+  else if (set.has(v)) set.delete(v); else set.add(v)
+  for (const x of c.parentElement.querySelectorAll('.chip')) x.setAttribute('aria-pressed', set.has(x.dataset.v))
+  render()
+})
+document.getElementById('list').addEventListener('toggle', (e) => {
+  const d = e.target; if (!d.dataset || !d.dataset.id) return
+  d.open ? open.add(d.dataset.id) : open.delete(d.dataset.id)
+}, true)
+</script>

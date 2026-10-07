@@ -214,6 +214,32 @@ flowchart TB
   DEC -. outcomes .-> POL
 ```
 
+### 3.1a LLM Light profiles — built 2026-09-30
+
+LLM Light ships as **profiles**: one named bundle of classifier, routing rules, cache, budget, audit and
+Claude Code settings (`config/llmlight-profiles.json` in the e2b repo). A profile renders into a LiteLLM
+config plus a routing hook (`assets/llmlight_router.py`) and Claude Code env, for a laptop (Anthropic
+API) or a sandbox (Bedrock). Hub → Optimization → **Profiles**.
+
+| profile | for | main loop | what moves | budget | audit |
+|---|---|---|---|---|---|
+| `laptop-guarded` | interactive work | frontier | background calls → small, subagents → mid; security/auth/payments pinned to frontier | $50/day | decisions |
+| `laptop-balanced` | projects Triage classified | follows Jev's class for the project | as guarded, plus the main loop when Jev said mid/small | $30/day | decisions, 5% re-graded |
+| `sandbox-lean` | unattended agents | mid, frontier on error | background → small; thinking ≤ 8k, 60 turns | $5/run | full, 10% re-graded |
+| `ci-strict` | CI jobs | mid, no escalation | background → small; 30 turns | $2/run | full |
+| `frontier-governed` | security, compliance | frontier, no routing | nothing | $100/day | full |
+
+- **The per-request decision is local and costs no model call.** The hook reads the call kind
+  (main loop, subagent, Claude Code's background calls) and the project's classes as Jev answered them
+  in Triage, baked in when the profile is applied. Jev is never in the request path.
+- **Applied in one command**, reversibly: `node llmlight.mjs apply <profile> --project=<dir> --start`
+  writes the files and the project's `.claude/settings.local.json` env; `revert` restores it.
+- **Tested before applied**: every profile is also a catalog experiment (`profile-<id>`), so the hub can
+  run it against the baseline on a real session in the sandbox, blind-judged.
+- Verified with LiteLLM 1.103 on mock upstreams: main → frontier, background → small, subagent → mid,
+  a subagent mentioning "auth" → frontier; LiteLLM's own record of the served deployment matched every
+  decision. Not yet run against a real upstream.
+
 ### 3.2 One request in optimization mode
 
 ```mermaid

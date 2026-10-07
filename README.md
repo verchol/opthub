@@ -15,7 +15,27 @@ The project exists because the usual alternative is a spreadsheet of list prices
 | **`demos/opthub`** *(this repo)* | the spec, the measurements, and the read-only analysis tools. Nothing here spends money. |
 | **`sandbox/e2b`** *(not yet published)* | the working implementation: the hub, the experiment loop, the sandbox templates, the report. |
 
-They are deliberately separate. This repo is where a claim gets written down and argued with; the other is where it gets executed. `SPEC.md` is versioned (currently **v0.2**) and `PROGRESS.md` is the dated log of what each measurement changed.
+They are deliberately separate. This repo is where a claim gets written down and argued with; the other is where it gets executed. `SPEC.md` is versioned (currently **v0.4**) and `PROGRESS.md` is the dated log of what each measurement changed.
+
+---
+
+## Status — 2026-10-07
+
+Where the project stands, newest first. Each line has a dated entry in [`PROGRESS.md`](PROGRESS.md).
+
+| date | what | state |
+|---|---|---|
+| 10-04 | **Optimization Atlas** ([`docs/atlas/`](docs/atlas/)) — 38 scenarios in 8 layers, each with the exact knob it changes; `engine.js` prices best and worst case in $/month against a workload you set. Trust labels: 5 measured, 8 priced, 6 published, 19 guess | built |
+| 10-04 | **Hub Sessions tab priced by the atlas** — and a **3× cost bug fixed**: every Opus 5 request was priced at $15/$75. Hub total fell $5,951 → $1,919, in line with Triage's $1,971 | built; 1-hour cache writes (2×) still billed at 1.25× in the hub |
+| 09-30 | **Epic RO — runtime optimization** (`SPEC.md` v0.4 §16, [`docs/runtime-optimization.md`](docs/runtime-optimization.md)). `opt claude optimize` runs Claude Code in the Docker sandbox behind **ULT**, a router that classifies each request and decides keep / route / local, with a hash-chained audit log. Shadow mode by default | live once: a request routed to Haiku 4.5 cost $0.0645 vs $0.2581 on Opus 5.5 (n = 1). **Blocked** on an expired OAuth token in the implementation repo |
+| 09-30 | **LLM Light profiles** — five bundles (`laptop-guarded` … `frontier-governed`) rendered into a LiteLLM config + routing hook; Hub → Profiles | tested on mock upstreams only; convergence with ULT proposed, not done |
+| 09-29 | **`SPEC.md` v0.3** — where sessions live today (§5.3), centralising derived ~1 KB records while transcripts stay at the edge (§5.4), architecture at scale (§5.5). Re-runs, not storage, are the cost that scales | spec only |
+| 09-29 | **J3 — session triage with Jev** ([`experiments/session-triage/`](experiments/session-triage/)) and **Hub → Triage**. With work signals, Jev answers the model question on 22 of 54 sessions; the 32 `unclear` ones queue for a blind-judged Sonnet re-run | runnable; no owner-labelled gold set yet |
+| 09-29 | **Evidence catalog** ([`docs/evidence-catalog.md`](docs/evidence-catalog.md)) — 110 public savings claims checked against opthub's own numbers | done |
+| 09-25 | **J2 — email triage with Jev** ([`experiments/email-triage/`](experiments/email-triage/)) and **J1 — judge calibration spec** ([`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)) | J2 runnable on synthetic data only; J1 spec only |
+| 09-22 | **Router prior art** ([`docs/router-comparison.md`](docs/router-comparison.md)) and the **pluggable judge** (`SPEC.md` §6.1.1) | done |
+
+**Blocked / open right now:** the implementation repo (`sandbox/e2b`) is still unpublished and has uncommitted ULT work · ULT needs a valid provider credential · LLM Light and ULT overlap and need one design · every comparison is still `n = 1` per arm.
 
 ---
 
@@ -109,7 +129,7 @@ on Fly that suspends when idle.
 
 ## What the measurements changed
 
-The spec is on v0.2 because v0.1's headline numbers did not survive contact with real data.
+v0.2 of the spec exists because v0.1's headline numbers did not survive contact with real data.
 
 - **E1-F5 — cost is concentrated in session *length*.** 52.9% of a month's spend was requests whose session median context was ≥250k tokens; the top two sessions were 52.9% of the month. No candidate optimizer addressed it, so `context-lifecycle` became the top-ranked lever.
 - **E1-F4 — cache-priming is dead on this workload.** Measured prompt-cache hit rate 96.8%. The −64.4% headline in `docs/optimizers.md` was a naive-client number. Demoted to a **detector**.
@@ -123,12 +143,12 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 
 ## Roadmap
 
-*Last revised 2026-09-19. The dated history of how each item got here is `PROGRESS.md`.*
+*Last revised 2026-10-07. The dated history of how each item got here is `PROGRESS.md`.*
 
 ### Done — what exists and runs
 
 - [x] **Measurements** E1 / E1b — one month of real transcripts, two runs, pinned ledgers in `docs/data/`
-- [x] **`SPEC.md` v0.2** — rebuilt on measured data; §2 lists what died from v0.1
+- [x] **`SPEC.md` v0.2 → v0.4** — v0.2 rebuilt on measured data (§2 lists what died from v0.1); v0.3 session storage and scale (§5.3–§5.5); v0.4 runtime optimization (§16)
 - [x] **Read-only analysis tools** — `sessions` · `lenops` · `loopscan` · `savings` · `costmodel` · `ctxwatch`, plus the `/lenops` command
 - [x] **The Optimization Hub** (`opt hub start`) and **`opt watch`** — sessions, per-session analytics, catalog, runs, ROI
 - [x] **The experiment loop** — real session replayed in E2B microVMs, arms named by what they vary, no-op arms flagged, blind grading
@@ -136,10 +156,20 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 - [x] **Sandbox templates** — E2B (Claude Code + LiteLLM), open-weights (Ollama), Kong AI Gateway, and the local Docker sandbox with eight verified guarantees
 - [x] **Packaging and demo** — Homebrew formula with `OPT_HOME`, read-only Fly deploy at `opthub-demo.fly.dev`
 - [x] **Documentation** — the two walkthroughs, *Anatomy of an experiment*, 22 hub screenshots, and the artifact index
+- [x] **Router prior art + pluggable judge** — five routers compared; pinned judge of record, shadow judges reported alongside
+- [x] **J-series classifier experiments** — J1 judge calibration (spec), J2 email triage, J3 session triage with Jev, surfaced as Hub → Triage with a budgeted re-run queue
+- [x] **Sandbox knobs** — arms can vary LiteLLM routing, caching, budget, and Claude Code env / settings / flags; routed arms priced per served model
+- [x] **LLM Light profiles** — five profiles, LiteLLM hook, `apply` / `revert`, Hub → Profiles (mock upstreams only)
+- [x] **Optimization Atlas** — 38 scenarios priced best/worst case; now the source of the Sessions tab's potential
+- [x] **Evidence catalog** — 110 public claims, five of opthub's six headline numbers confirmed by public sources
 
 ### Now — close the loop on what exists
 
-- [ ] **Publish the implementation repo** (`sandbox/e2b`) so the walkthroughs point at code that can be run.
+- [ ] **Publish the implementation repo** (`sandbox/e2b`) so the walkthroughs point at code that can be run. It also holds the uncommitted ULT work (`optimize-live.mjs`, `ult.mjs`, `lib/ult/`, 69 checks in `npm test`).
+- [ ] **Unblock ULT** — renew the provider credential, then run `opt claude optimize` end to end; routing needs a per-model adapter (four `400`s from Haiku before the first routed request worked).
+- [ ] **Converge LLM Light and ULT** into one router (`docs/runtime-optimization.md` §10), and run it against a real upstream.
+- [ ] **Gold labels for J3** — twenty interactive sessions labelled by their owner are enough to score `jev-C1`.
+- [ ] **Reconcile cache-write pricing** — the hub bills every cache write at 1.25×; Claude Code's 1-hour writes bill at 2× (`tools/savings.py` already does).
 
 - [ ] **Wire-level capture with opthub-owned retention.** The top infrastructure item. The local store expires at 30 days and has already destroyed a run of record; 381 title-generation fires left no usable local record at all (E1-F3). Until capture owns storage, every analysis has a decay date.
 - [ ] **Gate runner**, built against the two rejections in `SPEC.md` §11 — accuracy kills `model-routing`, stability kills the TTL change. A gate that has never rejected anything is decoration.
@@ -167,6 +197,7 @@ Of the four levers priced per session, **only the TTL one is measured.** Prefix-
 - [ ] `model-routing` (6.8) built to be *demonstrably blocked*, not shipped — biggest prize ($308 ceiling), worst odds of passing the accuracy gate
 - [ ] Two-part scorer: deterministic + pinned judge
 - [ ] `opthub report` terminal dashboard, on real captured history
+- [ ] Centralised session records (`opthub.session/1`, `opt ship`) — stage B of the `SPEC.md` §5.5 rollout
 
 ### Open questions (`SPEC.md` §14)
 
@@ -233,11 +264,22 @@ and the two version-pinning traps worth knowing before you share one.
   resolve into arms that are identical except one parameter, and what the verifier is allowed to see.
   The hub serves it at `/docs/anatomy.html` through a symlink in the implementation repo.
 
+- [`docs/atlas/`](docs/atlas/index.html) — **Optimization Atlas.** Every known way to cut an agent's
+  cost, with the parameters it changes and its best/worst case on a workload you set.
+  `scenarios.json`, `engine.js` and `llms.txt` sit beside the page for agents.
+- [`docs/experiment-catalog.html`](docs/experiment-catalog.html) — **Experiment catalog.** Every experiment opthub can run: which
+  session to replay, how the result is verified, and the lever's standalone saving on the pinned E1b month.
+- [`docs/evidence-catalog.md`](docs/evidence-catalog.md) — 110 public savings claims, graded by
+  evidence strength and checked against opthub's measurements.
+- [`docs/runtime-optimization.md`](docs/runtime-optimization.md) — epic RO: `opt claude optimize` and ULT.
+- [`docs/router-comparison.md`](docs/router-comparison.md) · [`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)
+  — router prior art, and the J1 judge calibration design.
+
 ## Reading order
 
-1. `SPEC.md` §1–§2 — what this is, and what died from v0.1
+1. `SPEC.md` §1–§2 — what this is, and what died from v0.1; §5.3–§5.5 and §16 for v0.3/v0.4
 2. `docs/experiments.md` — the measurements, and the use cases scored from them
-3. `PROGRESS.md` — the dated log, newest last
+3. `PROGRESS.md` — the dated log (newest last, though entries from 09-29 onward were appended out of order)
 4. `docs/optimizers-cookbook.md` — per optimizer: before/after request, `usage` proof, per-line cost arithmetic, gate snippet, reproducible failure
 5. The [roadmap](#roadmap) above — what is done, what is next, and what is deliberately deferred
 

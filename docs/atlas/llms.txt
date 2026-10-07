@@ -1,0 +1,33 @@
+# Optimization Atlas (opthub)
+
+> Every known way to cut what an AI coding agent costs, the exact parameters each one changes,
+> and its potential on a workload you set — best case and worst case in $/month, each labelled
+> by how far to trust it. Inspired by battleships.dev.
+
+## Files (relative to this page)
+- scenarios.json — every scenario: id, name, layer, where (client | gateway | provider | sandbox | self-hosted),
+  what it does, params [{knob, value, at}], evidence, risk (none | low | medium | high), latency, opthub
+  (what opthub measured or built), caveat, kind (saving | spend | guard | latency).
+- engine.js — pure functions: AtlasEngine.defaults(), baseline(workload), evaluate(workload, scenarios).
+  Works in a browser (globalThis.AtlasEngine) and in Node (require).
+
+## Workload fields
+devs, sessions (per developer per day), days, requests (per session), model (claude-opus-5 | claude-opus-5-5 |
+claude-sonnet-5 | claude-haiku-4-5 | claude-fable-5-1), ctx (tokens per request), out (tokens per request),
+think (% of output), hit (% of input read from cache), schema (tool-definition tokens per request),
+simple (% of work a mid model could do), side (% of requests that are subagent or background calls),
+unattended (% of sessions nobody waits on), separable (% of spend in sessions mixing unrelated tasks),
+repeat, neardup, urgent, retry (%), sandbox ($/month), idle (%), selfhost ($/month).
+
+## Evidence labels
+- measured: opthub ran it on real sessions (small n, stated)
+- priced: arithmetic on published list prices; a ceiling until measured on your tasks
+- published: a vendor or practitioner figure for generic workloads
+- guess: a stated range with a stated basis, no measurement
+
+## Rules
+- Results overlap; rank them, never add them.
+- Every estimate has a worst case. Several are negative on cache-heavy agent workloads (batch, prompt
+  compression, routing whole tasks to a weaker model).
+- Prices: Anthropic list rates per MTok, input/output — Opus 5 $5/$25, Opus 5.5 $4/$20, Sonnet 5 $2/$10,
+  Haiku 4.5 $1/$5, Fable 5.1 $10/$50; cache read 0.1×, 5-minute write 1.25×, Batch 0.5×, fast mode 2×.
