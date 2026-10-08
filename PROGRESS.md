@@ -396,3 +396,29 @@
   (the `.env` OAuth token is expired), parallel steps and background container removal — **4.2 s** to
   Claude Code on a Docker Desktop running 51 other containers.
 
+## 2026-10-08 · Epic MOD opened — learned from claude-router
+- Read [`alexei-led/claude-router`](https://github.com/alexei-led/claude-router) at `7599fb5` (1.3.0, MIT). Its
+  1.0.0 removed the gateway and became a Claude Code **Mod**: a `turn.step` hook that changes only model and
+  effort while Claude Code builds the request, holds credentials and runs tools. Every current ULT blocker is
+  a proxy problem — expired OAuth token, four Haiku `400`s, Docker preflight, orphan routers — so the move is
+  worth copying.
+- What his repo says about routing (third-party, small `n`, list prices, no quality check):
+  - `docs/evaluation.md`: 15.5% below always-Opus-xhigh but only 4.1% below the strongest model per
+    whole session.
+  - Native replay: 11,619 main decisions, 37 with advice, 0 of 37 routed differently.
+  - `CHANGELOG.md` 0.8.0: 15 of 16 escalations from Sonnet stayed on Opus, about $31.6 in cold cache writes,
+    mostly set off by environment or hook errors.
+  This agrees with §7: `context-lifecycle` first, `model-routing` built to be blocked.
+- **Taken:** Mod transport for capture; cache-cost switching from observed usage (`lib/policy.mjs`,
+  `lib/native-cost.mjs`); no escalation on errors; one-line install; tests run in the real engine.
+  **Not taken:** prompt text to the classifier; acting without a shadow phase.
+- `docs/epic-mod.md` (new) — tasks MOD-0…MOD-6, decisions D1–D3, kill tests. `SPEC.md` → **v0.5** §17.
+  `docs/prompts/epic-mod-kickoff.md` (new) — the prompt that starts MOD-0 in Claude Code.
+  `docs/router-comparison.md` — claude-router added as row 1a.
+- Mod API checked against Claude Code 2.1.293's type declarations: `turn.step` reports usage per request,
+  with `agentId` on subagent steps. It has no 5m/1h cache-write split and no cache-miss reason, so the
+  journal adds to transcripts rather than replacing them. Whether background calls (title generation)
+  pass through it is **unknown** — MOD-0 answers it.
+- Open: the crux for routing — more than ~10% graded saving with no quality loss? — is unknown until
+  MOD-4 (E-R1) runs claude-router as an arm with three repeats.
+

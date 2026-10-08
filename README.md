@@ -15,16 +15,17 @@ The project exists because the usual alternative is a spreadsheet of list prices
 | **`demos/opthub`** *(this repo)* | the spec, the measurements, and the read-only analysis tools. Nothing here spends money. |
 | **`sandbox/e2b`** *(not yet published)* | the working implementation: the hub, the experiment loop, the sandbox templates, the report. |
 
-They are deliberately separate. This repo is where a claim gets written down and argued with; the other is where it gets executed. `SPEC.md` is versioned (currently **v0.4**) and `PROGRESS.md` is the dated log of what each measurement changed.
+They are deliberately separate. This repo is where a claim gets written down and argued with; the other is where it gets executed. `SPEC.md` is versioned (currently **v0.5**) and `PROGRESS.md` is the dated log of what each measurement changed.
 
 ---
 
-## Status — 2026-10-07
+## Status — 2026-10-08
 
 Where the project stands, newest first. Each line has a dated entry in [`PROGRESS.md`](PROGRESS.md).
 
 | date | what | state |
 |---|---|---|
+| 10-08 | **Epic MOD** (`SPEC.md` v0.5 §17, [`docs/epic-mod.md`](docs/epic-mod.md)) — capture every model request into an opthub-owned journal, and run routing in shadow, from inside Claude Code as a **Mod** instead of a proxy. Learned from [claude-router](https://github.com/alexei-led/claude-router), which dropped its proxy for the same hook; its own evaluation reports no measured saving, so it also becomes an experiment arm (E-R1). Kickoff prompt: [`docs/prompts/epic-mod-kickoff.md`](docs/prompts/epic-mod-kickoff.md) | spec only; MOD-0 probe next |
 | 10-04 | **Optimization Atlas** ([`docs/atlas/`](docs/atlas/)) — 38 scenarios in 8 layers, each with the exact knob it changes; `engine.js` prices best and worst case in $/month against a workload you set. Trust labels: 5 measured, 8 priced, 6 published, 19 guess | built |
 | 10-04 | **Hub Sessions tab priced by the atlas** — and a **3× cost bug fixed**: every Opus 5 request was priced at $15/$75. Hub total fell $5,951 → $1,919, in line with Triage's $1,971 | built; 1-hour cache writes (2×) still billed at 1.25× in the hub |
 | 09-30 | **Epic RO — runtime optimization** (`SPEC.md` v0.4 §16, [`docs/runtime-optimization.md`](docs/runtime-optimization.md)). `opt claude optimize` runs Claude Code in the Docker sandbox behind **ULT**, a router that classifies each request and decides keep / route / local, with a hash-chained audit log. Shadow mode by default | live once: a request routed to Haiku 4.5 cost $0.0645 vs $0.2581 on Opus 5.5 (n = 1). **Blocked** on an expired OAuth token in the implementation repo |
@@ -35,7 +36,7 @@ Where the project stands, newest first. Each line has a dated entry in [`PROGRES
 | 09-25 | **J2 — email triage with Jev** ([`experiments/email-triage/`](experiments/email-triage/)) and **J1 — judge calibration spec** ([`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)) | J2 runnable on synthetic data only; J1 spec only |
 | 09-22 | **Router prior art** ([`docs/router-comparison.md`](docs/router-comparison.md)) and the **pluggable judge** (`SPEC.md` §6.1.1) | done |
 
-**Blocked / open right now:** the implementation repo (`sandbox/e2b`) is still unpublished and has uncommitted ULT work · ULT needs a valid provider credential · LLM Light and ULT overlap and need one design · every comparison is still `n = 1` per arm.
+**Blocked / open right now:** epic MOD's MOD-0 probe decides whether capture can leave the proxy · the implementation repo (`sandbox/e2b`) is still unpublished and has uncommitted ULT work · ULT needs a valid provider credential · LLM Light and ULT overlap and need one design · every comparison is still `n = 1` per arm.
 
 ---
 
@@ -165,13 +166,24 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 
 ### Now — close the loop on what exists
 
+**Epic MOD first** ([`docs/epic-mod.md`](docs/epic-mod.md)) — it removes the proxy problems that block ULT and starts capture without a credential:
+
+- [ ] **MOD-0 · Probe the hook** (half a day) — does `turn.step` give usage for main, subagent and background calls, and does it match the transcript? Kill test: no usable usage on main-thread steps → capture stays on the proxy.
+- [ ] **MOD-1 · `opthub-capture`** — hash-chained journal per session under `$OPT_HOME/journal/`, no prompt text; `tools/journal.py verify | reconcile | price`. Starts the wire-capture item below without a proxy.
+- [ ] **MOD-2 · Shadow routing in the Mod** — records what it would route and the estimated net after the cache cost of switching; never acts.
+- [ ] **MOD-3 · Cache-cost policy in ULT** — observed usage instead of the size estimate; no escalation on tool or environment errors.
+- [ ] **MOD-4 · E-R1: claude-router as an arm** — three sessions, three repeats, blind grade, classifier cost charged. Kill test: under 5% graded saving or a quality drop → `model-routing` stays built to be blocked.
+- [ ] **MOD-5 · One-line install** for design partners (`marketplace.json`), with `claude plugin validate` and `claude plugin test` in CI.
+
+Then the rest:
+
 - [ ] **Publish the implementation repo** (`sandbox/e2b`) so the walkthroughs point at code that can be run. It also holds the uncommitted ULT work (`optimize-live.mjs`, `ult.mjs`, `lib/ult/`, 69 checks in `npm test`).
 - [ ] **Unblock ULT** — renew the provider credential, then run `opt claude optimize` end to end; routing needs a per-model adapter (four `400`s from Haiku before the first routed request worked).
 - [ ] **Converge LLM Light and ULT** into one router (`docs/runtime-optimization.md` §10), and run it against a real upstream.
 - [ ] **Gold labels for J3** — twenty interactive sessions labelled by their owner are enough to score `jev-C1`.
 - [ ] **Reconcile cache-write pricing** — the hub bills every cache write at 1.25×; Claude Code's 1-hour writes bill at 2× (`tools/savings.py` already does).
 
-- [ ] **Wire-level capture with opthub-owned retention.** The top infrastructure item. The local store expires at 30 days and has already destroyed a run of record; 381 title-generation fires left no usable local record at all (E1-F3). Until capture owns storage, every analysis has a decay date.
+- [ ] **Wire-level capture with opthub-owned retention** (MOD-1 covers Claude Code's own requests; this item still covers other agents and the cache-write TTL split). The top infrastructure item. The local store expires at 30 days and has already destroyed a run of record; 381 title-generation fires left no usable local record at all (E1-F3). Until capture owns storage, every analysis has a decay date.
 - [ ] **Gate runner**, built against the two rejections in `SPEC.md` §11 — accuracy kills `model-routing`, stability kills the TTL change. A gate that has never rejected anything is decoration.
 - [ ] **ADRs 0002–0011**, covering `docs/optimizers.md` §5 and the cookbook §6, plus ADR-0010 (stability gate) and ADR-0011 (population rule).
 - [ ] **Repeats.** Every comparison is currently `n = 1` per arm, and agent variance makes a sub-15% single-run difference noise. Three repeats is the minimum before quoting a figure; `--repeats` exists and defaults to 1 because repeats cost linearly.
@@ -272,6 +284,9 @@ and the two version-pinning traps worth knowing before you share one.
 - [`docs/evidence-catalog.md`](docs/evidence-catalog.md) — 110 public savings claims, graded by
   evidence strength and checked against opthub's measurements.
 - [`docs/runtime-optimization.md`](docs/runtime-optimization.md) — epic RO: `opt claude optimize` and ULT.
+- [`docs/epic-mod.md`](docs/epic-mod.md) — epic MOD: capture and shadow routing inside Claude Code as a Mod,
+  what we learned from claude-router, and the tasks. [`docs/prompts/epic-mod-kickoff.md`](docs/prompts/epic-mod-kickoff.md)
+  is the prompt that starts the work in Claude Code.
 - [`docs/router-comparison.md`](docs/router-comparison.md) · [`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)
   — router prior art, and the J1 judge calibration design.
 

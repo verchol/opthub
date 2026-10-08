@@ -12,6 +12,7 @@ sandbox or on a developer laptop so a real session can be replayed through it.
 | # | Router | Category | Decision made by | Quality check on the answer | Sandbox / dev-machine difficulty | Overlap with opthub |
 |---|---|---|---|---|---|---|
 | 1 | [pi-model-router](https://github.com/alexei-led/pi-model-router) (Alexei) | dev routing | external advisor (Jev) per turn, else fixed baseline | none — advisor's self-reported confidence only | **easy** locally · **medium** in sandbox | `model-routing`, `effort-tuning` levers, applied live |
+| 1a | [claude-router](https://github.com/alexei-led/claude-router) (Alexei) — *added 2026-10-08* | dev routing, **inside Claude Code** | classifier (Jev, or Cloudflare's Clef / Clef Flash) once per turn + local cache-cost policy | none — README: savings not measured | **easy** — `claude --plugin-dir`; classifier egress needed in sandbox | the transport epic MOD copies; arm E-R1 in the replay loop |
 | 2 | [RouteLLM](https://github.com/lm-sys/RouteLLM) (LMSYS) | dev routing | trained classifier per request | offline benchmarks (MT-Bench, GSM8K), not your workload | **medium** | prior art for the accuracy gate's cost-vs-quality curve |
 | 3 | [LiteLLM](https://github.com/BerriAI/litellm) Router / Proxy | runtime for agents | config: fallbacks, load-balance, budget | none — availability & cost, not quality | **easy** — already in `template/` | the A/B seam opthub already runs through |
 | 4 | [Kong AI Gateway](https://docs.konghq.com/hub/?category=ai) | runtime for agents | plugins: semantic routing, semantic cache, limits | none — embedding similarity on the prompt | **medium–hard** — already in `template/kong/`; semantic plugins need Enterprise + vector store | source of opthub's 13-lever catalog |
@@ -60,6 +61,41 @@ measurement of quality lost, and does not charge the advisor's own cost or laten
 saving. His own validation shows the advisor's confidence moved from ~30% to ~90% on identical
 inputs when he reworded the tier descriptions — the same instability opthub's stability gate
 (§6.5) exists to catch.
+
+---
+
+## 1a. `alexei-led/claude-router` (Alexei's Claude Code version) — *added 2026-10-08*
+
+**Main purpose:** dev routing for **Claude Code** — the Pi router's idea moved into a Claude Code Mod.
+Read at commit `7599fb5` (1.3.0, 2026-10-06, MIT).
+
+**What changed against row 1.** The objection under row 1 — "it routes Pi, not Claude Code" — no
+longer holds. Since 1.0.0 the router is a `turn.step` hook: it changes only model and effort on the main
+conversation, and Claude Code builds the request, holds the credentials, runs the tools and streams.
+Subagent steps pass through unchanged. There is no proxy, no port and no model adapter.
+
+**How it decides.** The classifier sees the prompt and up to six recent messages, 1,200 characters each,
+once per turn; tool continuations keep the choice (`docs/architecture.md`). A local policy then:
+- prices a switch as the candidate's worst-case cache write minus the incumbent's best-case cache read,
+  from the last response's usage;
+- raises the bar to switch as that cost rises;
+- needs repeated votes for an upgrade, and a payback horizon for a downgrade;
+- drops a model at 80% of its context window (`lib/policy.mjs`, `lib/native-cost.mjs`).
+
+Classifier deadlines are 1,500 ms for Jev and 3,000 ms for Clef; three failures pause it for 60 s.
+
+**What its own evaluation says** (`docs/evaluation.md`, one developer, list prices, no quality review):
+- 15.5% below always-Opus-xhigh, and 4.1% below the strongest model per whole session.
+- A native shadow replay: 0 of 37 advised decisions routed differently.
+
+**How hard to run here — easy.** `claude --plugin-dir <checkout>` with a Jev key or a Cloudflare token.
+In the sandbox the egress allow-list needs `api.typesafe.ai` or Cloudflare. Without a key the router
+silently keeps the baseline model, so a replay must assert the classifier was reached.
+
+**Overlap with opthub:** the transport epic MOD copies for capture and shadow routing (`docs/epic-mod.md`).
+It is also the first router to run as an arm (E-R1, MOD-4), since it is the closest to what developers
+will actually install. One difference to keep: it sends prompt text to the classifier, which opthub's
+classifier contract (counts and flags only) does not allow.
 
 ---
 
@@ -178,6 +214,7 @@ workload. A hosted router is a candidate lever for opthub to test, not an altern
 ## Open items
 
 - [ ] Actually run #1 on one exported session (needs Pi installed in the sandbox + TypeSafe key).
+- [ ] Run #1a as arm E-R1 — three sessions, three repeats, blind grade (`docs/epic-mod.md` MOD-4). Easier than #1: no Pi needed.
 - [ ] Run #2 behind LiteLLM on the same session; compare blind scores.
 - [ ] Confirm Kong semantic-routing licence status before budgeting #4.
 - [ ] Add a "cost of the router itself" column once #1 and #2 have real numbers.
