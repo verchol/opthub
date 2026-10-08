@@ -7,12 +7,14 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
 
 ## Layout
 
-- `SPEC.md` — the spec, versioned (currently **v0.4**). §2 lists what v0.1 claimed that measurement killed.
+- `SPEC.md` — the spec, versioned (currently **v0.5**). §2 lists what v0.1 claimed that measurement killed.
 - `PROGRESS.md` — dated log, newest **last**. Add an entry when a measurement changes a claim.
 - `README.md` — front door and roadmap.
 - `docs/` — `experiments.md` (E1/E1b), `optimizers.md` + `optimizers-cookbook.md` (levers),
   `router-comparison.md`, `demo-mock-spec.md` (four-terminal demo, source of all demo numbers),
-  `demo-thesis.md` + `demo-diagrams.md` (developer demo), `ARTIFACTS.md` (shared-page index).
+  `demo-thesis.md` + `demo-diagrams.md` (developer demo), `ARTIFACTS.md` (shared-page index),
+  `runtime-optimization.md` (epic RO, ULT), `epic-mod.md` (epic MOD: capture and shadow routing as a
+  Claude Code Mod), `prompts/` (kickoff prompts for Claude Code sessions).
 - `docs/data/` — pinned ledgers `e1-sessions.csv` (215 sessions) and `e1b-sessions.csv`
   (214 sessions, $508.80). Prompts and absolute paths are stripped; keep it that way.
 - `docs/screens/` — hub screenshots (`INDEX.md`) and rendered demo diagrams (`diagrams/`).

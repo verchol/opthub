@@ -1,9 +1,10 @@
 # opthub — Phase 1 Spec
 
-**Status:** draft v0.4 · **Date:** 2026-09-30 · **Owner:** oleg@canarian.io
-**Supersedes:** v0.3 (2026-09-29), v0.2 (2026-09-03), v0.1 (2026-08-24). v0.2 rebuilt the spec against measured data (§2).
+**Status:** draft v0.5 · **Date:** 2026-10-08 · **Owner:** oleg@canarian.io
+**Supersedes:** v0.4 (2026-09-30), v0.3 (2026-09-29), v0.2 (2026-09-03), v0.1 (2026-08-24). v0.2 rebuilt the spec against measured data (§2).
 v0.3 adds where sessions are stored today and how they are centralised and scaled (§5.3–§5.5).
 v0.4 opens epic RO, runtime optimization: `opt claude optimize` and LLM Ultra Light (§16, `docs/runtime-optimization.md`).
+v0.5 opens epic MOD: capture and shadow routing inside Claude Code as a Mod, learned from claude-router (§17, `docs/epic-mod.md`).
 
 ---
 
@@ -874,3 +875,30 @@ The full epic — stories, components, flags, configuration, audit schema, what 
 is `docs/runtime-optimization.md`. Implementation lives in `sandbox/e2b`: `optimize-live.mjs`,
 `ult.mjs`, `lib/ult/`, `config/ult.default.json`.
 
+---
+
+## 17. Capture and shadow routing inside Claude Code — epic MOD (*added in v0.5*)
+
+Claude Code now lets a plugin hook each model request (`turn.step`) and change only its model and
+effort, while Claude Code keeps building the request, holding the credentials and running the tools.
+[claude-router](https://github.com/alexei-led/claude-router) (MIT, commit `7599fb5`) moved from a proxy
+to this hook in its 1.0.0. Every problem that blocks ULT today is a proxy problem (§16,
+`docs/runtime-optimization.md` §8–§9), so epic MOD copies the move for two jobs:
+
+1. **Capture.** A Mod writes one hash-chained record per model request (§9.2 format) into a journal under
+   `$OPT_HOME/journal/`, which opthub owns. This is the first step on `wire-capture` (§7, UC-5) that needs
+   no proxy and no credential. It adds to the transcripts and does not replace them: the hook reports no
+   5-minute / 1-hour cache-write split and no cache-miss reason.
+2. **Shadow routing.** The same Mod asks ULT's classifier and a cache-cost policy what it *would* do, and
+   records it. It never changes the model in this epic.
+
+Three rules carry over: shadow first (§16 rule 1); no prompt text to any classifier (`CLAUDE.md`
+privacy rules); a model switch is priced from the cache actually held, read from the last response's usage.
+
+ULT stays for what a Mod cannot do: other agents, local models, sandbox isolation and the TTL split.
+claude-router itself becomes an experiment arm (E-R1), because its own evaluation reports no measured
+saving. If a blind-graded replay shows less than 5% saving, or a quality drop beyond the noise floor,
+`model-routing` stays built to be blocked (§7).
+
+The tasks (MOD-0 … MOD-6), decisions and kill tests are in `docs/epic-mod.md`. The prompt to start the
+work in Claude Code is `docs/prompts/epic-mod-kickoff.md`.
