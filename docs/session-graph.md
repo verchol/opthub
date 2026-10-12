@@ -86,7 +86,9 @@ beside `triage.json`. Each record gets a `graph` field holding that relative pat
 when the transcript has expired or the session has no id. `--no-graphs` skips them.
 End-to-end on this machine: 1 of 1 sessions written, rules arm, no egress.
 
-**Needed in `sandbox/e2b`.** That repo isn't on GitHub, so these changes are not made here:
+**Needed in `sandbox/e2b`.** That repo isn't on GitHub, so these changes are not made here.
+A ready-to-paste prompt for Claude Code in that repo is in
+[`prompts/hub-triage-graph.md`](prompts/hub-triage-graph.md).
 
 1. `hub.mjs`: `GET /api/triage/:sid/graph` returns `results/graphs/<sid>.json`, or 404 when
    the record's `graph` is null.

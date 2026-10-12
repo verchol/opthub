@@ -139,7 +139,7 @@ footer code{font-family:var(--m);font-size:12px}
 <div class="page">
 <div class="wrap">
   <header>
-    <div class="crumbs"><a href="#">Triage</a> › <span id="crumbSess"></span> <span class="badge" id="badge"></span></div>
+    <div class="crumbs"><a href="#" id="backTriage">Triage</a> › <span id="crumbSess"></span> <span class="badge" id="badge"></span></div>
     <h1 id="h1"></h1>
     <div class="meta" id="totals"></div>
   </header>
@@ -257,6 +257,9 @@ edgeEls.filter(x=>x.e&&x.e.kinds.includes('write')).forEach(x=>{});
 // totals
 const M=G.meta;
 document.getElementById('badge').textContent=M.kind==='mock'?'mock · numbers from '+M.source:M.source;
+// Inside the Hub (iframe or ?embed / #embed) the Hub's own navigation wins: drop the mock sidebar.
+if(window.self!==window.top||/(^|[?&#])embed\b/.test(location.search+location.hash)){document.querySelector('.side').hidden=true;document.querySelector('.app').style.gridTemplateColumns='minmax(0,1fr)'}
+document.getElementById('backTriage').addEventListener('click',ev=>{ev.preventDefault();if(history.length>1)history.back()});
 document.getElementById('brandNote').textContent=M.kind==='mock'?'preview · mock session':'preview · one session';
 ['crumbSess','sideSess'].forEach(i=>document.getElementById(i).textContent=M.session);
 document.getElementById('h1').textContent=M.title?M.session+' · '+M.title:M.session;

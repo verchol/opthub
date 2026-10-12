@@ -307,7 +307,7 @@ def private_only(out):
 
 def page(graph, kind, out):
     tpl = (PREVIEW / f"{kind}-graph.template.html").read_text()
-    pathlib.Path(out).write_text(tpl.replace("/*GRAPH*/null", json.dumps(graph)))
+    pathlib.Path(out).write_text(tpl.replace("/*GRAPH*/null", json.dumps(graph).replace("</", "<\\/")))
 
 
 def main():

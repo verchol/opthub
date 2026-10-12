@@ -107,7 +107,7 @@ graph = dict(meta=dict(kind="mock", session=sess, duration=dur, title="incident 
                     for (s, t), e in edges.items()])
 for name in ("session-graph", "triage-graph"):
     tpl = (HERE / f"{name}.template.html").read_text()
-    (HERE / f"{name}.html").write_text(tpl.replace("/*GRAPH*/null", json.dumps(graph)))
+    (HERE / f"{name}.html").write_text(tpl.replace("/*GRAPH*/null", json.dumps(graph).replace("</", "<\\/")))
 m = graph["meta"]
 print(f"{m['session']}: {m['tasks']} tasks · ${m['cost']:.2f} · {m['calls']} tool calls · "
       f"{len(graph['nodes'])} nodes · {len(graph['edges'])} edges -> {HERE.name}/{{session,triage}}-graph.html")
