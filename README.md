@@ -162,6 +162,7 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 - [x] **LLM Light profiles** — five profiles, LiteLLM hook, `apply` / `revert`, Hub → Profiles (mock upstreams only)
 - [x] **Optimization Atlas** — 38 scenarios priced best/worst case; now the source of the Sessions tab's potential
 - [x] **Evidence catalog** — 110 public claims, five of opthub's six headline numbers confirmed by public sources
+- [x] **Session graph** — `tools/sessiongraph.py`: a session as tasks linked to models, context, tools, files and subagents; previews in [`docs/preview/session-graph/`](docs/preview/session-graph/), per-session graphs in the Triage export ([`docs/session-graph.md`](docs/session-graph.md))
 
 ### Now — close the loop on what exists
 

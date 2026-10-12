@@ -17,7 +17,8 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
   (214 sessions, $508.80). Prompts and absolute paths are stripped; keep it that way.
 - `docs/screens/` — hub screenshots (`INDEX.md`) and rendered demo diagrams (`diagrams/`).
 - `tools/` — stdlib Python, read-only: `sessions.py`, `lenops.py`, `loopscan.py`, `savings.py`,
-  `costmodel.py`, `ctxwatch.py`. They are the source of every number in `docs/`.
+  `costmodel.py`, `ctxwatch.py`, `sessiongraph.py`. They are the source of every number in `docs/`.
+- `docs/session-graph.md` + `docs/preview/session-graph/` — session as a graph of tasks; `build.py` renders the mock from §5.
 - `experiments/` — J-series classifier experiments (`email-triage` = J2, `session-triage` = J3, Jev).
 
 ## Commands
@@ -26,6 +27,7 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
 python3 tools/lenops.py view                 # session ops report (also /lenops)
 python3 tools/savings.py --days 30           # per-session lever headroom
 python3 tools/costmodel.py                   # run before editing any number in docs/optimizers.md
+python3 tools/sessiongraph.py <sid> --html data/private/g.html   # one session as a graph (stripped)
 cd experiments/session-triage && python3 src/run.py          # rules arm, pinned ledger, no egress
 mmdc -i docs/demo-diagrams.md -o docs/screens/diagrams/demo.png -b white -s 2   # re-render diagrams
 ```
