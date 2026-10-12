@@ -396,3 +396,19 @@
   (the `.env` OAuth token is expired), parallel steps and background container removal — **4.2 s** to
   Claude Code on a Docker Desktop running 51 other containers.
 
+
+## 2026-10-12 · Session graph — a session as tasks → models, context, tools, files; Hub → Triage → Graph
+- `tools/sessiongraph.py` (new, stdlib, read-only): one session as a graph of tasks (one per person's prompt),
+  each linked to its models, context, tools, files / command families and subagents. Stripped by default;
+  `--keep-text` refuses to write outside `data/private/` (now gitignored). Design in `docs/session-graph.md`.
+- Previews in `docs/preview/session-graph/`: the graph alone, and as a Graph tab on a Triage session page.
+  The mock is `demo-mock-spec.md` §5, parsed by `build.py` ($4.82, 5 tasks, 24 tool calls — matches §5).
+- `experiments/session-triage/src/export_hub.py` writes `results/graphs/<session>.json` beside
+  `triage.json` and a `graph` field per record. The hub route and tab are in `sandbox/e2b`, not done here
+  (`docs/session-graph.md` §6 lists the three changes).
+- **Finding, not yet re-measured:** current transcripts write one record per content block, each carrying the
+  same message id and identical usage. `tools/sessions.py` / `savings.py` count every such record, and skip
+  `<session>/subagents/` files. On this session (n = 1, mid-session): 134 usage records, 62 unique message ids;
+  Triage priced it $15.42 and the de-duplicated graph $11.39 including $4.40 of subagents. Whether the pinned
+  E1 / E1b ledgers are affected depends on whether August transcripts already split records — check before
+  any number in `docs/` moves.

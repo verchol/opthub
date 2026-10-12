@@ -98,7 +98,7 @@ for t in tasks:
         sig.append(dict(k="never-downgrade", v="review/security blocked by policy", label="policy"))
     nodes[f"task:{t['n']}"]["signals"] = sig
 
-graph = dict(meta=dict(kind="mock", session=sess, duration=dur, source="docs/demo-mock-spec.md §5", model=model, cache_hit=cache_hit,
+graph = dict(meta=dict(kind="mock", session=sess, duration=dur, title="incident fix in acme-api", source="docs/demo-mock-spec.md §5", model=model, cache_hit=cache_hit,
                        tasks=len(tasks), cost=round(sum(t["cost"] for t in tasks), 2),
                        tok_in=sum(t["tok_in"] for t in tasks), tok_out=sum(t["tok_out"] for t in tasks),
                        secs=sum(t["secs"] for t in tasks), calls=sum(len(t["calls"]) for t in tasks)),
