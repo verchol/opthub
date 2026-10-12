@@ -1,0 +1,248 @@
+<title>Session Graph</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* layout: header with session totals → lane graph (models · context · tasks · tools · files) beside a detail panel */
+:root{
+  --ground:#F2F5F4; --surface:#FFFFFF; --sunk:#E9EEED;
+  --ink:#0F1719; --mut:#5B6D70; --rule:#D3DCDB; --rule2:#B6C3C2;
+  --ac:#0E6E65; --ac-soft:#D6EBE7;
+  --var:#A8611F; --var-soft:#F6E7D3;
+  --mdl:#3E5A8A; --mdl-soft:#E1E8F3;
+  --bad:#B3261E; --bad-soft:#F7DEDB;
+  --d:'Archivo',system-ui,-apple-system,sans-serif;
+  --b:'Source Serif 4',Georgia,'Times New Roman',serif;
+  --m:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0D1415; --surface:#141E20; --sunk:#1B2729;
+  --ink:#E4ECEB; --mut:#8FA2A4; --rule:#2A3A3C; --rule2:#3B4F52;
+  --ac:#3FB8A8; --ac-soft:#173A36;
+  --var:#E0A066; --var-soft:#3A2A1A;
+  --mdl:#8FAEE0; --mdl-soft:#1E2A40;
+  --bad:#F08A80; --bad-soft:#3D1E1B; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --ground:#0D1415; --surface:#141E20; --sunk:#1B2729;
+  --ink:#E4ECEB; --mut:#8FA2A4; --rule:#2A3A3C; --rule2:#3B4F52;
+  --ac:#3FB8A8; --ac-soft:#173A36;
+  --var:#E0A066; --var-soft:#3A2A1A;
+  --mdl:#8FAEE0; --mdl-soft:#1E2A40;
+  --bad:#F08A80; --bad-soft:#3D1E1B; color-scheme:dark }
+body{background:var(--ground);color:var(--ink);font-family:var(--b);font-size:15px;line-height:1.5;padding:24px 16px 40px}
+.wrap{max-width:1320px;margin:0 auto;display:grid;gap:18px}
+header{display:grid;gap:10px}
+.eyebrow{font:500 11px/1 var(--m);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.badge{font:600 11px/1 var(--m);letter-spacing:.04em;text-transform:none;padding:5px 8px;border-radius:4px;background:var(--var-soft);color:var(--var)}
+h1{font:800 clamp(26px,4vw,38px)/1.05 var(--d);margin:0;letter-spacing:-.01em;text-wrap:balance}
+.lede{margin:0;max-width:68ch;color:var(--mut)}
+.totals{display:flex;flex-wrap:wrap;gap:6px 22px;font:500 13px/1.3 var(--m);font-variant-numeric:tabular-nums}
+.totals b{font-weight:700;color:var(--ink)} .totals span{color:var(--mut)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bar .lbl{font:500 11px/1 var(--m);letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-right:4px}
+.tg{font:500 12px/1 var(--m);border:1px solid var(--rule2);background:var(--surface);color:var(--ink);padding:7px 10px;border-radius:999px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.tg i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.tg[aria-pressed="false"]{opacity:.45;text-decoration:line-through}
+.tg:focus-visible,.node:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media (max-width:980px){.main{grid-template-columns:minmax(0,1fr)}}
+.canvas{background:var(--surface);border:1px solid var(--rule);border-radius:8px;overflow-x:auto;min-width:0}
+svg{display:block;width:100%;min-width:900px;height:auto}
+.lane-l{font:600 10.5px var(--m);letter-spacing:.12em;text-transform:uppercase;fill:var(--mut)}
+.lane-r{stroke:var(--rule);stroke-dasharray:2 4}
+.e{fill:none;stroke:var(--rule2);transition:opacity .15s}
+.e.calls{stroke:var(--var);opacity:.55}
+.e.read,.e.search,.e.exec{stroke:var(--mut);opacity:.35}
+.e.write{stroke:var(--var);opacity:.9}
+.e.model{stroke:var(--mdl);opacity:.5}
+.e.routable{stroke:var(--ac);stroke-dasharray:5 4;opacity:.9}
+.e.blocked{stroke:var(--bad);stroke-dasharray:3 4;opacity:.9}
+.e.spine{stroke:var(--ac);opacity:.35}
+.node{cursor:pointer;transition:opacity .15s}
+.node text{font-family:var(--m);font-size:11px;fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.t-model text,.t-tool text,.t-file text,.t-dir text,.t-cmd text{stroke:none}
+.t-task circle{fill:var(--ac-soft);stroke:var(--ac);stroke-width:2}
+.t-task .num{font:800 15px var(--d);fill:var(--ac)}
+.t-task .ttl{font:600 12.5px var(--d);fill:var(--ink)}
+.t-task .sub{fill:var(--mut);font-size:10.5px}
+.t-model rect{fill:var(--mdl-soft);stroke:var(--mdl)} .t-model text{fill:var(--mdl);font-weight:700}
+.t-model.alt rect{stroke-dasharray:4 3}
+.t-tool rect{fill:var(--var-soft);stroke:var(--var)} .t-tool text{fill:var(--var);font-weight:700}
+.t-file rect,.t-dir rect,.t-cmd rect{fill:var(--surface);stroke:var(--rule2)}
+.t-cmd text{fill:var(--mut)}
+.t-context rect.bg{fill:var(--sunk)} .t-context rect.fg{fill:var(--mdl);opacity:.7}
+.t-context text{fill:var(--mut);font-size:10.5px}
+.sig{fill:var(--var)} .sig.policy{fill:var(--mdl)} .sig.blocked{fill:var(--bad)}
+.edgelbl{font:600 10px var(--m);fill:var(--var)}
+svg.focus .node,svg.focus .e{opacity:.12}
+svg.focus .node.on{opacity:1} svg.focus .e.on{opacity:1}
+.hide{display:none}
+aside{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:16px 18px;display:grid;gap:12px;min-width:0}
+aside h2{font:700 19px/1.2 var(--d);margin:0;text-wrap:balance}
+.k{font:500 10.5px/1 var(--m);letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:600 11px/1 var(--m);padding:5px 7px;border-radius:4px;background:var(--sunk);color:var(--ink)}
+.chip.ac{background:var(--ac-soft);color:var(--ac)} .chip.mdl{background:var(--mdl-soft);color:var(--mdl)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.var{background:var(--var-soft);color:var(--var)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font:500 13px/1.35 var(--m);font-variant-numeric:tabular-nums}
+dt{color:var(--mut)} dd{margin:0;text-align:right}
+ol.calls{margin:0;padding:0;list-style:none;display:grid;gap:6px;font:400 12px/1.35 var(--m)}
+ol.calls li{display:grid;grid-template-columns:62px 1fr;gap:8px;border-top:1px solid var(--rule);padding-top:6px}
+ol.calls .tl{color:var(--var);font-weight:700} ol.calls .arg{overflow-wrap:anywhere}
+ol.calls .res{color:var(--mut);display:block} .plus{color:var(--ac)} .minus{color:var(--bad)}
+.hint{font-size:13px;color:var(--mut);margin:0}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 11.5px/1 var(--m);color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend svg{min-width:0;width:28px;height:10px;display:inline}
+footer{font-size:12.5px;color:var(--mut);max-width:80ch}
+footer code{font-family:var(--m);font-size:12px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">opthub · session as graph <span class="badge" id="badge"></span></div>
+    <h1>Session Graph</h1>
+    <p class="lede">Each task is one user turn. It hangs off the model that ran it and the context it carried, and reaches down to the tools it called and the files and commands those tools touched. Click any node to see its neighbourhood.</p>
+    <div class="totals" id="totals"></div>
+  </header>
+  <div class="bar" role="group" aria-label="Layers">
+    <span class="lbl">Layers</span>
+    <button class="tg" data-layer="model" aria-pressed="true"><i style="background:var(--mdl)"></i>Models</button>
+    <button class="tg" data-layer="ctx" aria-pressed="true"><i style="background:var(--mdl);opacity:.55"></i>Context</button>
+    <button class="tg" data-layer="tool" aria-pressed="true"><i style="background:var(--var)"></i>Tools</button>
+    <button class="tg" data-layer="res" aria-pressed="true"><i style="background:var(--rule2)"></i>Files &amp; commands</button>
+  </div>
+  <div class="main">
+    <div class="canvas"><svg id="g" viewBox="0 0 1180 700" role="img" aria-label="Session graph"></svg></div>
+    <aside id="panel" aria-live="polite"></aside>
+  </div>
+  <div class="legend">
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--mdl)" stroke-width="2"/></svg>ran on</span>
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--ac)" stroke-width="2" stroke-dasharray="5 4"/></svg>routable by policy</span>
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--bad)" stroke-width="2" stroke-dasharray="3 4"/></svg>routing blocked</span>
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--var)" stroke-width="3"/></svg>tool calls (width = count)</span>
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--var)" stroke-width="2"/></svg>write</span>
+    <span><svg viewBox="0 0 28 10"><path d="M0 5H28" stroke="var(--mut)" stroke-width="2" opacity=".5"/></svg>read / run</span>
+    <span>circle area = cost · bar = input tokens</span>
+  </div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const G=/*GRAPH*/null;
+const NS='http://www.w3.org/2000/svg', svg=document.getElementById('g'), W=1180;
+const by=Object.fromEntries(G.nodes.map(n=>[n.id,n]));
+const fmt$=v=>'$'+v.toFixed(2), fmtk=v=>(v/1000).toFixed(1)+'k';
+const el=(t,a={},p=svg)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e};
+const txt=(p,x,y,s,cls,anchor='middle')=>{const t=el('text',{x,y,'text-anchor':anchor,class:cls||''},p);t.textContent=s;return t};
+const clip=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
+
+const tasks=G.nodes.filter(n=>n.kind==='task').sort((a,b)=>a.n-b.n);
+const tools=G.nodes.filter(n=>n.kind==='tool');
+const res=G.nodes.filter(n=>['file','dir','cmd'].includes(n.kind));
+const models=G.nodes.filter(n=>n.kind==='model');
+const X0=150, X1=W-50, Y={model:56,ctx:150,task:280,tool:450,res:580};
+const spread=(arr,a=X0,b=X1)=>arr.forEach((n,i)=>n.x=arr.length===1?(a+b)/2:a+(b-a)*i/(arr.length-1));
+spread(tasks,X0+40,X1-40); spread(tools,X0+60,X1-60); spread(res,X0,X1);
+models.forEach((m,i)=>{m.x=m.alt?X1-150:X0+160});
+models.forEach(m=>m.y=Y.model); tasks.forEach(t=>t.y=Y.task); tools.forEach(t=>t.y=Y.tool);
+res.forEach((r,i)=>r.y=Y.res+(i%2?62:0));
+const maxCost=Math.max(...tasks.map(t=>t.cost)), maxTok=Math.max(...tasks.map(t=>t.tok_in));
+tasks.forEach(t=>t.r=14+34*Math.sqrt(t.cost/maxCost));
+
+// lanes
+const lanes=[['models',Y.model],['context',Y.ctx],['tasks',Y.task],['tools',Y.tool],['files · cmds',Y.res+30]];
+const gl=el('g');lanes.forEach(([l,y])=>{el('line',{x1:16,x2:W-16,y1:y,y2:y,class:'lane-r'},gl);txt(gl,16,y-8,l.toUpperCase(),'lane-l','start')});
+
+const gE=el('g'), gN=el('g');
+const edgeEls=[];
+function curve(a,b,ya,yb){const my=(ya+yb)/2;return `M${a.x},${ya} C${a.x},${my} ${b.x},${my} ${b.x},${yb}`}
+// spine: context carried task → task
+for(let i=0;i<tasks.length-1;i++){const a=tasks[i],b=tasks[i+1];
+  const p=el('path',{d:`M${a.x+a.r},${a.y} L${b.x-b.r},${b.y}`,class:'e spine','stroke-width':2+6*b.tok_in/maxTok},gE);
+  edgeEls.push({p,s:a.id,t:b.id,layer:'task'})}
+for(const e of G.edges){const s=by[e.s],t=by[e.t];
+  if(t.kind==='context')continue;
+  let cls,d,lw=1.5,layer;
+  if(t.kind==='model'){layer='model';
+    cls=e.kinds.includes('blocked')?'blocked':e.kinds.includes('routable to')?'routable':'model';
+    d=curve(s,t,s.y-s.r,t.y+14)}
+  else if(t.kind==='tool'){layer='tool';cls='calls';lw=1+1.6*e.w;d=curve(s,t,s.y+s.r,t.y-13)}
+  else{layer='res';cls=e.kinds.includes('write')?'write':e.kinds[0];lw=e.kinds.includes('write')?2:1.2;d=curve(s,t,s.y+s.r,t.y-11)}
+  const p=el('path',{d,class:'e '+cls,'stroke-width':lw},gE);
+  edgeEls.push({p,s:s.id,t:t.id,layer,e});
+}
+// nodes
+const nodeEls={};
+function mk(n,layer,draw){const g=el('g',{class:'node t-'+n.kind+(n.alt?' alt':''),tabindex:0,role:'button','aria-label':n.label,'data-layer':layer},gN);
+  draw(g);const ti=el('title',{},g);ti.textContent=n.label;nodeEls[n.id]={g,layer};
+  g.addEventListener('click',()=>select(n.id));g.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();select(n.id)}})}
+models.forEach(m=>mk(m,'model',g=>{const w=m.label.length*7.4+24;el('rect',{x:m.x-w/2,y:m.y-14,width:w,height:28,rx:14},g);txt(g,m.x,m.y+4,m.label+(m.alt?'  (cheaper)':''))}));
+tasks.forEach(t=>{
+  const c=by['ctx:'+t.n];
+  mk(c,'ctx',g=>{const h=70*t.tok_in/maxTok;el('rect',{class:'bg',x:t.x-13,y:Y.ctx-40,width:26,height:72,rx:3},g);
+    el('rect',{class:'fg',x:t.x-12,y:Y.ctx+31-h,width:24,height:h,rx:2},g);txt(g,t.x+20,Y.ctx+30,fmtk(t.tok_in),'','start')});
+  mk(t,'task',g=>{el('circle',{cx:t.x,cy:t.y,r:t.r},g);txt(g,t.x,t.y+5,String(t.n),'num');
+    txt(g,t.x,t.y+t.r+18,clip(t.label.replace(/"/g,''),26),'ttl');
+    txt(g,t.x,t.y+t.r+33,`${t.klass} · ${fmt$(t.cost)}`,'sub');
+    t.signals.forEach((s,i)=>{const sx=t.x+t.r*0.75+i*13, sy=t.y-t.r*0.75;
+      el('circle',{cx:sx,cy:sy,r:5.5,class:'sig '+(s.k==='never-downgrade'?'blocked':s.label)},g)})})});
+tools.forEach(t=>mk(t,'tool',g=>{const w=t.label.length*8+26;el('rect',{x:t.x-w/2,y:t.y-13,width:w,height:26,rx:5},g);txt(g,t.x,t.y+4,t.label)}));
+res.forEach(r=>mk(r,'res',g=>{const s=clip(r.label,20),w=s.length*6.7+18;el('rect',{x:r.x-w/2,y:r.y-11,width:w,height:22,rx:r.kind==='cmd'?11:3},g);txt(g,r.x,r.y+4,s)}));
+// edge labels for writes
+edgeEls.filter(x=>x.e&&x.e.kinds.includes('write')).forEach(x=>{});
+
+// totals
+const M=G.meta;
+document.getElementById('badge').textContent=M.kind==='mock'?'mock · numbers from '+M.source:M.source;
+document.getElementById('totals').innerHTML=
+ `<div><b>${M.tasks}</b> <span>tasks</span></div><div><b>${fmt$(M.cost)}</b> <span>cost</span></div>`+
+ `<div><b>${fmtk(M.tok_in)}</b> <span>tokens in</span></div><div><b>${fmtk(M.tok_out)}</b> <span>out</span></div>`+
+ `<div><b>${M.calls}</b> <span>tool calls</span></div><div><b>${M.secs}s</b> <span>model time</span></div>`+
+ `<div><b>${M.cache_hit}</b> <span>cache hit · detector</span></div>`;
+document.getElementById('foot').innerHTML=`Every figure is parsed from <code>${M.source}</code>, the scripted incident session in <code>acme-api</code>; costs are the spec's per-turn figures for the main session. Signals: <b style="color:var(--var)">●</b> file re-read from an earlier task (detector) · <b style="color:var(--mdl)">●</b> routable by policy · <b style="color:var(--bad)">●</b> never-downgrade class.`;
+
+// selection
+const panel=document.getElementById('panel');
+function neigh(id){const s=new Set([id]);G.edges.forEach(e=>{if(e.s===id)s.add(e.t);if(e.t===id)s.add(e.s)});
+  if(id.startsWith('task:'))s.add('ctx:'+id.slice(5));
+  if(id.startsWith('ctx:'))s.add('task:'+id.slice(4));return s}
+function select(id){
+  if(!id){svg.classList.remove('focus');Object.values(nodeEls).forEach(n=>n.g.classList.remove('on'));edgeEls.forEach(x=>x.p.classList.remove('on'));overview();return}
+  const ns=neigh(id);svg.classList.add('focus');
+  for(const k in nodeEls)nodeEls[k].g.classList.toggle('on',ns.has(k));
+  edgeEls.forEach(x=>x.p.classList.toggle('on',x.s===id||x.t===id));
+  detail(by[id]);
+}
+const chip=(s,c='')=>`<span class="chip ${c}">${s}</span>`;
+function overview(){
+  panel.innerHTML=`<div class="k">Session</div><h2>Incident fix in a payments service</h2>
+  <p class="hint">Five turns. Turn 4, the security review, carries the most context and costs the most. Turns 3 and 5 are the ones policy lets go to a cheaper model. Pick a task.</p>
+  <dl>${tasks.map(t=>`<dt>${t.n} · ${clip(t.label.replace(/"/g,''),22)}</dt><dd>${fmt$(t.cost)}</dd>`).join('')}</dl>`}
+function detail(n){
+  if(n.kind==='task'){
+    const rc=n.routes==='yes'?chip('routable','ac'):n.routes==='blocked'?chip('routing blocked','bad'):chip('stays on main model');
+    panel.innerHTML=`<div class="k">Task ${n.n}</div><h2>${n.label}</h2>
+    <div class="chips">${chip(n.klass,'mdl')}${rc}</div>
+    <dl><dt>cost</dt><dd>${fmt$(n.cost)}</dd><dt>context in</dt><dd>${n.tok_in.toLocaleString()} tok</dd>
+    <dt>output</dt><dd>${n.tok_out.toLocaleString()} tok</dd><dt>model time</dt><dd>${n.secs}s</dd><dt>tool calls</dt><dd>${n.calls}</dd></dl>
+    ${n.signals.length?`<div class="k">Signals</div><div class="chips">${n.signals.map(s=>chip(s.k+': '+s.v,s.k==='never-downgrade'?'bad':s.label==='policy'?'ac':'var')).join('')}</div>`:''}
+    <div class="k">Calls, in order</div><ol class="calls">${n.detail.map(c=>`<li><span class="tl">${c.tool}</span><span class="arg">${c.arg.replace(/</g,'&lt;')}${c.add||c.rm?` <span class="plus">+${c.add}</span> <span class="minus">−${c.rm}</span>`:''}${c.result?`<span class="res">⎿ ${c.result}</span>`:''}</span></li>`).join('')}</ol>
+    <p class="hint">Esc or click empty space to clear.</p>`;
+  } else {
+    const links=G.edges.filter(e=>e.t===n.id||e.s===n.id).map(e=>{const o=by[e.s===n.id?e.t:e.s];return {o,e}}).filter(x=>x.o.kind==='task');
+    const kindName={model:'Model',tool:'Tool',file:'File',dir:'Directory',cmd:'Command',context:'Context'}[n.kind];
+    panel.innerHTML=`<div class="k">${kindName}</div><h2>${n.path||n.label}</h2>
+    ${n.kind==='context'?`<p class="hint">Input tokens on this turn's requests. The spine between tasks thickens with it: context is carried forward, so later turns pay for earlier ones.</p>`:''}
+    <dl>${links.map(({o,e})=>`<dt>task ${o.n} · ${clip(o.label.replace(/"/g,''),18)}</dt><dd>${e.kinds.join(', ')}${e.w>1?' ×'+e.w:''}${e.add||e.rm?` +${e.add} −${e.rm}`:''}</dd>`).join('')}</dl>`;
+  }
+}
+svg.addEventListener('click',ev=>{if(!ev.target.closest('.node'))select(null)});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape')select(null)});
+document.querySelectorAll('.tg').forEach(b=>b.addEventListener('click',()=>{
+  const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);const L=b.dataset.layer;
+  Object.values(nodeEls).forEach(n=>{if(n.layer===L)n.g.classList.toggle('hide',!on)});
+  edgeEls.forEach(x=>{if(x.layer===L)x.p.classList.toggle('hide',!on)});
+}));
+overview();
+select('task:4');
+</script>
