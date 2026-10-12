@@ -396,3 +396,19 @@
   (the `.env` OAuth token is expired), parallel steps and background container removal — **4.2 s** to
   Claude Code on a Docker Desktop running 51 other containers.
 
+## 2026-10-13 · J3 → per-method scores, Claude Code settings, "Score with Jev" in the Hub
+- `experiments/session-triage/src/methods.py`: for each session, every optimization method gets a
+  score (Jev's probability on the unlocking options), a marginal saving in applied order, and
+  score × saving. Two new questions (taxonomy 0.2): `reasoning` → `--effort medium`,
+  `delegation` → `CLAUDE_CODE_SUBAGENT_MODEL=haiku`. All seven still go in one call.
+- `extract.py` records Claude Code settings per session (effort, permission mode, entry point,
+  compactions, subagent share, …), sends them to Jev with C1, and the Hub shows them. On the last
+  30 days: effort high on 31 of 72 sessions, medium on 39; permission mode auto 21, bypass 17.
+- `score.py` + Hub Triage → **Score with Jev** run ledger → features → rules + Jev → methods →
+  `triage.json`, archiving the previous run first. Tested end to end against a local mock Jev,
+  which asserts no cost or path in the payload. **Not yet run against the real Jev API with the new
+  questions.** The live page shows the 2026-09-29 run re-exported. That run has no probabilities
+  and no answers for the new questions, so effort and subagents score 0 there.
+- Lost: the per-session `jev-C0` predictions behind `data/RESULTS.md` (gitignored `data/results.json`)
+  were overwritten by a rules-only run while this was built. The committed summary is intact.
+

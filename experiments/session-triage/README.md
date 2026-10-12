@@ -155,7 +155,49 @@ synthetic transcript; the Jev adapter against a local mock that asserts no cost 
 path reach the payload and that returns malformed answers to check they are rejected.
 **Not yet run against the real Jev API.**
 
-## 7. Open questions
+## 7. Per-method scores and the Hub's "Score with Jev" button
+
+*Added 2026-10-13.* `src/methods.py` turns Jev's answers into one row per optimization method,
+and `src/score.py` runs the whole pass. The Hub's Triage tab calls it (`POST /api/triage/score`).
+
+**Two new questions** (taxonomy 0.2), one for each Claude Code lever that had none:
+`reasoning` (deep · moderate · light) unlocks `--effort medium`, and `delegation`
+(small-enough · needs-main-model · no-delegation) unlocks `CLAUDE_CODE_SUBAGENT_MODEL=haiku`.
+All seven questions still go in **one Jev call per session**. Each method has its own question
+because levers stack, and a single "which method?" choice could only ever pick one.
+
+**Claude Code settings are now session attributes.** `extract.py` reads them from the transcript's
+own fields: entry point, version, model, effort and its high share, permission mode, fast-mode
+share, advisor, compactions, hooks, MCP servers and subagent share. They are enums and counts, so
+they go to Jev with the C1 evidence, and the page shows them per session.
+
+| method | question | Claude Code knob | rate | label |
+|---|---|---|---|---|
+| Model routing | capability | `--model sonnet \| haiku` | Sonnet 5 / Haiku 4.5 list vs current | priced |
+| Subagents on a small model | delegation | `CLAUDE_CODE_SUBAGENT_MODEL=haiku` | subagent request share → Haiku | priced |
+| Context compaction / split | context | `--autocompact` · `/clear` between tasks | 25% of cache $ (lever A) | guess |
+| Lower reasoning effort | reasoning | `--effort medium` | 50% of thinking $, only if effort was high (lever B) | guess |
+| Defer to batch | deferral × latency × urgency | `claude -p` + Batch API | −50% ceiling, cache at 1× floor | priced / guess |
+| Fast mode | urgency × latency | `/fast` | +100% | spend, never netted |
+
+- **score** is the probability Jev put on the options that unlock the method. Batch and fast mode
+  multiply the marginals, which assumes independence. Rules score 0 or 1. Runs before this date
+  stored no probabilities, so their score falls back to the confidence of the chosen option.
+  A score is not a gate (SPEC §6.1.1).
+- **saving** is marginal, in applied order: route, subagents, context, effort, batch. Only
+  methods whose chosen option unlocks them stack into best/worst.
+- **expected** is score × saving: a ranking of what to try first, not a forecast.
+
+```sh
+python3 src/score.py --days 30            # rules only without JEV_API_KEY; with it, one Jev call per session (C1)
+```
+
+Before overwriting anything, `score.py` copies the previous run to
+`data/private/archive-<timestamp>/`. The hub reads `JEV_API_KEY` from its environment or from
+e2b's `.env` (a literal or an `op://` reference). `OPTHUB_HOME` and `OPT_TRIAGE_DIR` relocate the repo and
+the working files.
+
+## 8. Open questions
 
 1. **Gold.** Twenty of the 28 interactive sessions, labelled by the person who ran them
    in about ten minutes, is enough to tell whether `jev-C1` is better than rules. Without

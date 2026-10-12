@@ -36,7 +36,7 @@ LEVERS = [("route", "route to mid/small tier", "priced"),
           ("combined_floor", "all levers, stacked — floor", "")]
 
 
-def build_arms(taxonomy, which, have_features):
+def build_arms(taxonomy, which, have_features, ctx=("C0", "C1")):
     arms = [RulesClassifier(with_context=False)]
     if have_features:
         arms.append(RulesClassifier(with_context=True))
@@ -45,8 +45,9 @@ def build_arms(taxonomy, which, have_features):
             print("jev: skipped — JEV_API_KEY is not set in this environment")
         else:
             from classifiers.jev import JevClassifier
-            arms.append(JevClassifier(taxonomy, with_context=False))
-            if have_features:
+            if "C0" in ctx:
+                arms.append(JevClassifier(taxonomy, with_context=False))
+            if have_features and "C1" in ctx:
                 arms.append(JevClassifier(taxonomy, with_context=True))
     return arms
 
@@ -177,6 +178,7 @@ def main():
     ap.add_argument("--taxonomy", default=str(HERE / "taxonomy.json"))
     ap.add_argument("--arms", default="rules", help="comma list: rules,jev")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--ctx", default="C0,C1", help="Jev evidence levels to call: C0, C1 or both (one paid call each per session)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
@@ -197,17 +199,18 @@ def main():
     results = {"prize": prize(sessions), "generated_at": datetime.now(timezone.utc).isoformat(), "ledger": a.ledger,
                "total": sum(s["ledger"]["cost"] for s in sessions), "arms": {}}
     labels = {}
-    for arm in build_arms(taxonomy, set(a.arms.split(",")), have_f):
+    for arm in build_arms(taxonomy, set(a.arms.split(",")), have_f, a.ctx.split(",")):
         preds = {s["id"]: arm.classify(s["evidence"], s["features"] if arm.uses_context else None)
                  for s in sessions}
         labels[arm.name] = {k: v.labels for k, v in preds.items()}
         results["arms"][arm.name] = {
             "outcomes": dict(Counter(v.outcome for v in preds.values())) if arm.name.startswith("jev") else None,
             "predictions": {k: {"labels": v.labels, "outcome": v.outcome, "confidence": v.confidence,
-                                "latency_ms": v.latency_ms} for k, v in preds.items()},
+                                "probabilities": v.probabilities, "latency_ms": v.latency_ms}
+                            for k, v in preds.items()},
         }
     for ctx in ("C0", "C1"):
-        if f"jev-{ctx}" in labels:
+        if f"jev-{ctx}" in labels and f"rules-{ctx}" in labels:
             labels[f"hybrid-{ctx}"] = {i: hybrid(labels[f"rules-{ctx}"][i], labels[f"jev-{ctx}"][i])
                                        for i in labels[f"rules-{ctx}"]}
             results["arms"][f"hybrid-{ctx}"] = {"outcomes": None, "predictions": None}

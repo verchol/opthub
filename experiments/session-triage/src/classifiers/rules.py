@@ -23,7 +23,8 @@ class RulesClassifier(Classifier):
         t0 = time.perf_counter()
         headless = e["entry_point"].startswith("SDK")
         reqs, ctx = e["requests"], e["context_tokens_median"]
-        L = {"urgency": U, "latency": U, "deferral": U, "capability": U, "context": U}
+        L = {"urgency": U, "latency": U, "deferral": U, "capability": U, "context": U,
+             "reasoning": U, "delegation": U}
 
         L["latency"] = "unattended" if headless else "interactive"
         if headless:
@@ -34,6 +35,8 @@ class RulesClassifier(Classifier):
             L["context"] = "continuous"
         if ctx >= 150_000 or e["thinking_share_of_output"] >= 0.3:
             L["capability"] = "frontier"
+        if e["thinking_share_of_output"] >= 0.3:
+            L["reasoning"] = "deep"
         elif headless and reqs <= 5 and ctx < 40_000:
             L["capability"] = "small"
 
@@ -54,5 +57,7 @@ class RulesClassifier(Classifier):
                 L["deferral"] = "overnight"
             if L["context"] == U and f["topic_breaks"] >= 2:
                 L["context"] = "separable"
+            if f["subagent_request_share"] < 0.02:
+                L["delegation"] = "no-delegation"
 
         return Verdict(labels=L, latency_ms=int((time.perf_counter() - t0) * 1000))

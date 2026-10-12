@@ -1,5 +1,5 @@
 {
-  "version": "0.1",
+  "version": "0.2",
   "note": "Criteria text is a MEASURED VARIABLE, not fixed harness (see J1/J2: rewording moved Jev confidence 30%->90% on identical inputs). Vary this file, never the evidence. Every axis carries 'unclear' so the model can abstain instead of guessing; an abstention never earns a lever.",
   "axes": {
     "urgency": {
@@ -45,6 +45,24 @@
         "separable": "A string of mostly independent tasks in one session; each could have started from a fresh or compacted context.",
         "short": "Too short for history to matter.",
         "unclear": "The evidence does not show how the history was used."
+      }
+    },
+    "reasoning": {
+      "question": "How much thinking before each step did this session's work need?",
+      "options": {
+        "deep": "Most steps needed careful reasoning: designing something new, chasing a subtle failure, weighing trade-offs across many files.",
+        "moderate": "Some planning, but most steps followed directly from the one before; a medium reasoning effort would have reached the same result.",
+        "light": "Mechanical steps: edits with a clear spec, lookups, formatting, re-running commands; little thinking was needed.",
+        "unclear": "The evidence does not show how much reasoning the work needed."
+      }
+    },
+    "delegation": {
+      "question": "Could the work this session handed to subagents have been done by a small fast model?",
+      "options": {
+        "small-enough": "Yes: the delegated work was searching, reading, summarising or simple edits.",
+        "needs-main-model": "No: the delegated work was itself hard \u2014 design, changes across many files, debugging.",
+        "no-delegation": "The session delegated little or nothing to subagents.",
+        "unclear": "The evidence does not show what the delegated work was."
       }
     }
   }

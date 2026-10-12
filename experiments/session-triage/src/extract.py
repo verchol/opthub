@@ -50,6 +50,9 @@ TOPIC_GAP_S = 30 * 60
 TEST_CMD = re.compile(r"\b(pytest|py\.test|unittest|npm (run )?test|pnpm test|yarn test|jest|vitest|mocha|go test|cargo test|make test|mvn test|gradle test|rspec)\b")
 TEST_FAIL = re.compile(r"(\b\d+ failed\b|\bFAILED\b|\bFAIL\b|AssertionError|Tests?:\s+\d+ failed|failures?=\d*[1-9])")
 GIT_COMMIT = re.compile(r"\bgit (commit|revert)\b")
+# Claude Code settings: what the session ran with, read from the transcript's own fields.
+# Enums and counts only; these are the knobs the optimization methods turn.
+CC_FIELDS = ("entrypoint", "version", "effort", "permissionMode")
 
 
 def _text(content):
@@ -104,6 +107,50 @@ def work_result(s, b):
             s["test_fail"] += 1
 
 
+def _bump(d, v):
+    if v not in (None, ""):
+        d[str(v)] = d.get(str(v), 0) + 1
+
+
+def cc_record(s, r):
+    cc = s["cc"]
+    for k in CC_FIELDS:
+        _bump(cc[k], r.get(k))
+    if r.get("advisorModel"):
+        s["advisor"] += 1
+    if r.get("type") == "system" and r.get("subtype") == "compact_boundary":
+        s["compactions"] += 1
+    if r.get("type") == "system" and r.get("subtype") == "stop_hook_summary" and r.get("hookCount"):
+        s["hooks"] += 1
+    m = r.get("message")
+    if r.get("type") == "assistant" and isinstance(m, dict) and m.get("usage") and not r.get("isSidechain"):
+        if m.get("model") and m["model"] != "<synthetic>":
+            _bump(cc["model"], m["model"])
+        _bump(cc["speed"], (m.get("usage") or {}).get("speed"))
+
+
+def claude_code(s, main_turns):
+    """The settings a session ran with: the dominant value of each, plus shares and counts."""
+    cc = s["cc"]
+    top = lambda d: max(d, key=d.get) if d else None   # noqa: E731
+    eff = cc["effort"]
+    ver = top(cc["version"])
+    return {
+        "entrypoint": top(cc["entrypoint"]),
+        "version": ".".join(ver.split(".")[:2]) if ver else None,
+        "model": (top(cc["model"]) or "").replace("claude-", "").replace("-20251001", "") or None,
+        "effort": top(eff),
+        "effort_high_share": round(eff.get("high", 0) / (sum(eff.values()) or 1), 2) if eff else None,
+        "permission_mode": top(cc["permissionMode"]),
+        "fast_mode_share": round(cc["speed"].get("fast", 0) / (sum(cc["speed"].values()) or 1), 2),
+        "advisor_on": s["advisor"] > 0,
+        "compactions": s["compactions"],
+        "hooks_active": s["hooks"] > 0,
+        "mcp_servers": len(s["mcp"]),
+        "subagent_request_share": round(s["side"] / ((s["side"] + main_turns) or 1), 2),
+    }
+
+
 def walk(root, cutoff):
     S = {}
     for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
@@ -125,10 +172,13 @@ def walk(root, cutoff):
                                    "tools": {}, "side": 0, "main": 0,
                                    "flags": {k: False for k in FLAGS},
                                    "edits": {}, "lines": 0, "tests": set(), "test_fail": 0,
-                                   "tool_err": 0, "commits": 0})
+                                   "tool_err": 0, "commits": 0,
+                                   "cc": {k: {} for k in CC_FIELDS + ("model", "speed")},
+                                   "advisor": 0, "compactions": 0, "hooks": 0, "mcp": set()})
             if r.get("cwd"):
                 s["cwd"] = r["cwd"]
             s["start"], s["last"] = min(s["start"], t), max(s["last"], t)
+            cc_record(s, r)
             if r.get("type") == "assistant" and (r.get("message") or {}).get("usage"):
                 s["side" if r.get("isSidechain") else "main"] += 1
                 if not r.get("isSidechain"):
@@ -136,6 +186,8 @@ def walk(root, cutoff):
                 for b in (r.get("message") or {}).get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
                         s["tools"][b.get("name", "")] = s["tools"].get(b.get("name", ""), 0) + 1
+                        if b.get("name", "").startswith("mcp__"):
+                            s["mcp"].add(b["name"].split("__")[1])
                         work_call(s, b)
             elif r.get("type") == "user":
                 content = (r.get("message") or {}).get("content")
@@ -189,6 +241,7 @@ def features(s):
         },
         "subagent_request_share": round(s["side"] / ((s["side"] + s["main"]) or 1), 2),
         "prompt_flags": s["flags"],
+        "claude_code": claude_code(s, s["main"]),
     }
 
 

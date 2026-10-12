@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from evidence import load                    # noqa: E402
-from savings import session_savings          # noqa: E402
+from methods import METHODS, session_methods  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parents[1]
 PRIV = HERE / "data" / "private"
@@ -50,13 +50,17 @@ def main():
     default_out = pathlib.Path(os.environ.get("OPT_HOME") or pathlib.Path.home() / "workspace/sandbox/e2b") / "results" / "triage.json"
     ap.add_argument("--out", default=str(default_out))
     ap.add_argument("--arm", default="jev-C1")
+    ap.add_argument("--dir", default=str(PRIV), help="where ledger.csv, features.jsonl, tasks.jsonl, results.json are")
     a = ap.parse_args()
+    PRIV_ = pathlib.Path(a.dir)
 
-    results = json.loads((PRIV / "results.json").read_text())
-    preds = results["arms"][a.arm]["predictions"]
+    results = json.loads((PRIV_ / "results.json").read_text())
+    # Jev's arm when it ran; otherwise the rules arm, and the page says so
+    arm = next(x for x in (a.arm, "rules-C1", "rules-C0") if (results["arms"].get(x) or {}).get("predictions"))
+    preds = results["arms"][arm]["predictions"]
     tasks = {}
-    if (PRIV / "tasks.jsonl").exists():
-        for line in (PRIV / "tasks.jsonl").read_text().splitlines():
+    if (PRIV_ / "tasks.jsonl").exists():
+        for line in (PRIV_ / "tasks.jsonl").read_text().splitlines():
             if line.strip():
                 row = json.loads(line)
                 tasks[row["key"]] = row["tasks"]
@@ -64,10 +68,13 @@ def main():
                     tasks[row["session_id"]] = row["tasks"]
 
     out = []
-    for s in load(PRIV / "ledger.csv", PRIV / "features.jsonl"):
+    for s in load(PRIV_ / "ledger.csv", PRIV_ / "features.jsonl"):
         p = preds.get(s["id"], {})
         labels = p.get("labels") or {}
-        sv = session_savings(s["ledger"], labels)
+        F = s["features"] or {}
+        cc = F.get("claude_code")
+        sv = session_methods(s["ledger"], labels, p.get("probabilities"), p.get("confidence"), cc,
+                             F.get("subagent_request_share"), s["evidence"]["context_tokens_median"])
         L = s["ledger"]
         out.append({
             "session": s["session_id"], "key": s["key"],
@@ -78,15 +85,23 @@ def main():
             "cost": round(L["cost"], 4), "cacheRead": round(L["read"], 4),
             "model": max(L["models"], key=L["models"].get).replace("claude-", "").replace("-20251001", ""),
             "labels": labels, "confidence": p.get("confidence") or {},
-            "best": round(sv["combined_ceiling"], 4), "worst": round(sv["combined_floor"], 4),
-            "levers": sv["levers"], "fastModeSpend": round(sv["fast_mode_spend"], 4),
-            "signals": (s["features"] or {}).get("work_signals"),
+            "probabilities": p.get("probabilities") or {}, "outcome": p.get("outcome"),
+            "best": sv["best"], "worst": sv["worst"], "expected": sv["expected"],
+            "levers": [m["id"] for m in sv["methods"] if m["unlocked"] and m["id"] != "fast-mode"],
+            "methods": sv["methods"], "fastModeSpend": sv["fastModeSpend"],
+            "claudeCode": cc,
+            "signals": F.get("work_signals"),
+            # exactly what the classifier was shown: counts and enums, no path, prompt or cost
+            "sentToJev": {"coding_session": s["evidence"],
+                          **({"session_activity": F} if arm.endswith("C1") and F else {})},
             "tasks": (tasks.get(s["session_id"]) or tasks.get(s["key"])) if labels.get("context") == "separable" else None,
             "rerun": escalation(labels, p.get("outcome", "missing")),
         })
     doc = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "classifier": {"arm": a.arm, "model": "jev-1.13.0"},
+        "classifier": {"arm": arm, "model": "jev-1.13.0" if arm.startswith("jev") else "rules (no model)",
+                       "jevRequested": a.arm, "outcomes": results["arms"][arm].get("outcomes")},
+        "methods": [{"id": m[0], "title": m[1], "axis": m[2], "knob": m[3], "catalog": m[4], "label": m[5]} for m in METHODS],
         "total": round(sum(x["cost"] for x in out), 2),
         "rerunExperiment": RERUN_EXPERIMENT,
         "sessions": out,

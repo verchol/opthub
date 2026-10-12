@@ -36,7 +36,9 @@ def build_request(evidence: dict, features: dict | None, taxonomy: dict) -> dict
             "the person took to answer each reply. prompt_flags say whether the person's "
             "messages mentioned a topic; the messages themselves are not included. work_signals "
             "count how hard the work looked: files and lines changed, files edited again and again, "
-            "test runs and how many failed, tool errors, commits.")
+            "test runs and how many failed, tool errors, commits. claude_code is what the session ran "
+            "with: entry point, model, reasoning effort, permission mode, how many times the context "
+            "was compacted, and the share of requests made by subagents.")
     questions = {}
     for axis, spec in taxonomy["axes"].items():
         questions[axis] = {
