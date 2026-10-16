@@ -9,3 +9,6 @@ venv/
 
 # Local Claude Code settings (machine-specific)
 .claude/settings.local.json
+
+# Anything derived from live session transcripts (prompts, paths)
+data/private/
