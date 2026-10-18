@@ -19,6 +19,33 @@ They are deliberately separate. This repo is where a claim gets written down and
 
 ---
 
+## Setup on a new Mac
+
+Everything in `tools/` and the rules arm of the experiments is stdlib Python; nothing to install for those.
+
+```sh
+git clone https://github.com/verchol/opthub.git && cd opthub
+python3 --version                       # 3.10+; tested on 3.12
+python3 tools/lenops.py view            # sessions run from this directory; empty until Claude Code has run here
+python3 tools/costmodel.py              # pinned ledgers in docs/data/, no transcripts needed
+cd experiments/session-triage && python3 src/run.py && cd -   # rules arm, no egress
+```
+
+Optional, per feature:
+
+| for | install / set |
+|---|---|
+| re-rendering `docs/demo-diagrams.md` | `brew install node && npm i -g @mermaid-js/mermaid-cli` (gives `mmdc`) |
+| J2 LangChain comparison arms | `python3 -m venv .venv && .venv/bin/pip install -r experiments/email-triage/requirements.txt` |
+| Jev arms (J2, J3) | `export JEV_API_KEY=…` (optional `JEV_ENDPOINT`, `JEV_MODEL`) |
+| `tools/rerun.py run/judge` (spends money) | Docker Desktop running; `claude setup-token`, then `export CLAUDE_CODE_OAUTH_TOKEN=…`. Do not export `ANTHROPIC_API_KEY` — it would move runs onto API billing. Images build on first use. |
+| `/lenops` slash command | nothing — it ships in `.claude/commands/` |
+| keeping session history | `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` ([why](#where-sessions-live)) |
+
+What does **not** travel with a clone, by design: `.claude/settings.local.json` (machine-specific permissions), `data/private/` and `experiments/*/data/private/` (derived from live transcripts — prompts and paths), and `~/.claude/projects` itself. Tools run on a new machine report that machine's sessions; copy `data/private/` across by hand only if you need the old derived files. The pinned CSVs in `docs/data/` are what every published number is reproducible from.
+
+---
+
 ## Status — 2026-10-07
 
 Where the project stands, newest first. Each line has a dated entry in [`PROGRESS.md`](PROGRESS.md).
