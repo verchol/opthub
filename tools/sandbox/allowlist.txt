@@ -1,0 +1,16 @@
+# Destinations the agent may reach. Extended regex, one per line, matched
+# against the request host. Everything not listed is refused by the proxy.
+#
+# Keep this short and justify each line: it is the sandbox's entire attack
+# surface for exfiltration.
+
+# The model API the agent talks to.
+^api\.anthropic\.com$
+
+# Bedrock, when the run is pointed at it instead (region-suffixed hosts).
+^bedrock-runtime\.[a-z0-9-]+\.amazonaws\.com$
+
+# Deliberately NOT here, so that adding one is a decision someone makes:
+#   registry.npmjs.org   — dependencies belong in the image, not in the run
+#   github.com           — a run that can push is a run that can exfiltrate
+#   *.pypi.org           — same argument as npm

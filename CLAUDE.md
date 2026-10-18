@@ -3,7 +3,8 @@
 Measures whether a cheaper way of running a coding agent does the same job, by replaying real
 Claude Code sessions and grading them blind. This repo holds the spec, the measurements, and
 read-only analysis tools; the runnable implementation (hub, experiment loop, sandboxes) lives in
-`sandbox/e2b`, which is not published yet. Nothing in this repo spends money.
+`sandbox/e2b`, which is not published yet. Nothing in this repo spends money except
+`tools/rerun.py run|judge|go`, which refuse to start without `--yes`.
 
 ## Layout
 
@@ -18,6 +19,9 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
 - `docs/screens/` — hub screenshots (`INDEX.md`) and rendered demo diagrams (`diagrams/`).
 - `tools/` — stdlib Python, read-only: `sessions.py`, `lenops.py`, `loopscan.py`, `savings.py`,
   `costmodel.py`, `ctxwatch.py`. They are the source of every number in `docs/`.
+  `rerun.py` is the exception: it replays a session's prompts as new sessions with new flags
+  (baseline arm vs goal arm), judges the diffs blind, and writes a radar report to `data/private/reruns/`.
+  Arms run in the local Docker sandbox by default (`tools/sandbox/`, not E2B); `--sandbox host` opts out.
 - `experiments/` — J-series classifier experiments (`email-triage` = J2, `session-triage` = J3, Jev).
 
 ## Commands
@@ -26,6 +30,7 @@ read-only analysis tools; the runnable implementation (hub, experiment loop, san
 python3 tools/lenops.py view                 # session ops report (also /lenops)
 python3 tools/savings.py --days 30           # per-session lever headroom
 python3 tools/costmodel.py                   # run before editing any number in docs/optimizers.md
+python3 tools/rerun.py plan <session-id> --goal cost   # free; then run/judge --yes, then report
 cd experiments/session-triage && python3 src/run.py          # rules arm, pinned ledger, no egress
 mmdc -i docs/demo-diagrams.md -o docs/screens/diagrams/demo.png -b white -s 2   # re-render diagrams
 ```

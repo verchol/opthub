@@ -125,6 +125,8 @@ on Fly that suspends when idle.
 
 `tools/sessions.py` · `tools/lenops.py` · `tools/loopscan.py` · `tools/savings.py` · `tools/costmodel.py` · `tools/ctxwatch.py` — the source of every number in `docs/`. They cost nothing to run, unlike looping `/context`, which inflates what it measures.
 
+`tools/rerun.py` is the one exception, and it spends only with `--yes`. It replays a real session's prompts with new flags as new sessions: a `baseline` arm on the original model and effort, and a goal arm (`cost`, `speed`, `quality`, or custom `--flags`). Each starts from a fresh copy of the repo at the session's start commit. By default each copy runs inside the local Docker sandbox ([`tools/sandbox/`](tools/sandbox/README.md)), not E2B: allowlisted egress, no capabilities, read-only root filesystem. The replayed transcripts are copied back, so each replay still lists as a new session. A pinned judge scores the two final diffs blind, with positions swapped. The report draws quality, done, cost, wall time, output tokens and requests as a radar, one outline per arm. It prints a verdict only at three or more repeats per arm.
+
 ---
 
 ## What the measurements changed

@@ -1,0 +1,15 @@
+# The only route out of the sandbox network.
+#
+# tinyproxy with FilterDefaultDeny: every destination not named in the filter
+# file is refused, so a new domain is an explicit decision rather than a
+# default. The agent container has no other path to the internet — its network
+# is created with --internal.
+FROM alpine:3.20
+
+RUN apk add --no-cache tinyproxy
+
+COPY allowlist.txt /etc/tinyproxy/filter
+COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
+
+EXPOSE 8888
+CMD ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
