@@ -412,3 +412,14 @@
 - Lost: the per-session `jev-C0` predictions behind `data/RESULTS.md` (gitignored `data/results.json`)
   were overwritten by a rules-only run while this was built. The committed summary is intact.
 
+## 2026-10-19 · Hub Analytics: cost percentiles per category, continuous classes, similar-session graph
+- Analytics became a rail section (implementation repo, `lib/insights.mjs` + `lib/hub-insights.mjs`,
+  BACKLOG §10). Every session is classified on twelve attributes and reclassified whenever a
+  transcript changes.
+- **Percentiles**: p50/p95/p99 of priced cost (or cost/turn, cost/prompt, duration, context) per
+  category, filterable. **Classes**: attributes ranked by ω² on log cost; on 123 sessions scale
+  (77%) and context (66%) lead by construction, then tool style (39%) and project (36%), while
+  purpose explains 5.5% — what a session was *for* says little about what it costs.
+  **Similar**: a kNN graph of sessions by purpose, artifact, project and intent words.
+- n = 1 per category in places; percentiles below n = 20 are top values, and the page says so.
+
