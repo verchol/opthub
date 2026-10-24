@@ -12,12 +12,11 @@ Read the LEVERS note before quoting any lever — only C is measured.
 """
 import argparse, glob, json, os, sys, datetime as dt
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import DEFAULT_MODEL, W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
+
 WINDOW = 1_000_000
-PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
-         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
-         "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
-SONNET = PRICE["claude-sonnet-5"]
-W5, W1H, READ = 1.25, 2.0, 0.1
+SONNET = "claude-sonnet-5"
 TRIM, EFFORT = 0.25, 0.50           # lever A and B assumptions — INVENTED, see E1
 
 C = {"d":"\033[2m","r":"\033[31m","g":"\033[32m","y":"\033[33m",
@@ -31,14 +30,8 @@ def hms(ms):
     s = ms/1000
     return f"{s:.0f}s" if s < 90 else f"{s/60:.1f}m"
 
-def split_write(u):
-    cc = u.get("cache_creation") or {}
-    w1, w5 = cc.get("ephemeral_1h_input_tokens",0), cc.get("ephemeral_5m_input_tokens",0)
-    if not (w1 or w5): w1 = u.get("cache_creation_input_tokens",0)
-    return w1, w5
-
 def load(path):
-    reqs, turns = [], []
+    reqs, turns, seen = [], [], set()
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try: r = json.loads(line)
@@ -52,8 +45,9 @@ def load(path):
             ctx = (u.get("input_tokens",0) + u.get("cache_read_input_tokens",0)
                    + u.get("cache_creation_input_tokens",0))
             if not ctx: continue
-            model = m.get("model") or "claude-opus-5"
-            if model == "<synthetic>": continue
+            model = m.get("model") or DEFAULT_MODEL
+            if model == "<synthetic>" or request_key(r) in seen: continue
+            seen.add(request_key(r))
             try: t = dt.datetime.fromisoformat(r["timestamp"].replace("Z","+00:00"))
             except Exception: t = None
             reqs.append({"t":t, "ctx":ctx, "u":u, "model":model,
@@ -64,21 +58,20 @@ def view(path, reqs, turns):
     if not reqs:
         print(f"no billable requests in {os.path.basename(path)}"); return
 
-    cr=i_=out=think=w1=w5=0
+    cr=i_=out=think=w1=w5=0; think_usd=0.0
     money={"read":0.0,"write":0.0,"out":0.0,"in":0.0}
     sonnet=0.0; models={}; tiers=set()
     for r in reqs:
         u,m = r["u"], r["model"]
-        p,q = PRICE.get(m, PRICE["claude-opus-5"])
-        a,b = split_write(u)
+        q = (rates(m) or rates(DEFAULT_MODEL))[1]
+        b,a = split_write(u)
         R=u.get("cache_read_input_tokens",0); I=u.get("input_tokens",0); O=u.get("output_tokens",0)
         TH=(u.get("output_tokens_details") or {}).get("thinking_tokens",0) or 0
-        cr+=R; i_+=I; out+=O; think+=TH; w1+=a; w5+=b
-        cost = (R*p*READ + a*p*W1H + b*p*W5 + I*p)/1e6 + O*q/1e6
-        money["read"]+=R*p*READ/1e6; money["write"]+=(a*p*W1H+b*p*W5)/1e6
-        money["out"]+=O*q/1e6; money["in"]+=I*p/1e6
-        sonnet += (R*SONNET[0]*READ + a*SONNET[0]*W1H + b*SONNET[0]*W5
-                   + I*SONNET[0] + O*SONNET[1])/1e6
+        cr+=R; i_+=I; out+=O; think+=TH; w1+=a; w5+=b; think_usd+=TH*q/1e6
+        pt = parts(m, u); cost = sum(pt.values())
+        money["read"]+=pt["read"]; money["write"]+=pt["write"]
+        money["out"]+=pt["output"]; money["in"]+=pt["input"]
+        sonnet += req_cost(SONNET, u)
         d = models.setdefault(m, {"n":0,"$":0.0,"ctx":0})
         d["n"]+=1; d["$"]+=cost; d["ctx"]+=r["ctx"]
         if u.get("speed"): tiers.add(u["speed"])
@@ -91,14 +84,16 @@ def view(path, reqs, turns):
     # TTL counterfactual — same semantics as loopscan.ttl_counterfactual
     act=cf=0.0; forced=forced_tok=0; prev=None
     for r in reqs:
-        p=PRICE.get(r["model"],PRICE["claude-opus-5"])[0]
-        a,b=split_write(r["u"]); cw=a+b; R=r["u"].get("cache_read_input_tokens",0)
-        act += (cw*p*W1H + R*p*READ)/1e6
+        p,_,rd=rates(r["model"]) or rates(DEFAULT_MODEL)
+        b,a=split_write(r["u"]); cw=a+b; R=r["u"].get("cache_read_input_tokens",0)
+        act += (cw*p*W1H + R*p*rd)/1e6
         gap=(r["t"]-prev).total_seconds() if (prev and r["t"]) else 1e9
         if gap>300 and R>0: cf += (cw+R)*p*W5/1e6; forced+=1; forced_tok+=R
-        else: cf += (cw*p*W5 + R*p*READ)/1e6
+        else: cf += (cw*p*W5 + R*p*rd)/1e6
         prev = r["t"] or prev
     delta = act-cf
+
+    p_now,_,rd_now = rates(reqs[-1]["model"]) or rates(DEFAULT_MODEL)
 
     print(c(f"lenops view · {os.path.basename(path)[:8]} · {n} requests", "b"))
 
@@ -116,7 +111,7 @@ def view(path, reqs, turns):
     hd("PRELOAD")
     print(c("  the fixed prefix you pay for before saying anything", "d"))
     kv("floor", f"{floor:>9,}", f"{pct(floor,cur)} of the current context")
-    kv("cost/req", f"${floor*5*READ/1e6:>8.4f}", "at cache-read rates, every request, forever")
+    kv("cost/req", f"${floor*p_now*rd_now/1e6:>8.4f}", "at cache-read rates, every request, forever")
     kv("conversation", f"{cur-floor:>9,}", "everything you and the tools have added since")
 
     hd("MODELS")
@@ -134,7 +129,7 @@ def view(path, reqs, turns):
                       ("output","out",out),("fresh input","in",i_)):
         kv(lab, f"${money[k]:>8.2f}  {pct(money[k],total)}", f"{tok:>12,} tok")
     if think:
-        kv("· thinking", f"${think*25.0/1e6:>8.2f}  {pct(think,out)} of output", f"{think:>12,} tok")
+        kv("· thinking", f"${think_usd:>8.2f}  {pct(think,out)} of output", f"{think:>12,} tok")
 
     hd("CACHE")
     denom=cr+w1+w5+i_; hit=cr/denom if denom else 0
@@ -160,7 +155,7 @@ def view(path, reqs, turns):
             t=m.get("type","?"); d=agg.setdefault(t,[0,0])
             d[0]+=1; d[1]+=m.get("cache_missed_input_tokens",0)
         for t,(k_,tok) in sorted(agg.items(), key=lambda kv:-kv[1][1]):
-            kv(t, f"{k_:>3}×  {tok:>9,} tok  ${tok*5*W1H/1e6:>7.2f}",
+            kv(t, f"{k_:>3}×  {tok:>9,} tok  ${tok*p_now*W1H/1e6:>7.2f}",
                "re-written at 1h rates" if tok else "no tokens lost", w=27)
 
     if turns:
@@ -180,7 +175,7 @@ def view(path, reqs, turns):
 
     hd("LEVERS")
     print(c("  headroom, not forecasts — only C is measured. See docs/experiments.md.","d"))
-    A=TRIM*(money["read"]+money["write"]); B=EFFORT*think*25.0/1e6; D=total-sonnet
+    A=TRIM*(money["read"]+money["write"]); B=EFFORT*think_usd; D=total-sonnet
     kv("A trim", f"${A:>8.2f}  {pct(A,total)}", f"{int(TRIM*100)}% less re-sent prefix — INVENTED %")
     kv("B effort", f"${B:>8.2f}  {pct(B,total)}", f"{int(EFFORT*100)}% fewer thinking tokens — INVENTED %")
     kv("C ttl-5m", f"${delta:>+8.2f}  {pct(abs(delta),total)}", "MEASURED against this trace")

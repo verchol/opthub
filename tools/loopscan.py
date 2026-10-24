@@ -10,21 +10,13 @@ assistant record carries message.usage, so cost is computed from billed tokens,
 not estimated. Cost is *API list-price equivalent* — this traffic ran on a
 Claude Code subscription and was not billed per token.
 
-Prices $/MTok (input, output), per the claude-api skill, cached 2026-06-24.
-Cache read = 0.1x input; cache write = 1.25x (5m TTL) or 2.0x (1h TTL).
+Prices come from tools/ratecard.py.
 """
 import argparse, collections, datetime as dt, glob, json, os, re, sys
 
-PRICE = {
-    "claude-opus-5-5":          (4.0, 20.0),
-    "claude-fable-5":           (10.0, 50.0),
-    "claude-fable-5-1":         (10.0, 50.0),
-    "claude-opus-5":            (5.0, 25.0),
-    "claude-opus-4-8":          (5.0, 25.0),
-    "claude-sonnet-5":          (2.0, 10.0),
-    "claude-haiku-4-5-20251001":(1.0,  5.0),
-}
-W5, W1H, READ = 1.25, 2.0, 0.1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import W1H, W5, rates, request_key, split_write  # noqa: E402
+import ratecard  # noqa: E402
 
 # Prompt signatures that identify a loop rather than a human turn.
 LOOP_SIGS = [
@@ -33,26 +25,10 @@ LOOP_SIGS = [
 ]
 
 
-def req_cost(model, u):
-    p = PRICE.get(model)
-    if not p:
-        return 0.0
-    inp, out = p
-    cc = u.get("cache_creation") or {}
-    w5 = cc.get("ephemeral_5m_input_tokens", 0)
-    w1 = cc.get("ephemeral_1h_input_tokens", 0)
-    if w5 + w1 == 0:                      # older records: TTL not broken out
-        w5 = u.get("cache_creation_input_tokens", 0)
-    return (u.get("input_tokens", 0) * inp
-            + w5 * inp * W5
-            + w1 * inp * W1H
-            + u.get("cache_read_input_tokens", 0) * inp * READ
-            + u.get("output_tokens", 0) * out) / 1e6
-
-
 def scan(root, cutoff):
     sessions, loops, timeline = {}, collections.Counter(), collections.defaultdict(list)
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    seen = set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         proj = os.path.basename(os.path.dirname(f))
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
@@ -71,7 +47,7 @@ def scan(root, cutoff):
             s = sessions.setdefault(sid, dict(
                 proj=proj, cwd=r.get("cwd", ""), entry=r.get("entrypoint", ""),
                 start=t, end=t, reqs=0, models=collections.Counter(),
-                inp=0, w5=0, w1=0, cr=0, out=0, think=0, cost=0.0, ctx=[],
+                inp=0, w5=0, w1=0, cr=0, out=0, think=0, cost=0.0, mix=collections.Counter(), ctx=[],
                 tools=collections.Counter(), prompts=[]))
             s["start"], s["end"] = min(s["start"], t), max(s["end"], t)
             if r.get("cwd"):
@@ -82,13 +58,10 @@ def scan(root, cutoff):
             if r.get("type") == "assistant":
                 msg = r.get("message") or {}
                 u = msg.get("usage") or {}
-                if u:
+                if u and request_key(r) not in seen:
+                    seen.add(request_key(r))
                     m = msg.get("model", "")
-                    cc = u.get("cache_creation") or {}
-                    w5 = cc.get("ephemeral_5m_input_tokens", 0)
-                    w1 = cc.get("ephemeral_1h_input_tokens", 0)
-                    if w5 + w1 == 0:
-                        w5 = u.get("cache_creation_input_tokens", 0)
+                    w5, w1 = split_write(u)
                     s["reqs"] += 1
                     s["models"][m] += 1
                     s["inp"] += u.get("input_tokens", 0)
@@ -97,7 +70,9 @@ def scan(root, cutoff):
                     s["cr"] += u.get("cache_read_input_tokens", 0)
                     s["out"] += u.get("output_tokens", 0)
                     s["think"] += (u.get("output_tokens_details") or {}).get("thinking_tokens", 0)
-                    s["cost"] += req_cost(m, u)
+                    pt = ratecard.parts(m, u, default=None) or {}
+                    s["mix"].update(pt)
+                    s["cost"] += sum(pt.values())
                     s["ctx"].append(u.get("input_tokens", 0)
                                     + u.get("cache_read_input_tokens", 0)
                                     + u.get("cache_creation_input_tokens", 0))
@@ -131,15 +106,15 @@ def ttl_counterfactual(timeline):
         v.sort()
         prev = None
         for t, cr, cw, model in v:
-            p = PRICE.get(model, (0, 0))[0]
-            actual += (cw * p * W1H + cr * p * READ) / 1e6
+            p, _, rd = rates(model) or (0, 0, 0)
+            actual += (cw * p * W1H + cr * p * rd) / 1e6
             gap = (t - prev).total_seconds() if prev else 1e9
             if gap > 300 and cr > 0:            # 5m entry would have expired: full re-write
                 counter += (cw + cr) * p * W5 / 1e6
                 forced_reqs += 1
                 forced_tok += cr
             else:
-                counter += (cw * p * W5 + cr * p * READ) / 1e6
+                counter += (cw * p * W5 + cr * p * rd) / 1e6
             prev = t
     return actual, counter, forced_reqs, forced_tok
 
@@ -176,8 +151,9 @@ def main():
           f"raw-in {inp/1e3:.1f}k  out {out/1e6:.2f}M (thinking {th/1e6:.2f}M)")
     if cr + w1 + w5 + inp:
         print(f"cache    : hit rate {100*cr/(cr+w1+w5+inp):.1f}%")
-    print(f"cost mix : cache-read ${cr*5/1e6*READ:.2f}  cache-write ${w1*5/1e6*W1H + w5*5/1e6*W5:.2f}  "
-          f"output ${out*25/1e6:.2f}   (at Opus-5 rates)")
+    mix = sum((s["mix"] for s in S.values()), collections.Counter())
+    print(f"cost mix : cache-read ${mix['read']:.2f}  cache-write ${mix['write']:.2f}  "
+          f"output ${mix['output']:.2f}   (at each request's model rates)")
 
     print("\nrequests by model:")
     mc = collections.Counter()

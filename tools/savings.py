@@ -20,19 +20,18 @@ A and B are multiplicative-ish and roughly independent (input side vs output
 side). C is measured and usually negative. D is a ceiling nobody should ship
 without an eval; it is here to size the prize, not to propose the change.
 """
-import argparse, collections, csv, datetime as dt, glob, json, os, re
+import argparse, collections, csv, datetime as dt, glob, json, os, re, sys
 
-PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
-         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
-         "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
-SONNET = PRICE["claude-sonnet-5"]
-W5, W1H, READ = 1.25, 2.0, 0.1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
+
+SONNET = "claude-sonnet-5"
 TRIM, EFFORT = 0.25, 0.50          # lever A and B assumptions
 
 
 def walk(root, cutoff):
-    S = {}
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    S, seen = {}, set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
                 continue
@@ -72,26 +71,24 @@ def walk(root, cutoff):
                 continue
             msg = r.get("message") or {}
             u = msg.get("usage") or {}
-            if not u:
+            if not u or request_key(r) in seen:
                 continue
+            seen.add(request_key(r))
             m = msg.get("model", "")
-            p = PRICE.get(m)
+            p = rates(m)
             if not p:
                 continue
-            inp, outp = p
-            cc = u.get("cache_creation") or {}
-            w5 = cc.get("ephemeral_5m_input_tokens", 0)
-            w1 = cc.get("ephemeral_1h_input_tokens", 0)
-            if w5 + w1 == 0:
-                w5 = u.get("cache_creation_input_tokens", 0)
+            inp, outp, rd = p
+            w5, w1 = split_write(u)
             cr = u.get("cache_read_input_tokens", 0)
             raw = u.get("input_tokens", 0)
             ot = u.get("output_tokens", 0)
             th = (u.get("output_tokens_details") or {}).get("thinking_tokens", 0)
 
-            read_c = (cr * READ + raw) * inp / 1e6
-            write_c = (w5 * W5 + w1 * W1H) * inp / 1e6
-            out_c = ot * outp / 1e6
+            pt = parts(m, u)
+            read_c = pt["read"] + pt["input"]
+            write_c = pt["write"]
+            out_c = pt["output"]
             s["reqs"] += 1
             s["models"][m] += 1
             s["read"] += read_c
@@ -102,16 +99,15 @@ def walk(root, cutoff):
             s["cr"] += cr; s["w"] += w5 + w1; s["otok"] += ot; s["ttok"] += th
             s["ctx"].append(raw + cr + w5 + w1)
             # lever D: same tokens, Sonnet 5 list rates
-            s["sonnet"] += ((cr * READ + raw) * SONNET[0] + (w5 * W5 + w1 * W1H) * SONNET[0]
-                            + ot * SONNET[1]) / 1e6
+            s["sonnet"] += req_cost(SONNET, u)
             # lever C: 5m TTL simulated against the real gap to the previous request
             gap = (t - s["prev"]).total_seconds() if s["prev"] else 1e9
-            s["ttl_act"] += ((w5 * W5 + w1 * W1H) + cr * READ) * inp / 1e6
+            s["ttl_act"] += ((w5 * W5 + w1 * W1H) + cr * rd) * inp / 1e6
             if gap > 300 and cr > 0:
                 s["ttl_cf"] += (w5 + w1 + cr) * W5 * inp / 1e6
                 s["forced"] += 1
             else:
-                s["ttl_cf"] += ((w5 + w1) * W5 + cr * READ) * inp / 1e6
+                s["ttl_cf"] += ((w5 + w1) * W5 + cr * rd) * inp / 1e6
             s["prev"] = t
     return {k: v for k, v in S.items() if v["reqs"]}
 

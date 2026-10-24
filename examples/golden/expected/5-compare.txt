@@ -4,7 +4,7 @@ golden-fix-rounding — goal cost · cost wins on its goal (cost lower, quality 
 metric                        baseline            cost         dynamic
 quality (judge /60)                 51        51 (+0%)        51 (+0%)
 done                              100%      100% (+0%)      100% (+0%)
-cost (priced)                    $0.42    $0.20 (-52%)    $0.10 (-75%)
+cost (priced)                    $0.40    $0.20 (-49%)    $0.10 (-74%)
 wall time                         240s     188s (-22%)     155s (-35%)
 output tokens                     3.6k     2.7k (-26%)     2.5k (-31%)
 requests                             5         5 (+0%)        6 (+20%)
@@ -19,7 +19,7 @@ golden-csv-export — goal cost · cost wins on its goal (cost lower, quality an
 metric                        baseline            cost         dynamic
 quality (judge /60)                 49        49 (+0%)        49 (+0%)
 done                              100%      100% (+0%)      100% (+0%)
-cost (priced)                    $1.64    $0.83 (-49%)    $0.85 (-48%)
+cost (priced)                    $1.44    $0.83 (-42%)    $0.85 (-41%)
 wall time                         476s     406s (-15%)     378s (-21%)
 output tokens                    14.4k     13.7k (-5%)    16.1k (+12%)
 requests                            13        14 (+8%)        14 (+8%)
@@ -34,7 +34,7 @@ golden-slow-report — goal cost · cost does not clear its goal (cost lower, qu
 metric                        baseline            cost         dynamic
 quality (judge /60)                 48        44 (-8%)        48 (+0%)
 done                              100%      67% (-33%)      100% (+0%)
-cost (priced)                    $5.16    $2.69 (-48%)     $5.00 (-3%)
+cost (priced)                    $4.20    $2.69 (-36%)     $4.05 (-4%)
 wall time                         475s     378s (-20%)     521s (+10%)
 output tokens                    33.3k    29.5k (-11%)    25.8k (-23%)
 requests                            22       25 (+14%)        22 (+0%)

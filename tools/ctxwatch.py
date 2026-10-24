@@ -16,24 +16,14 @@ it reads the transcript from disk instead of spending a turn to ask.
 """
 import argparse, glob, json, os, sys, time, datetime as dt
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import req_cost  # noqa: E402
+
 WINDOW = 1_000_000          # Opus 5 context window
-# Opus 5 list rates, $/MTok — same model as tools/savings.py
-IN_, OUT_ = 5.0, 25.0
-R_READ, R_W1H, R_W5M = 0.1, 2.0, 1.25
 
 C = {"dim":"\033[2m","red":"\033[31m","grn":"\033[32m","yel":"\033[33m",
      "cyn":"\033[36m","bold":"\033[1m","off":"\033[0m"}
 def c(s, k): return f"{C[k]}{s}{C['off']}" if sys.stdout.isatty() else str(s)
-
-def cost(u):
-    w1h = u.get("cache_creation", {}).get("ephemeral_1h_input_tokens", 0)
-    w5m = u.get("cache_creation", {}).get("ephemeral_5m_input_tokens", 0)
-    w   = u.get("cache_creation_input_tokens", 0)
-    if not (w1h or w5m): w1h = w          # older records: assume 1h
-    return (u.get("cache_read_input_tokens", 0) * IN_ * R_READ
-            + w1h * IN_ * R_W1H + w5m * IN_ * R_W5M
-            + u.get("input_tokens", 0) * IN_
-            + u.get("output_tokens", 0) * OUT_) / 1e6
 
 def rows(path):
     out = []
@@ -47,7 +37,7 @@ def rows(path):
             if not u or not isinstance(u, dict): continue
             ctx = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
                    + u.get("cache_creation_input_tokens", 0))
-            if ctx: out.append((r.get("timestamp", ""), ctx, u))
+            if ctx: out.append((r.get("timestamp", ""), ctx, u, (r.get("message") or {}).get("model")))
     return out
 
 def bar(ctx, w=22):
@@ -93,8 +83,8 @@ def main():
     while True:
         rs = rows(path)
         for i in range(seen, len(rs)):
-            ts, ctx, u = rs[i]
-            total += cost(u)
+            ts, ctx, u, model = rs[i]
+            total += req_cost(model, u)
             emit(i + 1, ts, ctx, u, prev, total)
             prev = ctx
         seen = len(rs)

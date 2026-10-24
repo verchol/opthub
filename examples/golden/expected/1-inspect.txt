@@ -2,13 +2,13 @@ $ python3 tools/sessions.py --root examples/golden/out/projects --since 2026-10-
 window   : 2026-10-01 -> now   (from 2026-10-01 00:00)
 sessions : 3   (3 with billable requests, 0 with none)
 requests : 77
-cost     : $10.68  (API-list equivalent)
+cost     : $8.29  (API-list equivalent)
 
 start               span project          entry     req   ctx p50    cost$  id                                   prompt
 -------------------------------------------------------------------------------------------------------------------
-2026-10-06 08:30     13m repo             cli        44   230,329     7.90  b562a247-cf3b-547a-98a6-5771b9cd31a1 `python3 cli.py 200000` takes far too long. Find out
-2026-10-03 14:05     10m repo             cli        24    85,117     2.26  c19db0a3-ce45-5b6e-b1fa-72b8d183aa75 Add a CSV export to the monthly report: report.to_cs
-2026-10-02 09:12      2m repo             cli         9    31,229     0.52  2ec4f5ed-cda7-52b6-b1ee-2441513113bc invoice.total() is a cent off for some carts — tests
+2026-10-06 08:30     13m repo             cli        44   230,329     5.94  b562a247-cf3b-547a-98a6-5771b9cd31a1 `python3 cli.py 200000` takes far too long. Find out
+2026-10-03 14:05     10m repo             cli        24    85,117     1.87  c19db0a3-ce45-5b6e-b1fa-72b8d183aa75 Add a CSV export to the monthly report: report.to_cs
+2026-10-02 09:12      2m repo             cli         9    31,229     0.47  2ec4f5ed-cda7-52b6-b1ee-2441513113bc invoice.total() is a cent off for some carts — tests
 
 retention: oldest transcript on disk is 2026-10-02 (<age>); cleanupPeriodDays default is 30.
            ** your window starts BEFORE that — the earlier part was deleted,

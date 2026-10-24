@@ -55,7 +55,7 @@ or the repo's .env (tools/envfile.py).
 import argparse, datetime as dt, glob, html, json, math, os, random, re, shutil, statistics, subprocess, sys, time, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sessions import PRICE, req_cost, DEFAULT_MODEL  # noqa: E402
+from ratecard import req_cost, request_key, DEFAULT_MODEL  # noqa: E402
 import envfile, tune  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -142,11 +142,12 @@ def read_session(sid):
 
 def measure(sid, root=PROJECTS):
     """Priced cost, tokens and cache share of a replayed session, from its transcript."""
-    m = dict(reqs=0, cost=0.0, out_tok=0, in_tok=0, cache_read=0)
+    m, seen = dict(reqs=0, cost=0.0, out_tok=0, in_tok=0, cache_read=0), set()
     for r in records(find_transcripts(sid, root)):
         u = (r.get("message") or {}).get("usage")
-        if not u:
+        if not u or request_key(r) in seen:
             continue
+        seen.add(request_key(r))
         m["reqs"] += 1
         m["cost"] += req_cost((r.get("message") or {}).get("model") or DEFAULT_MODEL, u)
         m["out_tok"] += u.get("output_tokens", 0)

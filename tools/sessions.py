@@ -30,32 +30,13 @@ Two things this tool does that the others deliberately don't:
 """
 import argparse, collections, csv, datetime as dt, glob, json, os, statistics, sys
 
-# Same list rates and multipliers as tools/savings.py.
-PRICE = {"claude-opus-5-5": (4.0, 20.0), "claude-fable-5": (10.0, 50.0), "claude-fable-5-1": (10.0, 50.0),
-         "claude-opus-5": (5.0, 25.0), "claude-opus-4-8": (5.0, 25.0),
-         "claude-sonnet-5": (2.0, 10.0), "claude-haiku-4-5-20251001": (1.0, 5.0)}
-W5, W1H, READ = 1.25, 2.0, 0.1
-DEFAULT_MODEL = "claude-opus-5"
-
-
-def req_cost(model, u):
-    """API-list-equivalent cost of one request. Subscription traffic is not
-    billed this way — this is the unit for sizing an optimizer, not a bill."""
-    inp, out = PRICE.get(model, PRICE[DEFAULT_MODEL])
-    cc = u.get("cache_creation") or {}
-    w1h = cc.get("ephemeral_1h_input_tokens", 0)
-    w5m = cc.get("ephemeral_5m_input_tokens", 0)
-    if not (w1h or w5m):                      # older records carry no breakdown
-        w1h = u.get("cache_creation_input_tokens", 0)
-    return (u.get("cache_read_input_tokens", 0) * inp * READ
-            + w1h * inp * W1H + w5m * inp * W5
-            + u.get("input_tokens", 0) * inp
-            + u.get("output_tokens", 0) * out) / 1e6
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import DEFAULT_MODEL, req_cost, request_key  # noqa: E402  (sessiongraph.py imports the first two from here)
 
 
 def walk(root, cutoff):
-    S = {}
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    S, seen = {}, set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         fallback_sid = os.path.basename(f)[:-6]
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
@@ -91,8 +72,9 @@ def walk(root, cutoff):
                     s["prompt"] = " ".join(c.split())[:400]
 
             u = (r.get("message") or {}).get("usage")
-            if not u:
+            if not u or request_key(r) in seen:
                 continue
+            seen.add(request_key(r))
             model = (r.get("message") or {}).get("model") or DEFAULT_MODEL
             s["reqs"] += 1
             s["models"][model] += 1
