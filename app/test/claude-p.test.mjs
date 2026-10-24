@@ -11,7 +11,8 @@ const ok = (name, cond, got) => { if (cond) { pass++; console.log(`  ✓ ${name}
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-p-test-'))
 process.env.OPT_HOME = path.join(tmp, 'home')
 const { LEVELS, planFor, recordOutcome, skillDirs, loadProfile } = await import('../lib/claude-profile.mjs')
-const { armScript, treeDigest, parseArgs, withLever } = await import('../claude-run.mjs')
+const { armScript, treeDigest, parseArgs, withLever, parameters, reportData } = await import('../claude-run.mjs')
+const { buildHtml } = await import('../report.mjs')
 const { localPlan, mergePlans } = await import('../lib/local-run.mjs')
 const { auditClaims, readEvents } = await import('../lib/claims.mjs')
 const { AuditLog } = await import('../lib/ult/audit.mjs')
@@ -68,6 +69,22 @@ ok('a lever adds its environment and its working rules', lp.env.MAX_THINKING_TOK
 const lo = armScript({ optimized: true, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
 const lpl = armScript({ optimized: false, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
 ok('only the optimized arm gets the lever; a quoted value is quoted once', lo.includes("--model 'sonnet'") && lo.includes("--fallback-model 'o'\\''pus'") && !lpl.includes('sonnet') && !lpl.includes('MAX_THINKING'))
+// the summary: every parameter side by side, and the report with the spider chart
+const { config: ucfg } = await import('../lib/ult/config.mjs').then((m) => m.loadConfig({ flags: { routing: 'local' } }))
+const P = parameters({ model: 'opus', plan: lp, strategy: { id: 'x' }, config: ucfg, skills: ['/a/house-rules'], cred: { kind: 'oauth' }, timeoutSec: 600 })
+const pv = (n) => P.find((p) => p.name === n)
+ok('parameters: what the optimized side changed differs, the rest match', pv('model').optimized === 'sonnet' && pv('model').plain === 'opus' && pv('effort').optimized === 'low'
+   && pv('gateway').plain.startsWith('none') && /qwen3:8b/.test(pv('local tier').optimized) && pv('strategy').optimized === 'x' && pv('timeout').plain === pv('timeout').optimized, P)
+ok('parameters: every lever flag and env var gets a row', !!pv('fallback-model') && pv('env MAX_THINKING_TOKENS')?.optimized === '8000' && /strategy's/.test(pv('appended rules').optimized))
+const evd = { 'plain-1': { events: { result: { usage: { input_tokens: 10, cache_read_input_tokens: 9000, output_tokens: 400 }, total_cost_usd: 0.4 } } },
+              'optimized-1': { events: { result: { usage: { input_tokens: 10, cache_read_input_tokens: 8000, output_tokens: 200 }, total_cost_usd: 0.2 } } } }
+const rrows = [{ label: 'plain-1', side: 'baseline', cost_usd: 0.4, duration_ms: 60000, turns: 12, model: 'opus', check: 'pass', files: ['~a.py'] },
+               { label: 'optimized-1', side: 'optimized', cost_usd: 0.2, duration_ms: 40000, turns: 8, model: 'opus', check: 'pass', files: ['~a.py'] }]
+const rd = reportData({ runId: 'cp-test', rows: rrows, params: P, verdict: { verdict: 'keep', reason: '50% cheaper' }, checkFile: 'c.py', strategy: { id: 'x' }, plan: lp, auth: 'oauth', ev: evd })
+const html = buildHtml({ id: 'cp-test', data: rd })
+ok('report: the spider chart, both sides, one per side', html.includes('<svg') && html.includes('plain claude -p') && html.includes('optimize mode') && rd.arms.length === 2)
+ok('report: parameters side by side, changed rows highlighted, the fixed arms table gone', html.includes('Parameters, side by side') && (html.match(/class="pchg"/g) ?? []).length === P.filter((p) => p.plain !== p.optimized).length && !html.includes('<h2>The arms</h2>'))
+ok('report: header says what this run is, not the E2B benchmark', html.includes('opt claude -p · local Docker sandbox') && !html.includes('changes exactly one thing'))
 ok('opt optimize flags parse: --strategy, --goal, --temperature, --session, --task-file, --eligible', (() => {
   const f = parseArgs(['--task', 'fix it', '--strategy', 'effort-low', '--goal', 'cost', '--temperature', 'aggressive', '--session', 'abc', '--task-file', 't.md', '--eligible', '--project', 'p', '--checks', 'c', '--force'])
   return f.prompt === 'fix it' && f.strategy === 'effort-low' && f.goal === 'cost' && f.temperature === 'aggressive' && f.session === 'abc' && f.taskFile === 't.md' && f.eligible && f.project === 'p' && f.checks === 'c' && f.force

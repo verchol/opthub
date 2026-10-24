@@ -37,8 +37,9 @@ import { ensureSandbox, reapOrphans, routerRunArgs, DUMMY_KEY, NET_INT } from '.
 import { runSandbox, readResult, diffTrees, outRoot, tilde, localPlan, mergePlans } from './lib/local-run.mjs'
 import { startTask, sha256 } from './lib/task-audit.mjs'
 import { verdictOf, taskFromSession, chooseStrategy, strategyEntries, printProposal, eligibleSessions, cmdPlan, cmdStrategies } from './core.mjs'
-import { loadProfile, saveProfile, resetProfile, planFor, recordOutcome, skillDirs, LEVELS } from './lib/claude-profile.mjs'
+import { loadProfile, saveProfile, resetProfile, planFor, recordOutcome, skillDirs, LEVELS, LEAN_RULES } from './lib/claude-profile.mjs'
 import { auditClaims, armEvidence, printClaims, listClaudeRuns } from './lib/claims.mjs'
+import { buildHtml } from './report.mjs'
 import { SANDBOX_SH } from '../sandbox/docker/index.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
@@ -124,6 +125,7 @@ export function parseArgs(argv) {
       case '--project': f.project = val(); break
       case '--checks': f.checks = val(); break
       case '--force': f.force = true; break
+      case '--no-open': f.noOpen = true; break
       case '--skill': f.skills.push(val()); break
       case '--timeout': f.timeout = val(); break
       case '--budget': f.budget = Number(val()); break
@@ -246,6 +248,75 @@ export function defaultModel() {
 }
 
 // ---------------------------------------------------------------- run
+/**
+ * Everything a run set, plain side against optimized side, one row per parameter: what the report's
+ * side-by-side table and the terminal summary show. A row whose two values differ is what changed.
+ * @returns {{name:string, plain:string, optimized:string}[]}
+ */
+export function parameters({ model, plan, strategy = null, config, skills = [], cred = null, timeoutSec, budget = null, extra = [] }) {
+  const flag = (k) => { const i = plan.flags.indexOf(k); return i >= 0 ? plan.flags[i + 1] : null }
+  const rows = [['model', model ?? 'Claude Code default', flag('--model') ?? model ?? 'Claude Code default'],
+                ['effort', 'Claude Code default', flag('--effort') ?? 'Claude Code default']]
+  for (let i = 0; i < plan.flags.length; i += 2) {
+    if (['--model', '--effort'].includes(plan.flags[i])) continue
+    rows.push([plan.flags[i].replace(/^--/, ''), 'not set', plan.flags[i + 1] || 'on'])
+  }
+  const routes = Object.entries(config?.policy?.routes ?? {}).filter(([, t]) => t !== 'keep').map(([c, t]) => `${c} → ${t.replace(/^(remote|local|scoped):/, '')}`)
+  rows.push(
+    ['gateway', 'none: straight to the API', `LLM Ultra Light, ${config?.mode ?? 'route'} mode`],
+    ['routing', 'none', config?.policy?.pin === 'frontier' ? 'pinned to the frontier model' : routes.join('; ') || 'nothing moved'],
+    ['local tier', 'off', config?.local?.enabled ? `on: ${[...new Set([config.local.model, ...Object.values(config.policy?.routes ?? {}).filter((t) => /^(local|scoped):/.test(t)).map((t) => t.replace(/^(local|scoped):/, ''))])].join(', ')}` : 'off'],
+    ['profile level', 'none', plan.level],
+    ['strategy', 'none', strategy?.id ?? 'none'],
+    ['appended rules', 'none', !plan.rules ? 'none' : plan.rules === LEAN_RULES ? 'lean working rules' : `lean working rules + the strategy's (${plan.rules.length} chars)`],
+    ['skills', 'none', skills.map((d) => path.basename(d)).join(', ') || 'none'],
+    ['tool search', 'Claude Code default', 'on (ENABLE_TOOL_SEARCH)'],
+  )
+  for (const [k, v] of Object.entries(plan.env)) rows.push([`env ${k}`, 'unset', String(v)])
+  rows.push(['budget per run', budget ? `$${budget}` : 'none', budget ? `$${budget}` : 'none'],
+            ['timeout', `${timeoutSec}s`, `${timeoutSec}s`],
+            ['claude args after --', extra.join(' ') || 'none', extra.join(' ') || 'none'],
+            ['credential in the sandbox', cred ? (cred.kind === 'oauth' ? 'subscription token' : 'API key') : 'real', 'placeholder (the gateway holds it)'])
+  return rows.map(([name, plain, optimized]) => ({ name, plain: String(plain), optimized: String(optimized) }))
+}
+
+/** Print the parameters that differ, plain against optimized. */
+function printParameters(params) {
+  const chg = params.filter((p) => p.plain !== p.optimized)
+  err(`\n  ${C.d}${'parameter'.padEnd(26)}${'plain claude -p'.padEnd(30)}optimize mode${C.x}`)
+  for (const p of chg) err(`  ${p.name.padEnd(26)}${p.plain.slice(0, 28).padEnd(30)}${C.b}${p.optimized.slice(0, 70)}${C.x}`)
+  err(`  ${C.d}${chg.length} of ${params.length} parameters differ; the rest are the same on both sides (report.html lists all)${C.x}`)
+}
+
+/**
+ * The run as report.mjs reads it, so the HTML is the same document every opt run produces: the radar
+ * (spider chart) of six metrics, the raw numbers, and the parameters side by side. One arm per side:
+ * the run with the median cost.
+ */
+export function reportData({ runId, rows, params, verdict, checkFile, strategy, plan, auth, ev }) {
+  const pick = (side) => { const rs = rows.filter((r) => r.side === side && !r.is_error).sort((a, b) => (a.cost_usd ?? 0) - (b.cost_usd ?? 0)); return rs[Math.floor((rs.length - 1) / 2)] ?? rows.find((r) => r.side === side) }
+  const arm = (side, name) => {
+    const r = pick(side)
+    if (!r) return null
+    const all = rows.filter((x) => x.side === side)
+    const res = ev[r.label]?.events?.result ?? {}
+    return { arm: side, label: name, model: r.model, trueCost: r.cost_usd ?? 0, totalWallSec: (r.duration_ms ?? 0) / 1000,
+             result: { usage: res.usage ?? {}, num_turns: r.turns ?? 0, total_cost_usd: res.total_cost_usd ?? r.cost_usd ?? 0, duration_ms: r.duration_ms ?? 0 },
+             grade: checkFile ? { passed: all.filter((x) => x.check === 'pass').length, total: all.length } : { kind: 'artifacts' },
+             levers: side === 'baseline' ? ['plain claude -p: nothing changed'] : params.filter((p) => p.plain !== p.optimized).map((p) => `${p.name}: ${p.optimized}`),
+             paramTable: params.map((p) => [p.name, side === 'baseline' ? p.plain : p.optimized]),
+             linesOfCode: `${(r.files ?? []).length} files` }
+  }
+  const arms = [arm('baseline', 'plain claude -p'), arm('optimized', 'optimize mode')].filter(Boolean)
+  return {
+    eyebrow: 'opt claude -p · local Docker sandbox · plain vs optimize mode',
+    headline: `The same task, the same model, run plain and in optimize mode${strategy ? ` with ${strategy.id}` : ''} (profile ${plan.level}). ${verdict ? `Verdict: ${verdict.verdict}, ${verdict.reason}` : 'No plain side: run with --compare for a verdict.'}`,
+    lede: '', experiment: strategy?.id ?? `profile ${plan.level}`, task: runId, auth,
+    footer: `opt claude -p · ${runId} · median-cost run per side · costs at list price, the optimized side net of what the gateway saved`,
+    arms,
+  }
+}
+
 /**
  * A catalog lever (config/optimizations.json, via localPlan) on top of the run's profile: its flags
  * replace the profile's own, its environment is added, its working rules join the appended rules.
@@ -434,6 +505,9 @@ export async function runP(f) {
     verdict, profile_move: move,
   }
   fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(runJson, null, 2))
+  const params = parameters({ model: f.model, plan, strategy, config, skills, cred, timeoutSec, budget: f.budget, extra: f.extra })
+  const reportFile = path.join(runDir, 'report.html')
+  fs.writeFileSync(reportFile, buildHtml({ id: runId, data: reportData({ runId, rows, params, verdict, checkFile, strategy, plan, auth: cred.kind, ev }) }))
   task.end({ verdict: verdict?.verdict ?? null, cost_usd: +(rows.reduce((s, r) => s + (r.cost_usd ?? 0), 0) + Object.values(warmup).reduce((s, v) => s + (v ?? 0), 0)).toFixed(4), runs: rows.length, failed: rows.filter((r) => r.is_error).length, level_to: move?.to ?? null })
 
   const audit = auditClaims(runDir)
@@ -441,6 +515,9 @@ export async function runP(f) {
 
   // ---- report (stderr), then the answer (stdout), as claude -p prints it
   report({ rows, opt, base, verdict, move, checkFile, runDir })
+  printParameters(params)
+  err(`  report    ${tilde(reportFile)} ${C.d}(spider chart, raw numbers, every parameter side by side)${C.x}`)
+  if (process.stdout.isTTY && !f.noOpen) try { spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [reportFile], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref() } catch {}
   if (warmArms.length) err(`  warm-up   ${C.d}one turn a side to warm the prompt cache: plain ${money(warmup.baseline)} · optimized ${money(warmup.optimized)} (not in the comparison)${C.x}`)
   printClaims(audit.claims, audit.summary)
   err(`\n  ${C.d}${Math.round((Date.now() - t0) / 1000)}s end to end · ${tilde(runDir)} · claims.md · opt claude audit ${runId}${C.x}\n`)

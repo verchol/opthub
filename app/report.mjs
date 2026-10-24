@@ -43,6 +43,8 @@ export function metricsOf(rec, judgement = null) {
   return {
     arm: rec.arm, label: rec.label, levers: rec.levers ?? [], model: rec.model ?? null,
     tag: rec.tag ?? null, diff: rec.diff ?? [], same: !!rec.same, params: rec.params ?? null,
+    // [[parameter, value], …] — everything the run set, for the side-by-side table
+    paramTable: rec.paramTable ?? null,
     pricing: rec.pricing ?? null, reportedCost: num(r.total_cost_usd),
     sandboxId: rec.sandboxId, failures: g.failures ?? [], importOk: g.import_ok !== false,
     cost, turns: num(r.num_turns), out, inp, cw, cr, billed,
@@ -244,6 +246,24 @@ export function buildHtml({ id, data }) {
       </div>`
   }).join('\n      ')
 
+  // Every parameter any arm set, one row each, arms side by side; a row whose values differ is what changed.
+  const pnames = [...new Set(rows.flatMap((m) => (m.paramTable ?? []).map(([k]) => k)))]
+  const pval = (m, k) => (m.paramTable ?? []).find(([n]) => n === k)?.[1] ?? '—'
+  const pchanged = (k) => new Set(rows.map((m) => pval(m, k))).size > 1
+  const nchg = pnames.filter(pchanged).length
+  const paramSection = !pnames.length ? '' : `<section>
+    <h2>Parameters, side by side</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Parameter</th>${rows.map((m, i) => `<th style="color:${armColor(i)}">${esc(armName(m, i))}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${pnames.map((k) => `<tr class="${pchanged(k) ? 'pchg' : 'psame'}"><td>${esc(k)}</td>${rows.map((m) => `<td>${esc(pval(m, k))}</td>`).join('')}</tr>`).join('\n          ')}
+        </tbody>
+      </table>
+      <p class="src">${nchg} of ${pnames.length} parameters differ (highlighted); the rest are the same on every arm.</p>
+    </div>
+  </section>`
+
   const leverRows = rows.map((m, ri) => `<div class="lev" style="border-top-color:${armColor(ri)}">
         <h3>${esc(m.label)}</h3>
         <ul>${m.levers.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
@@ -395,14 +415,16 @@ export function buildHtml({ id, data }) {
   .note{border-left:2px solid var(--armA);padding:2px 0 2px 18px;font-size:15px;color:var(--muted);max-width:72ch}
   .note b{color:var(--ink);font-weight:600}
   footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1px solid var(--rule);padding-top:16px}
+  tr.pchg td{background:var(--armB-soft)} tr.pchg td:first-child{font-weight:600}
+  tr.psame td{color:var(--muted)}
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">E2B sandbox benchmark · session comparison</div>
+    <div class="eyebrow">${esc(data.eyebrow ?? 'E2B sandbox benchmark · session comparison')}</div>
     <h1>Baseline vs Optimized</h1>
     <p class="lede">${esc(data.lede ?? 'Two identical cloud microVMs, the same spec, the same base task prompt.')}
-    ${rows.length > 2
+    ${data.headline ? esc(data.headline) : rows.length > 2
       ? `The <b>control</b> runs <b>${esc(A?.model ?? '—')}</b>; ${rows.length - 1} variants are measured against it`
       : `The <b>baseline</b> is ${A?.model && B?.model && A.model !== B.model
           ? `<b>${esc(A.model)}</b>; the <b>optimized</b> arm runs <b>${esc(B.model)}</b>`
@@ -430,7 +452,9 @@ export function buildHtml({ id, data }) {
     values sit beside every axis label; the table below carries them unnormalised.</figcaption>
   </figure>
 
-  <section>
+  ${paramSection}
+
+  ${paramSection ? '' : `<section>
     <h2>The arms</h2>
     <div class="card">
       <table>
@@ -450,7 +474,7 @@ export function buildHtml({ id, data }) {
         ${dupes.length > 1 ? 'they' : 'it'} scored is run-to-run variance on the same configuration &mdash;
         read it as a noise floor for this task, not as a result.</p>` : ''}
     </div>
-  </section>
+  </section>`}
 
   <section>
     <h2>Raw numbers</h2>
