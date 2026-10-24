@@ -13,7 +13,7 @@
  * (sonnet, cheap) to reason about whether a run is progressing or wedged.
  */
 import { Sandbox } from '../sandbox/e2b/index.mjs'
-import { STATE as STATE_DIR, ENV_FILE } from './lib/state.mjs'
+import { STATE as STATE_DIR, ENV_FILE, REPO_ROOT } from './lib/state.mjs'
 import { resolveSecrets, parseEnvFile, verifyKey, opFindAnthropic, opAvailable, isOpRef } from './secrets.mjs'
 import { startUi, snapshot, resolveRunId } from './statusui.mjs'
 import { collectSessions, countAll, findSession, renderTable, renderContext, startSessionsUi,
@@ -1092,6 +1092,11 @@ const [cmd, arg] = process.argv.slice(2)
 const usage = `
 ${C.b}opt${C.x} — harness experiment monitor
 
+  ${C.b}opt scan${C.x}               what this machine's Claude Code spend could save: settings, routing and
+                         the rest, priced from the transcripts; free, no text leaves  ${C.d}· --dry · --help${C.x}
+       ${C.d}--days 30   --since 2026-10-01   --admin-report usage.json   --no-open
+       opt scan rollup DIR [DIR …]   one org view from several developers' scans${C.x}
+
   ${C.b}opt analyse${C.x}            load every session and classify it: interactive or not,
                          kind of work, the strategy to try first  ${C.d}(Jev on local Ollama)${C.x}
   ${C.b}opt optimize${C.x} [strategy]  run one non-interactive task in the local sandbox with that
@@ -1174,6 +1179,20 @@ const tail = process.argv.slice(3).join(' ')
 const moved = (sub) => deprecated(`opt experiments ${sub}${tail ? ' ' + tail : ''}`)
 
 switch (cmd) {
+  case 'scan': {
+    // The engine is stdlib Python (tools/scan.py); this passes the flags through and opens the report.
+    const args = process.argv.slice(3).filter((a) => a !== '--no-open')
+    const out = process.env.OPT_HOME && !args.includes('--out') && args[0] !== 'rollup' ? ['--out', path.join(STATE_DIR, 'scan')] : []
+    const code = await new Promise((r) => spawn('python3', [path.join(REPO_ROOT, 'tools', 'scan.py'), ...args, ...out], { stdio: 'inherit' })
+      .on('error', (e) => { console.log(`\n  ${C.r}\u2717${C.x} python3 not found: ${e.message}\n`); r(127) }).on('exit', r))
+    process.exitCode = code ?? 1
+    const quiet = ['--dry', '--json', '--help', '-h', '--no-open', '--out'].some((f) => process.argv.includes(f)) || args[0] === 'rollup'
+    if (code === 0 && !quiet && process.stdout.isTTY) {
+      const report = path.join(out.length ? out[1] : path.join(REPO_ROOT, 'data', 'private', 'scan'), new Date().toISOString().slice(0, 10), 'report.html')
+      if (fs.existsSync(report)) try { spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [report], { detached: true, stdio: 'ignore' }).unref() } catch {}
+    }
+    break
+  }
   case 'init': case 'doctor': case 'setup':
     await cmdInit(process.argv.slice(3)); break
   case 'demo': await cmdDemo(arg, process.argv.slice(4)); break
