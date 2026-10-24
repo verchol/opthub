@@ -37,6 +37,7 @@ the work Haiku-class tiers take, carry more writes and output: 90.7% reads, 9.3%
 
 | Tier | $ per 1M input tokens, this shape | Saving vs Opus 5.5 | Note |
 | --- | --- | --- | --- |
+| Fable 5.1 | $1.2708 | costs 2.10× as much | Mythos tier; moving it to Opus 5.5 saves 52.4% |
 | Opus 5.5 | $0.605 | baseline | List price, 1h writes |
 | Sonnet 5.5 | $0.3025 | 50.0% | Main loop on Sonnet measured 2.4–3.9× more per task (n=2, [`dynamic-config-analysis.md`](dynamic-config-analysis.md)) |
 | Haiku 5.5, prompt ≤ 100K | $0.0200 | 96.7% | Settable per subagent today |

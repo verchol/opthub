@@ -41,6 +41,7 @@ def tier(model, long=False):
 
 
 ANTHROPIC = {
+    "fable-5.1":       tier("claude-fable-5-1"),              # Mythos tier, above Opus; flat price to 1M context
     "opus-5.5":        tier("claude-opus-5-5"),
     "sonnet-5.5":      tier("claude-sonnet-5-5"),
     "haiku-5.5":       tier("claude-haiku-5-5"),              # prompts <= 100K tokens
@@ -136,7 +137,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--devs", default="45,150,500,1000")
     ap.add_argument("--routed", default="0.1,0.25,0.5", help="share of the current spend moved to the target")
-    ap.add_argument("--current", default="opus-5.5", choices=["opus-5.5", "sonnet-5.5"])
+    ap.add_argument("--current", default="opus-5.5", choices=["fable-5.1", "opus-5.5", "sonnet-5.5"])
     ap.add_argument("--ttl", default="1h", choices=["1h", "5m"])
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

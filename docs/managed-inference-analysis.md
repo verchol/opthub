@@ -70,22 +70,27 @@ The price of a cached token decides the bill, so a hosted tier has to beat Haiku
 Haiku-class work and Sonnet 5.5's $0.10 for Sonnet-class work. Same E1b traffic, $ per 1M input tokens with
 output included (`priced`):
 
-| Tier | $ per 1M input | Saving vs Opus 5.5 |
-| --- | --- | --- |
-| Haiku 5.5, prompt ≤ 100K | $0.0200 | 96.7% |
-| gpt-oss-120b · Fireworks | $0.0238 | 96.1% |
-| DeepSeek V4.1 Flash · Fireworks | $0.0244 | 96.0% |
-| GLM 5.3 Flash · Fireworks | $0.0376 | 93.8% |
-| MiniMax M3 · Fireworks | $0.0766 | 87.3% |
-| Haiku 5.5 on a main thread (75.5% of input $ past 100K) | $0.0802 | 86.7% |
-| Haiku 5.5, prompt > 100K | $0.0998 | 83.5% |
-| Qwen3-Coder-480B · DeepInfra | $0.1139 | 81.2% |
-| Sonnet 5.5 | $0.3025 | 50.0% |
-| MiniMax M2.5 · Bedrock (no cache price, billed uncached) | $0.3085 | 49.0% |
-| GLM 5.3 · Fireworks | $0.3297 | 45.5% |
-| Qwen3 Coder Next · Bedrock (no cache price, billed uncached) | $0.5085 | 15.9% |
-| Kimi K3 · Bedrock | $0.5229 | 13.6% |
-| Opus 5.5 | $0.6050 | baseline |
+| Tier | $ per 1M input | Saving vs Opus 5.5 | Saving vs Fable 5.1 |
+| --- | --- | --- | --- |
+| Haiku 5.5, prompt ≤ 100K | $0.0200 | 96.7% | 98.4% |
+| gpt-oss-120b · Fireworks | $0.0238 | 96.1% | 98.1% |
+| DeepSeek V4.1 Flash · Fireworks | $0.0244 | 96.0% | 98.1% |
+| GLM 5.3 Flash · Fireworks | $0.0376 | 93.8% | 97.0% |
+| MiniMax M3 · Fireworks | $0.0766 | 87.3% | 94.0% |
+| Haiku 5.5 on a main thread (75.5% of input $ past 100K) | $0.0802 | 86.7% | 93.7% |
+| Haiku 5.5, prompt > 100K | $0.0998 | 83.5% | 92.1% |
+| Qwen3-Coder-480B · DeepInfra | $0.1139 | 81.2% | 91.0% |
+| Sonnet 5.5 | $0.3025 | 50.0% | 76.2% |
+| MiniMax M2.5 · Bedrock (no cache price, billed uncached) | $0.3085 | 49.0% | 75.7% |
+| GLM 5.3 · Fireworks | $0.3297 | 45.5% | 74.1% |
+| Qwen3 Coder Next · Bedrock (no cache price, billed uncached) | $0.5085 | 15.9% | 60.0% |
+| Kimi K3 · Bedrock | $0.5229 | 13.6% | 58.9% |
+| Opus 5.5 | $0.6050 | baseline | 52.4% |
+| Fable 5.1 | $1.2708 | costs 2.10× as much | baseline |
+
+Opus 5.5 is the baseline because E1b is 98% Opus 5 by dollars. Fable 5.1, the Mythos-tier model above it, costs 2.10× as much on this traffic: its cache read is only 25% dearer ($0.25 vs $0.20), but
+cache writes and output are 2.5×. A customer whose default is Fable saves more on every route, starting with
+52.4% just by moving to Opus 5.5.
 
 Open models billed without a cache price cost as much as Sonnet 5.5 or more on this traffic, saving only
 15.9–49.0% against Opus 5.5. Haiku's price applies only to prompts up to 100K tokens; subagents and side calls start fresh and stay at $0.020.
@@ -265,6 +270,7 @@ is listed, so every input token bills as uncached input.
 
 | Tier | Uncached input | Cache write 5m | Cache write 1h | Cache read | Output | Source |
 | --- | --- | --- | --- | --- | --- | --- |
+| Fable 5.1 | 10.000 | 12.500 | 20.000 | 0.2500 | 50.00 | `tools/ratecard.py` |
 | Opus 5.5 | 4.000 | 5.000 | 8.000 | 0.2000 | 20.00 | `tools/ratecard.py` |
 | Sonnet 5.5 | 2.000 | 2.500 | 4.000 | 0.1000 | 10.00 | `tools/ratecard.py` |
 | Haiku 5.5, prompt ≤ 100K | 0.100 | 0.125 | 0.200 | 0.0100 | 0.50 | `tools/ratecard.py` |
@@ -293,6 +299,7 @@ the cache-read column is the whole input billed uncached):
 
 | Tier | All: read | All: write | All: output | All: total | Short: read | Short: write | Short: output | Short: total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Fable 5.1 | 0.2416 | 0.6733 | 0.3559 | 1.2708 | 0.2267 | 1.8675 | 0.8375 | 2.9317 |
 | Opus 5.5 | 0.1933 | 0.2693 | 0.1424 | 0.6050 | 0.1813 | 0.7470 | 0.3350 | 1.2633 |
 | Sonnet 5.5 | 0.0966 | 0.1347 | 0.0712 | 0.3025 | 0.0907 | 0.3735 | 0.1675 | 0.6317 |
 | Haiku 5.5, ≤ 100K | 0.0097 | 0.0067 | 0.0036 | 0.0200 | 0.0091 | 0.0187 | 0.0084 | 0.0361 |
