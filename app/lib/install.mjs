@@ -6,7 +6,7 @@
  *   server settings OLLAMA_CONTEXT_LENGTH >= 65536 (Ollama's advice for coding agents),
  *                   OLLAMA_NUM_PARALLEL = the router's in-flight cap, OLLAMA_KV_CACHE_TYPE=q8_0 and
  *                   OLLAMA_FLASH_ATTENTION=1 (a quantized KV cache needs flash attention)
- *   models          tev1 (the decision model) and the router's local worker
+ *   models          a profile: `full` (default) or `lean`, below
  *   capacity        an `opt models bench` profile for the worker on this machine
  *
  * --yes runs only what is safe to run unattended: `launchctl setenv` for the settings (macOS; the
@@ -19,6 +19,20 @@ import { benchFile } from './ult/capacity.mjs'
 
 export const OLLAMA_MIN = '0.14.0'
 export const OLLAMA_PIN = '0.40.10'
+
+/**
+ * What to pull, by role. Sizes from the Ollama registry manifests, 2026-10-24.
+ *   decider  tev1, the classifier when rules are unsure (Jev's Choice contract)
+ *   side     Claude Code's side calls: titles, topic checks
+ *   small    small tool-less tasks: explain, summarize, PR text (`--routing local`)
+ *   coder    coding questions; a MoE with ~3B active, so fast for its size
+ *   reasoner a second strong candidate, so the hub's per-model scores have something to compare
+ */
+export const PROFILES = {
+  full: [['decider', 'tev1', 4.5], ['side', 'qwen2.5-coder:1.5b', 1.0], ['small', 'qwen3:8b', 5.2],
+         ['coder', 'qwen3-coder:30b', 18.6], ['reasoner', 'gpt-oss:20b', 13.8]],
+  lean: [['decider', 'tev1', 4.5], ['side', 'qwen2.5-coder:1.5b', 1.0], ['small', 'qwen3:8b', 5.2]],
+}
 
 const cmp = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number)
@@ -42,7 +56,7 @@ export async function survey({ baseUrl, worker, stateDir, platform = process.pla
 }
 
 /** Steps from a survey: each with ok, what is there, what is wanted, and how to fix it. */
-export function plan(s, { worker, decider = 'tev1', maxInFlight = 1, platform = process.platform }) {
+export function plan(s, { worker, profile = 'full', maxInFlight = 1, platform = process.platform }) {
   const steps = []
   const has = (m) => s.models.some((n) => n === m || n === `${m}:latest`)
   steps.push({ id: 'ollama', ok: !!s.version && cmp(s.version, OLLAMA_MIN) >= 0, have: s.version ?? 'not installed',
@@ -58,7 +72,7 @@ export function plan(s, { worker, decider = 'tev1', maxInFlight = 1, platform = 
                  fix: platform === 'darwin' ? `launchctl setenv ${k} ${w}   # then restart the Ollama app` : `set ${k}=${w} in the ollama service environment`,
                  auto: platform === 'darwin' ? ['launchctl', ['setenv', k, w]] : null, restart: true })
   }
-  for (const m of [decider, worker]) steps.push({ id: `model ${m}`, ok: has(m), have: has(m) ? 'pulled' : 'missing', want: 'pulled', fix: `ollama pull ${m}`, auto: ['ollama', ['pull', m]] })
+  for (const [role, m, gb] of PROFILES[profile]) steps.push({ id: `${role} ${m}`, ok: has(m), have: has(m) ? 'pulled' : `missing, ${gb} GB`, want: 'pulled', fix: `ollama pull ${m}`, auto: ['ollama', ['pull', m]], gb })
   steps.push({ id: 'bench', ok: s.bench, have: s.bench ? 'measured' : 'none', want: 'a capacity profile', fix: `opt models bench ${worker}`, auto: null })
   return steps
 }
@@ -66,9 +80,13 @@ export function plan(s, { worker, decider = 'tev1', maxInFlight = 1, platform = 
 export async function cmdInstall(argv, { baseUrl, worker, maxInFlight, stateDir }) {
   const C = { b: '\x1b[1m', d: '\x1b[2m', g: '\x1b[32m', y: '\x1b[33m', r: '\x1b[31m', x: '\x1b[0m' }
   const yes = argv.includes('--yes')
+  const i = argv.indexOf('--profile')
+  const profile = argv.includes('--lean') ? 'lean' : i >= 0 ? argv[i + 1] : 'full'
+  if (!PROFILES[profile]) { console.log(`\n  ${C.r}✗${C.x} no profile ${profile}: full (default) or lean\n`); return 2 }
   const s = await survey({ baseUrl, worker, stateDir })
-  const steps = plan(s, { worker, maxInFlight })
-  console.log(`\n  ${C.b}opt install${C.x}  ${C.d}the local tier: Ollama ${OLLAMA_PIN}, tev1, ${worker}, a capacity profile${C.x}\n`)
+  const steps = plan(s, { worker, profile, maxInFlight })
+  const todoGb = steps.filter((st) => !st.ok && st.gb).reduce((a, st) => a + st.gb, 0)
+  console.log(`\n  ${C.b}opt install${C.x} --profile ${profile}  ${C.d}the local tier: Ollama ${OLLAMA_PIN}, ${PROFILES[profile].map(([, m]) => m).join(', ')}, a capacity profile${todoGb ? ` · ${todoGb.toFixed(1)} GB to download` : ''}${C.x}\n`)
   for (const st of steps) {
     const mark = st.ok ? `${C.g}✓${C.x}` : st.advisory ? `${C.y}!${C.x}` : `${C.r}✗${C.x}`
     console.log(`  ${mark} ${st.id.padEnd(24)} ${String(st.have).padEnd(16)} ${C.d}want ${st.want}${C.x}${st.ok ? '' : `\n      ${C.d}${st.fix}${C.x}`}`)

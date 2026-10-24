@@ -1152,7 +1152,9 @@ ${C.b}opt${C.x} — harness experiment monitor
   ${C.b}opt models${C.x}             every model the gateway can use: Anthropic, local Ollama, Hugging Face
   ${C.b}opt models bench${C.x} [model]  what this machine's Ollama serves within the first-token budget (free)
   ${C.b}opt install${C.x}            the local tier: Ollama version, settings, tev1 and the worker, a bench profile
-       ${C.d}--yes                  apply the settings and pull missing models; Ollama itself is yours to install${C.x}
+       ${C.d}--profile full|lean    full (default, ~43 GB): tev1, qwen2.5-coder:1.5b, qwen3:8b, qwen3-coder:30b, gpt-oss:20b
+                              lean (~11 GB): tev1, qwen2.5-coder:1.5b, qwen3:8b
+       --yes                  apply the settings and pull missing models; Ollama itself is yours to install${C.x}
   ${C.b}opt claude optimize --local-cloud${C.x}  route what capacity admits to local Ollama (shadow by default)
 
   ${C.b}opt monitor on${C.x}         send Claude Code's OpenTelemetry (metrics, events, spans) to

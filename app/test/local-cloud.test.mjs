@@ -1,7 +1,7 @@
 // The local tier's setup: `opt models bench` (what this machine serves within budget) and
 // `opt install` (what is missing). No network: a fake Ollama in-process. Run: node test/local-cloud.test.mjs
 import { bench } from '../lib/bench.mjs'
-import { plan, OLLAMA_PIN } from '../lib/install.mjs'
+import { plan, OLLAMA_PIN, PROFILES } from '../lib/install.mjs'
 import { caps } from '../lib/ult/capacity.mjs'
 
 let pass = 0, fail = 0
@@ -44,7 +44,7 @@ console.log('opt models bench — a fake Ollama whose first token takes tokens/5
 
 console.log('opt install — the plan from a survey')
 {
-  const good = { version: OLLAMA_PIN, server: OLLAMA_PIN, models: ['tev1:latest', 'qwen2.5-coder:1.5b'], bench: true,
+  const good = { version: OLLAMA_PIN, server: OLLAMA_PIN, models: ['tev1:latest', ...PROFILES.full.slice(1).map(([, m]) => m)], bench: true,
                  settings: { OLLAMA_CONTEXT_LENGTH: '131072', OLLAMA_NUM_PARALLEL: '1', OLLAMA_KV_CACHE_TYPE: 'q8_0', OLLAMA_FLASH_ATTENTION: '1' } }
   const all = plan(good, { worker: 'qwen2.5-coder:1.5b', platform: 'darwin' })
   ok('everything in place: every step ok', all.every((s) => s.ok), all.filter((s) => !s.ok).map((s) => s.id))
@@ -54,7 +54,10 @@ console.log('opt install — the plan from a survey')
   ok('older than the pin but new enough: advisory only', pin.find((s) => s.id === 'ollama').ok && pin.find((s) => s.id === 'ollama-pin').advisory)
   const bare = plan({ ...good, settings: {}, models: [], bench: false }, { worker: 'w', maxInFlight: 2, platform: 'darwin' })
   const auto = bare.filter((s) => !s.ok && s.auto).map((s) => s.auto.flat().join(' '))
-  ok('--yes would set the four settings with launchctl and pull both models', auto.length === 6 && auto.includes('launchctl setenv OLLAMA_NUM_PARALLEL 2') && auto.includes('ollama pull tev1'), auto)
+  ok('full (default): four settings with launchctl and five models', auto.length === 9 && auto.includes('launchctl setenv OLLAMA_NUM_PARALLEL 2') && auto.includes('ollama pull qwen3-coder:30b'), auto)
+  const lean = plan({ ...good, settings: {}, models: [], bench: false }, { worker: 'w', profile: 'lean', platform: 'darwin' })
+  const leanPulls = lean.filter((s) => !s.ok && s.auto && s.auto[0] === 'ollama').map((s) => s.auto[1][1])
+  ok('lean: tev1, the side model and qwen3:8b only', leanPulls.join() === 'tev1,qwen2.5-coder:1.5b,qwen3:8b', leanPulls)
   ok('a short context is not enough', !plan({ ...good, settings: { ...good.settings, OLLAMA_CONTEXT_LENGTH: '8192' } }, { worker: 'qwen2.5-coder:1.5b' }).find((s) => s.id === 'OLLAMA_CONTEXT_LENGTH').ok)
   const linux = plan({ ...good, settings: {} }, { worker: 'qwen2.5-coder:1.5b', platform: 'linux' })
   ok('off macOS, settings are printed, not applied', linux.filter((s) => s.id.startsWith('OLLAMA_')).every((s) => s.auto === null))
