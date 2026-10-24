@@ -416,6 +416,11 @@ export function buildHtml({ id, data }) {
   .note b{color:var(--ink);font-weight:600}
   footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);border-top:1px solid var(--rule);padding-top:16px}
   tr.pchg td{background:var(--armB-soft)} tr.pchg td:first-child{font-weight:600}
+  .story{display:grid;grid-template-columns:minmax(110px,max-content) 1fr;gap:10px 18px;margin:0}
+  .story dt{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+  .story dd{margin:0;min-width:0} .story ul{margin:0;padding-left:18px} .story li+li{margin-top:4px}
+  .story .res li{font-weight:600}
+  @media (max-width:640px){.story{grid-template-columns:1fr;gap:4px}.story dd{margin-bottom:10px}}
   tr.psame td{color:var(--muted)}
 </style>
 
@@ -431,13 +436,22 @@ export function buildHtml({ id, data }) {
           : `a default Claude Code session on <b>${esc(A?.model ?? '—')}</b>; the <b>optimized</b> arm changes exactly one thing`}`}${data.description ? ` — ${esc(data.description.replace(/\.$/, ''))}` : ''}.
     ${A?.total ? `A ${A.total}-test suite neither session could see grades both.` : 'Both deliverables are compared below.'}</p>
     <div class="meta">
-      <span class="chip">${esc(id)}</span>
-      <span class="chip">experiment ${esc(data.experiment ?? '—')}</span>
-      <span class="chip">task ${esc(data.task ?? '—')}</span>
-      <span class="chip">${esc(data.auth ?? '—')}</span>
-      <span class="chip">n = 1 per arm</span>
+      ${(data.chips ?? [id, `experiment ${data.experiment ?? '—'}`, `task ${data.task ?? '—'}`, data.auth ?? '—', 'n = 1 per arm'])
+        .map((c) => `<span class="chip">${esc(c)}</span>`).join('\n      ')}
     </div>
   </header>
+
+  ${data.story ? `<section>
+    <h2>The experiment</h2>
+    <div class="card"><dl class="story">
+      <dt>Question</dt><dd>${esc(data.story.question)}</dd>
+      ${data.story.task ? `<dt>Task</dt><dd>${esc(data.story.task)}</dd>` : ''}
+      <dt>What changed</dt><dd><ul>${data.story.changed.map((x) => `<li>${esc(x)}</li>`).join('') || '<li>nothing</li>'}</ul></dd>
+      ${data.story.used.length ? `<dt>What was used</dt><dd><ul>${data.story.used.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></dd>` : ''}
+      <dt>Result</dt><dd><ul class="res">${data.story.result.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></dd>
+      <dt>How sure</dt><dd>${esc(data.story.confidence)}</dd>
+    </dl></div>
+  </section>` : ''}
 
   <figure style="margin:0">
     <h2>All six metrics at once</h2>
@@ -504,7 +518,10 @@ export function buildHtml({ id, data }) {
     </div>
   </section>
 
-  <section>
+  ${data.caveat ? `<section>
+    <h2>Read this carefully</h2>
+    <p class="note">${esc(data.caveat)}</p>
+  </section>` : `<section>
     <h2>Read this carefully</h2>
     <p class="note"><b>n = 1 per arm.</b> Agent runs vary substantially between passes. This shows the
     shape of a difference, not a defensible number — three repeats per arm is the minimum before
@@ -518,7 +535,7 @@ export function buildHtml({ id, data }) {
     floor below which no result here means anything &mdash; but it is not a finding. ` : ''}A task that
     rewards planning can rank two configurations differently from one that rewards editing. And the optimized arm's scaffolding cost a human time to write, which this comparison
     prices at zero.</p>
-  </section>
+  </section>`}
 
   <footer>${esc(data.footer ?? 'task: sheet.py formula engine · grader: 47 hidden tests injected post-exit')} · results/${esc(id)}/</footer>
 </div>
