@@ -143,26 +143,26 @@ opt hub start
 
 The formula installs a wrapper that sets `OPT_HOME=~/.opthub`, so runs and
 reports are written to the user's home rather than into the Cellar, which is
-replaced on every upgrade. `lib/state.mjs` is the seam: run from a clone,
+replaced on every upgrade. `app/lib/state.mjs` is the seam: run from a clone,
 results stay next to the code as they always have. Packaging lives in
-`e2b/packaging/` — `make-dist.sh` builds the tarball and refuses to build if a
+`app/packaging/` — `make-dist.sh` builds the tarball and refuses to build if a
 credential-shaped string is in it.
 
 ### Showing it
 
 Deployed at **<https://opthub-demo.fly.dev/>** (user `demo`, password held as a
-Fly secret). `e2b/deploy/` is a read-only copy for demos: the same page and the same URLs,
+Fly secret). `app/deploy/` is a read-only copy for demos: the same page and the same URLs,
 serving a frozen snapshot instead of a transcript store, with every run
 disabled three ways over — 403 on every POST, the run control rendered
-disabled, and no credentials in the image. `tools/hub-snapshot.mjs` writes the
+disabled, and no credentials in the image. `app/tools/hub-snapshot.mjs` writes the
 snapshot and rewrites absolute home paths to `~`. One `shared-cpu-1x` machine
 on Fly that suspends when idle.
 
 ### Analysis tools (this repo, read-only)
 
-`tools/sessions.py` · `tools/lenops.py` · `tools/loopscan.py` · `tools/savings.py` · `tools/costmodel.py` · `tools/ctxwatch.py` — the source of every number in `docs/`. They cost nothing to run, unlike looping `/context`, which inflates what it measures.
+`tools/sessions.py` · `tools/lenops.py` · `tools/loopscan.py` · `tools/savings.py` · `tools/dynconfig.py` · `tools/costmodel.py` · `tools/ctxwatch.py` — the source of every number in `docs/`, all priced by `tools/ratecard.py`. Every command, and which ones spend money: [`docs/commands.md`](docs/commands.md). They cost nothing to run, unlike looping `/context`, which inflates what it measures.
 
-`tools/rerun.py` is the one exception, and it spends only with `--yes`. It replays a real session's prompts with new flags as new sessions: a `baseline` arm on the original model and effort, and a goal arm (`cost`, `speed`, `quality`, or custom `--flags`). Each starts from a fresh copy of the repo at the session's start commit. By default each copy runs inside the local Docker sandbox ([`tools/sandbox/`](tools/sandbox/README.md)), not E2B: allowlisted egress, no capabilities, read-only root filesystem. The replayed transcripts are copied back, so each replay still lists as a new session. A pinned judge scores the two final diffs blind, with positions swapped. The report draws quality, done, cost, wall time, output tokens and requests as a radar, one outline per arm. It prints a verdict only at three or more repeats per arm.
+`tools/rerun.py` is the one exception, and it spends only with `--yes`. It replays a real session's prompts with new flags as new sessions: a `baseline` arm on the original model and effort, and a goal arm (`cost`, `speed`, `quality`, or custom `--flags`). Each starts from a fresh copy of the repo at the session's start commit. By default each copy runs inside the local Docker sandbox ([`sandbox/docker/`](sandbox/docker/README.md)), not E2B: allowlisted egress, no capabilities, read-only root filesystem. The replayed transcripts are copied back, so each replay still lists as a new session. A pinned judge scores the two final diffs blind, with positions swapped. The report draws quality, done, cost, wall time, output tokens and requests as a radar, one outline per arm. It prints a verdict only at three or more repeats per arm.
 
 ---
 

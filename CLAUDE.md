@@ -50,6 +50,8 @@ when testing.
 
 ## Commands
 
+The full list, with what spends money: `docs/commands.md`. The everyday ones:
+
 ```sh
 python3 tools/lenops.py view                 # session ops report (also /lenops)
 python3 tools/savings.py --days 30           # per-session lever headroom
