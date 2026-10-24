@@ -24,24 +24,31 @@ Known limits of the shape: tools/savings.py folds uncached input into read$ at t
 few uncached tokens are counted here as ten cache reads each (negligible on Claude Code traffic, not
 measurable from the ledger). The routed slice is assumed to look like the short-context sessions.
 """
-import argparse, csv, json, math, os
+import argparse, csv, json, math, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 LEDGER = os.path.join(REPO, "docs", "data", "e1b-sessions.csv")
+sys.path.insert(0, HERE)
+from ratecard import LONG, VERSION, W1H, W5, rates  # noqa: E402  the one rate card (F, platform pricing)
 
-# ---------------------------------------------------------------- Anthropic, F: platform pricing
-# https://platform.claude.com/docs/en/about-claude/pricing, read 2026-10-24. USD per 1M tokens.
-# (input, 5m write, 1h write, cache read, output)
+
+def tier(model, long=False):
+    """(input, 5m write, 1h write, cache read, output) $/MTok from tools/ratecard.py. long: the >100K tier."""
+    inp, out, read = rates(model)
+    mul = LONG[model][1] if long else 1.0
+    return (inp * mul, inp * mul * W5, inp * mul * W1H, inp * mul * read, out * mul)
+
+
 ANTHROPIC = {
-    "opus-5.5":        (4.00, 5.00,  8.00, 0.20, 20.00),
-    "sonnet-5.5":      (2.00, 2.50,  4.00, 0.10, 10.00),
-    "haiku-5.5":       (0.10, 0.125, 0.20, 0.01,  0.50),   # prompts <= 100K tokens
-    "haiku-5.5>100K":  (0.50, 0.625, 1.00, 0.05,  2.50),   # whole request reprices above 100K
+    "opus-5.5":        tier("claude-opus-5-5"),
+    "sonnet-5.5":      tier("claude-sonnet-5-5"),
+    "haiku-5.5":       tier("claude-haiku-5-5"),              # prompts <= 100K tokens
+    "haiku-5.5>100K":  tier("claude-haiku-5-5", long=True),   # whole request reprices above 100K
 }
 # E1b was priced per model by tools/savings.py; Opus 5 is 98% of its dollars, so Opus 5 list rates turn
 # its dollars back into tokens (the shape moves by <0.5% if the other 2% is priced exactly).
-OPUS5 = (5.00, 6.25, 10.00, 0.50, 25.00)
+OPUS5 = tier("claude-opus-5")
 
 
 # ---------------------------------------------------------------- traffic shape, M
@@ -151,7 +158,7 @@ def main():
     print(f"short-context ({short['sessions']} sessions, median request <= 100K): {pct(short)}")
     print(f"{over:.1%} of input dollars sit in sessions whose median request is over 100K")
 
-    print("\n== 2. Same traffic, $ per 1M input tokens (output included), by tier, all-session shape ==")
+    print(f"\n== 2. Same traffic, $ per 1M input tokens (output included), by tier, all-session shape (rate card {VERSION}) ==")
     per = {k: usd_per_m_input(v, full, a.ttl) for k, v in ANTHROPIC.items()}
     rows = [(k, f"${v:.4f}", "F", "cached, list price") for k, v in per.items()]
     for name, spec in SERVERLESS.items():
