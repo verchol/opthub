@@ -276,7 +276,7 @@ On a laptop a person is waiting on each reply, so latency caps what the edge may
 | defer / batch | rarely | yes, where the cache shape allows |
 | local model latency penalty | felt by the developer | irrelevant |
 | egress / privacy | open | allow-listed — **local model means fewer allow-list entries** |
-| how opthub runs there already | Hub + `opt watch` | Docker sandbox (8 verified guarantees), E2B microVMs |
+| how opthub runs there already | Hub + `opt session --watch` | Docker sandbox (8 verified guarantees), E2B microVMs |
 
 **Honest status:** this is a *claim to prove*, not a result. On the one ledger we have, unattended
 (SDK) sessions are only $7.49 of $508.80 — one developer's month is interactive. The sandbox

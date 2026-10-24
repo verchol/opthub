@@ -69,7 +69,7 @@ Reading your own sessions needs no credentials:
 \`\`\`sh
 opt sessions      # every session on this machine, by cost
 opt hub start     # the Optimization Hub in a browser
-opt watch --live  # live and open sessions, redrawn in place
+opt session --watch --live  # live and open sessions, redrawn in place
 \`\`\`
 
 Running an experiment boots sandboxes and costs money — see \`opt secrets\`.

@@ -99,11 +99,11 @@ them through `python3 tools/envfile.py run -- …`. The email triage experiment 
 opt init                     # is everything up: credentials, templates, tracing, runners, sessions on disk
 opt secrets                  # where each key comes from, and whether it works
 opt session [<#>] [ui]       # last 48h of sessions; one session's context window; the same in a browser
-opt watch [--live] [--once]  # what is running now
+opt session --watch [--live] [--once]   # what is running now, redrawn in place
 opt analyse                  # classify every session (Jev on local Ollama)
 opt audit [--verify]         # every task analyse and optimize ran
 opt models                   # every model the gateway can use
-opt experiments [ui|results] # past runs and their comparison
+opt experiments [ls|ps|status|logs|open|kill|results|ui]   # runs: list, live, health, logs, stop, compare
 opt artifacts [ls]           # render every deliverable to HTML
 opt monitor on|off|status    # send Claude Code's OpenTelemetry to the hub's collector
 opt hub start                # the Optimization Hub on :8899
@@ -118,13 +118,22 @@ opt claude optimize [dir]    # interactive Claude Code behind LLM Ultra Light
 opt claude -p "<task>"       # headless, optimize mode   (also: opt claude example)
 opt run --experiments a,b    # scenarios, grouped under a session
 opt demo run                 # control vs a scenario   (opt demo scenarios lists them, free)
-opt replay <#> | --new       # a session again on an open-weights model in E2B
-opt session export <#> --run # boots a sandbox for the exported session
+opt replay <#> [--runner anthropic|openmodel] | --new   # a session again in E2B (default: open weights), side by side
 opt tune <bundle|#>          # configuration search, one arm per candidate
 opt flow run <name>          # controller + worker + judge sandboxes
 ```
 
 The hub's run endpoints spend the same way: `/api/optimize`, `/api/experiment`, `/api/triage/*`.
+
+**Deprecated** (still run, and print the form below on stderr):
+
+| old | use |
+|---|---|
+| `opt ls`, `ps`, `status [ui]`, `logs`, `open`, `kill`, `results` / `report` | `opt experiments <same>` |
+| `opt ui` | `opt experiments status ui` |
+| `opt watch` / `opt w` | `opt session --watch` |
+| `opt opt` | `opt optimize` |
+| `opt session export <#> --run [--runner r]` | `opt replay <#> --runner r` (export, run, trace, and compare) |
 
 ## Sandboxes, docs, packaging
 
