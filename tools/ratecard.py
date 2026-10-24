@@ -79,6 +79,15 @@ def split_write(u):
     return w5, w1
 
 
+def request_key(r):
+    """What makes two transcript records one billed request. Claude Code writes one record per
+    content block and repeats the request's usage on each, so count usage once per key (the rule
+    tools/sessiongraph.py introduced). A resumed or forked session copies earlier records into its
+    own file under the same key: those were billed once too."""
+    m = r.get("message") if isinstance(r.get("message"), dict) else {}
+    return m.get("id") or r.get("requestId") or r.get("uuid")
+
+
 def prompt_tokens(u):
     return u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
 

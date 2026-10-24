@@ -31,12 +31,12 @@ Two things this tool does that the others deliberately don't:
 import argparse, collections, csv, datetime as dt, glob, json, os, statistics, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ratecard import DEFAULT_MODEL, req_cost  # noqa: E402  (sessiongraph.py imports them from here)
+from ratecard import DEFAULT_MODEL, req_cost, request_key  # noqa: E402  (sessiongraph.py imports the first two from here)
 
 
 def walk(root, cutoff):
-    S = {}
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    S, seen = {}, set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         fallback_sid = os.path.basename(f)[:-6]
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
@@ -72,8 +72,9 @@ def walk(root, cutoff):
                     s["prompt"] = " ".join(c.split())[:400]
 
             u = (r.get("message") or {}).get("usage")
-            if not u:
+            if not u or request_key(r) in seen:
                 continue
+            seen.add(request_key(r))
             model = (r.get("message") or {}).get("model") or DEFAULT_MODEL
             s["reqs"] += 1
             s["models"][model] += 1

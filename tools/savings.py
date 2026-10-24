@@ -23,15 +23,15 @@ without an eval; it is here to size the prize, not to propose the change.
 import argparse, collections, csv, datetime as dt, glob, json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ratecard import W1H, W5, parts, rates, req_cost, split_write  # noqa: E402
+from ratecard import W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
 
 SONNET = "claude-sonnet-5"
 TRIM, EFFORT = 0.25, 0.50          # lever A and B assumptions
 
 
 def walk(root, cutoff):
-    S = {}
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    S, seen = {}, set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
                 continue
@@ -71,8 +71,9 @@ def walk(root, cutoff):
                 continue
             msg = r.get("message") or {}
             u = msg.get("usage") or {}
-            if not u:
+            if not u or request_key(r) in seen:
                 continue
+            seen.add(request_key(r))
             m = msg.get("model", "")
             p = rates(m)
             if not p:

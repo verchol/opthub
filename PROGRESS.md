@@ -451,3 +451,31 @@
   `sessions-index.mjs` sum per record and overstate cost about 2× on recent transcripts (`savings.py`:
   $2,951.04 against $1,349.57). Deduplicated, the token counts match Claude Code's own `cost-state`.
   Claude Code prices Opus 5.5 about 20% below the repo's price table (median ratio 1.25, n=66).
+
+## 2026-10-24 · One rate card, one count per request: the E1/E1b ledgers are overstated about 2.5×
+- Onboarding build steps 1–2 (`docs/onboarding-spec.md`), branch `onboard-scan`. `tools/ratecard.py`
+  replaces every tool's own price table. Cache reads are 0.05× input on Opus 5.5 (0.1× before);
+  `ratecard.py check` reproduces that from Claude Code's own `cost-state` records. Opus 5 and 4.8 match
+  exactly, Opus 5.5 within 2% (25% high before). On the 52 of 108 sessions whose transcript tokens equal
+  Claude Code's, the card gives $62.58 against Claude Code's $62.77.
+- `sessions.py`, `savings.py`, `loopscan.py`, `lenops.py` and `rerun.py measure()` now count usage once
+  per request (message id, as `sessiongraph.py` already did), across files: 75 requests appear in two
+  session files because a resumed or forked session copies its history.
+- Everything on disk (134 sessions): $2,971.00 with the old tools, $2,679.92 with the rate card, $1,217.86
+  also counted once per request (15,961 records, 7,385 requests). One finished Opus 5 session (2026-09-15):
+  $495.64 before, $241.70 after; Claude Code's own total for it is $263.17.
+- **Claim changed: the E1/E1b ledgers are overstated.** Six E1b sessions are still on disk. Cut at the
+  request count the ledger recorded, the old `savings.py` reproduces each row exactly (375 records,
+  $73.52); counted once per request they are 166 requests and $29.36, 40% of the ledger. n = 6 of 214
+  sessions ($73.52 of $508.80); the rest were deleted by retention, so the full ledgers can't be re-run.
+  Every figure derived from them (SPEC §2.3–2.4, §7 lever B's $13.72, `docs/experiments.md`) is
+  overstated by a factor that can't be recovered exactly. Treat them as about 2.5× too high, and don't
+  build on them until they are re-measured on new data.
+- **Correction to 2026-10-23:** counted once per request, tokens match Claude Code's `cost-state` on
+  52 of 108 sessions. On most long ones Claude Code bills 5–10% more input than the transcript records,
+  so transcript costs are a floor. With the rate card, `dynconfig.py` over the last two weeks gives
+  $175.59 spend (was $235.70) and a 13.1% saving (was 12.8%); its TTL part is 7.2% (was 5.4%).
+  `docs/dynamic-config-analysis.md` still quotes the old figures.
+- Not changed yet: `ctxwatch.py` still prints one line per record; the hub's `app/lib/sessions-index.mjs`
+  and `app/config/ult.default.json` still price Opus 5.5 reads at 0.1× and sum per record; the J3
+  experiment's own price index (`experiments/session-triage/src/savings.py`) runs on the pinned ledgers.

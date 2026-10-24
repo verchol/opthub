@@ -13,7 +13,7 @@ Read the LEVERS note before quoting any lever — only C is measured.
 import argparse, glob, json, os, sys, datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ratecard import DEFAULT_MODEL, W1H, W5, parts, rates, req_cost, split_write  # noqa: E402
+from ratecard import DEFAULT_MODEL, W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
 
 WINDOW = 1_000_000
 SONNET = "claude-sonnet-5"
@@ -31,7 +31,7 @@ def hms(ms):
     return f"{s:.0f}s" if s < 90 else f"{s/60:.1f}m"
 
 def load(path):
-    reqs, turns = [], []
+    reqs, turns, seen = [], [], set()
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try: r = json.loads(line)
@@ -46,7 +46,8 @@ def load(path):
                    + u.get("cache_creation_input_tokens",0))
             if not ctx: continue
             model = m.get("model") or DEFAULT_MODEL
-            if model == "<synthetic>": continue
+            if model == "<synthetic>" or request_key(r) in seen: continue
+            seen.add(request_key(r))
             try: t = dt.datetime.fromisoformat(r["timestamp"].replace("Z","+00:00"))
             except Exception: t = None
             reqs.append({"t":t, "ctx":ctx, "u":u, "model":model,

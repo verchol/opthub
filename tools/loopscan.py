@@ -15,7 +15,7 @@ Prices come from tools/ratecard.py.
 import argparse, collections, datetime as dt, glob, json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ratecard import W1H, W5, rates, split_write  # noqa: E402
+from ratecard import W1H, W5, rates, request_key, split_write  # noqa: E402
 import ratecard  # noqa: E402
 
 # Prompt signatures that identify a loop rather than a human turn.
@@ -27,7 +27,8 @@ LOOP_SIGS = [
 
 def scan(root, cutoff):
     sessions, loops, timeline = {}, collections.Counter(), collections.defaultdict(list)
-    for f in glob.glob(os.path.join(root, "*", "*.jsonl")):
+    seen = set()
+    for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         proj = os.path.basename(os.path.dirname(f))
         for line in open(f, errors="replace"):
             if not line.startswith("{"):
@@ -57,7 +58,8 @@ def scan(root, cutoff):
             if r.get("type") == "assistant":
                 msg = r.get("message") or {}
                 u = msg.get("usage") or {}
-                if u:
+                if u and request_key(r) not in seen:
+                    seen.add(request_key(r))
                     m = msg.get("model", "")
                     w5, w1 = split_write(u)
                     s["reqs"] += 1
