@@ -1,0 +1,58 @@
+{
+ "id": "EV-07",
+ "title": "Docs and CLI agree",
+ "use_cases": [
+  "UC-01",
+  "UC-32"
+ ],
+ "setup": [
+  {
+   "name": "opt-help",
+   "cmd": [
+    "node",
+    "app/opt.mjs",
+    "--help"
+   ]
+  }
+ ],
+ "files": [
+  {
+   "from": "{REPO}/docs/commands.md"
+  },
+  {
+   "from": "{REPO}/CLAUDE.md"
+  }
+ ],
+ "task": "Compare `opt --help` with docs/commands.md and the command list in CLAUDE.md. List every command that is in one but missing from another, every description that contradicts another, and every command whose 'spends money' status differs between them. Table form; at most 250 words. Say \"none\" for an empty category.",
+ "checks": [
+  {
+   "id": "C1",
+   "kind": "max_words",
+   "n": 280
+  }
+ ],
+ "rubric": [
+  {
+   "id": "R1",
+   "weight": 3,
+   "critical": true,
+   "text": "Every discrepancy listed is real when checked against the three sources (at most one false positive)."
+  },
+  {
+   "id": "R2",
+   "weight": 2,
+   "text": "Spend status is checked command by command: CLAUDE.md, docs/commands.md and the help text agree or the difference is reported."
+  },
+  {
+   "id": "R3",
+   "weight": 2,
+   "text": "Reasonably complete: the grader finds no more than two real discrepancies it missed."
+  },
+  {
+   "id": "R4",
+   "weight": 1,
+   "text": "Follows the requested table form and empty-category convention."
+  }
+ ],
+ "pass": 0.7
+}

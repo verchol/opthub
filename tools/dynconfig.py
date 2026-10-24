@@ -309,7 +309,7 @@ def main():
     ap.add_argument("--root", default=os.environ.get("OPTHUB_PROJECTS") or os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--since", help="only requests on or after YYYY-MM-DD (default: everything on disk)")
     ap.add_argument("--top", type=int, default=15)
-    ap.add_argument("--out", default=os.path.join(REPO, "data", "private", "dynconfig"))
+    ap.add_argument("--out", default=os.environ.get("OPTHUB_DYNCONFIG") or os.path.join(REPO, "data", "private", "dynconfig"))
     a = ap.parse_args()
     cutoff = (dt.datetime.fromisoformat(a.since).replace(tzinfo=dt.timezone.utc) if a.since
               else dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc))

@@ -1,0 +1,1 @@
+ratelimit.TokenBucket has no tests. Write tests/test_bucket.py with unittest tests that pin down every behaviour its docstring describes, so that any change to that behaviour makes a test fail. Do not change ratelimit/bucket.py.

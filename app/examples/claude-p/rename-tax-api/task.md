@@ -1,0 +1,1 @@
+Rename shop.tax.calc_tax to compute_tax across the whole project: the function, every caller, and the README. Keep calc_tax as a deprecated alias that emits a DeprecationWarning and returns the same result, so existing callers outside this repo keep working. The test suite must pass. Do not change the tests.

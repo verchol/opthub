@@ -18,6 +18,7 @@ import { propose, parseTemperature, GOALS, TEMPERATURES } from './lib/goals.mjs'
 import { findTranscript, processTranscript } from './lib/sessions-index.mjs'
 import { STATE as STATE_DIR } from './lib/state.mjs'
 import { SANDBOX_SH } from '../sandbox/docker/index.mjs'
+import { launcherCredential } from './lib/ult/credentials.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const C = { g: '\x1b[32m', y: '\x1b[33m', r: '\x1b[31m', c: '\x1b[36m', d: '\x1b[2m', b: '\x1b[1m', x: '\x1b[0m' }
@@ -194,22 +195,44 @@ export function verdictOf(base, strat, { hasCheck, goal = 'cost' }) {
     : { verdict: 'drop', reason: `not cheaper (${word(cost, 'cheaper', 'dearer')})`, pct: cost }
 }
 
+/** Every lever in config/optimizations.json, and what it changes in a run (`opt claude strategies`). */
+export function cmdStrategies(entries = strategyEntries()) {
+  console.log(`\n  ${C.b}strategies${C.x}  ${C.d}config/optimizations.json · use one: opt claude -p "…" --strategy <id> --compare${C.x}\n`)
+  for (const e of entries) {
+    const p = localPlan(e)
+    const why = p.error ? p.error.replace(`${e.id} `, '') : null
+    console.log(`  ${p.error ? C.d + '·' : C.g + '✓'}${C.x} ${pad(e.id, 28)}${p.error ? C.d + pad(why, Math.max(40, (process.stdout.columns || 132) - 34)) + C.x : [...p.flags, ...Object.entries(p.env).map(([k, v]) => `${k}=${v}`), p.appendPrompt ? '+prompt' : ''].filter(Boolean).join(' ') || '(no change: the control)'}`)
+  }
+  console.log('')
+  return 0
+}
+
+export const strategyEntries = () => { const c = loadCatalog(ROOT, { fresh: true }); return c.experiments ?? c }
+
+/**
+ * A recorded session as a task: its first prompt, the directory it ran in, its model. Only
+ * non-interactive sessions qualify (opt analyse decides), unless force.
+ * @returns {{text, session, dir, analysed, sessionModel} | {error}}
+ */
+export function taskFromSession(id, { force = false } = {}) {
+  const analysed = analysisFor(id)
+  const fp = firstPrompt(analysed?.id ?? id)
+  if (!fp) return { error: `no transcript for session ${id}` }
+  const session = path.basename(fp.file, '.jsonl')
+  if (!analysed) return { error: `session ${session.slice(0, 8)} has not been analysed — run opt analyse first, so its mode is known` }
+  if (!analysed.eligible && !force) return { error: `session ${session.slice(0, 8)} is ${analysed.mode.label} (by ${analysed.mode.by}): only non-interactive sessions are replayed as tasks; --force overrides` }
+  const rec = processTranscript(fp.file)
+  return { text: fp.text, session, analysed, sessionModel: rec?.model?.startsWith('claude-') ? rec.model : null,
+           dir: rec?.cwd ? rec.cwd.replace(/^~/, os.homedir()) : null }
+}
+
 export async function cmdOptimize(argv, { needSecrets } = {}) {
   const f = flagsOf(argv, { bool: ['force', 'dry-run', 'help', 'json', 'baseline', 'no-baseline', 'fresh-baseline', 'eligible'] })
   if (f.help) { console.log(OPTIMIZE_HELP); return 0 }
   const catalog = loadCatalog(ROOT, { fresh: true })
   const entries = catalog.experiments ?? catalog
 
-  if (f._[0] === 'strategies') {
-    console.log(`\n  ${C.b}strategies${C.x}  ${C.d}config/optimizations.json · what the local sandbox can run${C.x}\n`)
-    for (const e of entries) {
-      const p = localPlan(e)
-      const why = p.error ? p.error.replace(`${e.id} `, '') : null
-      console.log(`  ${p.error ? C.d + '·' : C.g + '✓'}${C.x} ${pad(e.id, 28)}${p.error ? C.d + pad(why, Math.max(40, (process.stdout.columns || 132) - 34)) + C.x : [...p.flags, ...Object.entries(p.env).map(([k, v]) => `${k}=${v}`), p.appendPrompt ? '+prompt' : ''].filter(Boolean).join(' ') || '(no change: the control)'}`)
-    }
-    console.log('')
-    return 0
-  }
+  if (f._[0] === 'strategies') return cmdStrategies(entries)
   if (f._[0] === 'install-command') {
     const src = path.join(ROOT, 'template', 'claude', 'commands', 'optimize.md')
     const dest = path.join(os.homedir(), '.claude', 'commands', 'optimize.md')
@@ -240,20 +263,10 @@ export async function cmdOptimize(argv, { needSecrets } = {}) {
   // ---- what to run
   let text = null, session = null, dir = f.dir ? path.resolve(f.dir) : null, analysed = null, sessionModel = null
   if (f.session) {
-    analysed = analysisFor(f.session)
-    const id = analysed?.id ?? f.session
-    const fp = firstPrompt(id)
-    if (!fp) { console.error(`no transcript for session ${f.session}`); return 2 }
-    session = path.basename(fp.file, '.jsonl')
-    if (!analysed) { console.error(`session ${session.slice(0, 8)} has not been analysed — run opt analyse first, so its mode is known`); return 2 }
-    if (!analysed.eligible && !f.force) {
-      console.error(`session ${session.slice(0, 8)} is ${analysed.mode.label} (by ${analysed.mode.by}). opt optimize takes non-interactive sessions only; --force overrides.`)
-      return 2
-    }
-    text = fp.text
-    const rec = processTranscript(fp.file)
-    sessionModel = rec?.model?.startsWith('claude-') ? rec.model : null
-    if (!dir) dir = rec?.cwd ? rec.cwd.replace(/^~/, os.homedir()) : null
+    const t = taskFromSession(f.session, { force: f.force })
+    if (t.error) { console.error(t.error); return 2 }
+    ;({ text, session, analysed, sessionModel } = t)
+    if (!dir) dir = t.dir
   }
   if (f.task) text = f.task
   if (f['task-file']) text = f['task-file'] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(f['task-file'], 'utf8')
@@ -283,7 +296,7 @@ function goalArgs(f) {
 
 const runnableIn = (entries) => (id) => { const e = entries.find((x) => x.id === id); return !!e && !localPlan(e).error }
 
-function chooseStrategy(f, entries, { session, analysed }) {
+export function chooseStrategy(f, entries, { session, analysed }) {
   const g = goalArgs(f)
   if (g.rawTemp && !parseTemperature(g.rawTemp)) return { error: `temperature '${g.rawTemp}': use conservative, balanced, aggressive or 0–1` }
   if (g.named) return { strategyId: g.named, strategyWhy: 'named', proposal: null }
@@ -298,7 +311,7 @@ function chooseStrategy(f, entries, { session, analysed }) {
 
 const RISK_C = { low: C.g, medium: C.y, high: C.r }
 const latencyWord = (n) => (n >= 2 ? 'faster' : n >= 1 ? 'a little faster' : 'same speed')
-function printProposal(log, p) {
+export function printProposal(log, p) {
   if (!p?.pick) return
   const k = p.pick
   log(`  goal       ${C.b}${p.goal}${C.x} · ${p.temperature}`)
@@ -313,7 +326,7 @@ function printProposal(log, p) {
 
 
 /** Sessions to optimize: eligible ones from the analysis cache, optionally under one project. */
-function eligibleSessions(f) {
+export function eligibleSessions(f) {
   const project = f.project ? path.resolve(f.project.replace(/^~/, os.homedir())) : null
   const out = []
   for (const a of allAnalysed()) {
@@ -330,7 +343,7 @@ function eligibleSessions(f) {
 }
 
 /** `opt optimize plan`: what each temperature would do for one session, best case against worst. */
-function cmdPlan(f, entries) {
+export function cmdPlan(f, entries = strategyEntries()) {
   const g = goalArgs(f)
   let list = []
   if (f.session) { const a = analysisFor(f.session); if (!a) { console.error(`session ${f.session} has not been analysed — opt analyse`); return 2 }; list = eligibleSessions({ ...f, project: null }).filter((x) => x.session === a.id); if (!list.length) list = [{ analysed: a, session: a.id, rec: processTranscript(findTranscript(a.id)), dir: '' }] }
@@ -348,7 +361,7 @@ function cmdPlan(f, entries) {
     }
   }
   console.log(`\n  ${C.d}best case is priced from each session's own tokens (a ceiling); every worst case is caught by the hidden check or the baseline compare${C.x}`)
-  console.log(`  ${C.d}run it: opt optimize ${g.goal} <temperature> --session <id>   ·   all of them: opt optimize ${g.goal} <temperature> --eligible${C.x}\n`)
+  console.log(`  ${C.d}run it: opt claude -p --session <id> --goal ${g.goal} --temperature <t> --compare   ·   all of them: … --eligible${C.x}\n`)
   return 0
 }
 
@@ -460,11 +473,20 @@ async function runOptimize({ f, entries, needSecrets, text, session, dir, analys
   // ---- credentials: exactly one goes into the sandbox
   // OPT_ANTHROPIC_API_KEY is for the sandbox only: setting ANTHROPIC_API_KEY would also switch the
   // Claude Code session that calls /optimize off its own login
+  // The same path as opt claude: the subscription by default (the Keychain token from `opt claude optimize
+  // login`, then CLAUDE_CODE_OAUTH_TOKEN), an API key only when asked for (--auth api-key, AUTH_MODE=api-key).
   if (!process.env.ANTHROPIC_API_KEY && process.env.OPT_ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = process.env.OPT_ANTHROPIC_API_KEY
-  if (!process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY) { try { needSecrets?.(['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) } catch {} }
-  const auth = f.auth ?? process.env.OPT_AUTH ?? (process.env.ANTHROPIC_API_KEY ? 'api-key' : 'oauth')
-  if (auth === 'api-key' && !process.env.ANTHROPIC_API_KEY) { console.error('--auth api-key: ANTHROPIC_API_KEY is not set (opt secrets)'); return { code: 2 } }
-  if (auth === 'oauth' && !process.env.CLAUDE_CODE_OAUTH_TOKEN) { console.error('no model credential: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (opt secrets)'); return { code: 2 } }
+  const wantKey = (f.auth ?? process.env.OPT_AUTH ?? process.env.AUTH_MODE) === 'api-key'
+  try { needSecrets?.([wantKey ? 'ANTHROPIC_API_KEY' : 'CLAUDE_CODE_OAUTH_TOKEN']) } catch {}
+  const cred = launcherCredential({ ...process.env, AUTH_MODE: wantKey ? 'api-key' : 'subscription', ULT_AUTH_MODE: wantKey ? 'api-key' : 'subscription' })
+  if (!cred) {
+    console.error(wantKey ? '--auth api-key: ANTHROPIC_API_KEY is not set (opt secrets)'
+      : 'no Claude subscription token: opt claude optimize login, or CLAUDE_CODE_OAUTH_TOKEN in .env (opt secrets); --auth api-key for an API key')
+    return { code: 2 }
+  }
+  process.env[cred.env] = cred.value                  // a Keychain token is not in the environment yet
+  const auth = cred.kind === 'api-key' ? 'api-key' : 'oauth'
+  log(`  ${C.d}auth       ${auth === 'oauth' ? 'Claude subscription' : 'API key (bills credits)'} from ${cred.source}${C.x}`)
   const armEnv = auth === 'api-key' ? { CLAUDE_CODE_OAUTH_TOKEN: '' } : { ANTHROPIC_API_KEY: '' }
 
   // ---- a cached baseline for this exact task, tree, model and check is reused

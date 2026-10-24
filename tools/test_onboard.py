@@ -8,15 +8,15 @@ import datetime as dt, hashlib, json, os, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import cachestatus, gapscan, onboard, onboardlib as ob, probe_cache, ratecard, savings, sessiongraph  # noqa: E402
+import cachestatus, gapscan, onboard, onboardlib as ob, probe_cache, ratecard, savings, scan, sessiongraph  # noqa: E402
 
 PLANTED = "PLANTED-PROMPT-zx81"                     # must never appear in any output
 PLANTED_PATH = "/Users/someone/planted-zx81/file.py"
 T0 = dt.datetime(2026, 9, 1, 9, 0, tzinfo=dt.timezone.utc)
 
 
-def req(gap=30, model="claude-opus-5-5", cr=0, w5=0, w1=0, raw=10, out=100, think=0, stop="tool_use", tools=("Read",), effort="high"):
-    return dict(gap=gap, model=model, cr=cr, w5=w5, w1=w1, raw=raw, out=out, think=think, stop=stop, tools=tools, effort=effort)
+def req(gap=30, model="claude-opus-5-5", cr=0, w5=0, w1=0, raw=10, out=100, think=0, stop="tool_use", tools=("Read",), effort="high", skill=None):
+    return dict(gap=gap, model=model, cr=cr, w5=w5, w1=w1, raw=raw, out=out, think=think, stop=stop, tools=tools, effort=effort, skill=skill)
 
 
 def write_session(root, sid, start, reqs, project="-Users-someone-planted-zx81-proj", dup=2, subs=(), entry="cli"):
@@ -37,7 +37,7 @@ def write_session(root, sid, start, reqs, project="-Users-someone-planted-zx81-p
                 for k, name in enumerate(q["tools"])]
             for b in (blocks * dup)[:max(dup, len(blocks))]:
                 out.append(dict(type="assistant", sessionId=sid, timestamp=t.isoformat().replace("+00:00", "Z"),
-                                entrypoint=entry, cwd=PLANTED_PATH, isSidechain=side != "main", requestId=f"req_{mid}", effort=q["effort"],
+                                entrypoint=entry, cwd=PLANTED_PATH, isSidechain=side != "main", requestId=f"req_{mid}", effort=q["effort"], attributionSkill=q["skill"],
                                 message=dict(id=mid, model=q["model"], role="assistant", stop_reason=q["stop"],
                                              content=[b], usage=usage)))
         return out
@@ -358,6 +358,68 @@ class Onboard(unittest.TestCase):
         self.assertIn("collect first", inv["why"])
         self.assertEqual([f["probe"] for f in F], ["cache-conformance"])
         self.assertIn("collect first", page)
+
+
+class Scan(unittest.TestCase):
+    """`opt scan`: the three layers, profiles, rollup."""
+
+    def root(self, n=24, days=12):
+        d = tempfile.mkdtemp()
+        for i in range(n):
+            explore = [req(cr=50_000, w5=5_000, out=2_000, tools=("Grep",)) for _ in range(3)]
+            skill = [req(cr=80_000, w1=4_000, out=3_000, tools=("Read",), skill="kb-ingest") for _ in range(4)]
+            write_session(d, f"s{i:02d}", T0 + dt.timedelta(days=days * i / n),
+                          (dense() if i % 2 else spaced()) + skill + [req(stop="end_turn", gap=900, cr=900_000, w1=20_000)],
+                          subs=[("Explore", explore)])
+        return d
+
+    def test_three_layers_and_no_text_or_repo_path_in_anything_that_leaves(self):
+        d = self.root()
+        inv, F, cover, profs = scan.scan(d, T0 - dt.timedelta(days=1))
+        self.assertEqual({f["layer"] for f in F}, {1, 2, 3})
+        self.assertEqual(len(cover), 38)
+        out = tempfile.mkdtemp()
+        scan.report(inv, F, os.path.join(out, "r.html"))
+        with open(os.path.join(out, "r.html")) as fh:
+            leaving = ob.dumps(inv) + "".join(ob.dumps(f) for f in F) + fh.read()
+        for planted in (PLANTED, PLANTED_PATH, "planted-zx81", "file.py"):
+            self.assertNotIn(planted, leaving)
+
+    def test_routing_groups_threads_and_targets_by_what_they_do(self):
+        S, _ = ob.load(self.root())
+        G = scan.groups(S)
+        self.assertIn(("subagent", "Explore"), G)
+        self.assertIn(("skill", "kb-ingest"), G)
+        self.assertTrue(any(k[0] == "main" for k in G))
+        explore = [q for _, qs in G[("subagent", "Explore")] for q in qs]
+        self.assertEqual(scan.target_for("subagent", explore)[0], scan.HAIKU)                 # only reads
+        self.assertEqual(scan.target_for("main", explore)[0], scan.SONNET)                   # a main loop never goes to Haiku
+        self.assertIsNone(scan.target_for("subagent", [dict(q, model="claude-haiku-5-5") for q in explore])[0])
+
+    def test_a_skill_on_the_main_thread_pays_the_prefix_re_buy(self):
+        S, _ = ob.load(self.root(n=1))
+        reqs = [q for _, qs in scan.groups(S)[("skill", "kb-ingest")] for q in qs]
+        # four requests 30 s apart are one invocation: one context re-written at 1 hour on the target
+        self.assertAlmostEqual(scan.rebuy(reqs, scan.HAIKU), ob.ctx(reqs[0]) * 0.10 * 2.0 / 1e6)
+
+    def test_rollup_of_two_identical_scans_doubles_every_total(self):
+        d = self.root()
+        inv, F, _, profs = scan.scan(d, T0 - dt.timedelta(days=1))
+        a, b = tempfile.mkdtemp(), tempfile.mkdtemp()
+        scan.write(a, inv, F, profs); scan.write(b, inv, F, profs)
+        rinv, R = scan.rollup([a, b])
+        self.assertEqual((rinv["developers"], rinv["sessions"]), (2, 2 * inv["sessions"]))
+        one = {(f["layer"], f["probe"], f["population"]["predicate"], f["counterfactual"]["policy"]): f for f in F}
+        for f in R:
+            k = (f["layer"], f["probe"], f["population"]["predicate"], f["counterfactual"]["policy"])
+            self.assertAlmostEqual(f["current_usd"], 2 * one[k]["current_usd"], places=3)
+
+    def test_profiles_are_per_repo_and_t0_only(self):
+        d = self.root()
+        _, _, _, profs = scan.scan(d, T0 - dt.timedelta(days=1))
+        for p in profs.values():
+            self.assertEqual(p["mode"], "shadow")
+            self.assertLessEqual(set(p["settings"]), {"promptCacheTtl"})
 
 
 if __name__ == "__main__":

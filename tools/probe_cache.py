@@ -31,7 +31,7 @@ import ratecard  # noqa: E402
 
 REPO = os.path.dirname(HERE)
 STORE = os.path.join(REPO, "docs", "data", "conformance")
-PRIVATE = os.path.join(REPO, "data", "private", "onboard")
+PRIVATE = os.environ.get("OPTHUB_ONBOARD") or os.path.join(REPO, "data", "private", "onboard")
 API = "https://api.anthropic.com"
 WAIT_S = 7 * 60
 MAX_AGE_DAYS = 30

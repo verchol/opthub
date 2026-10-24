@@ -54,12 +54,13 @@ export function validAnswer(a, allowed) {
 export async function askJev(pub, { endpoint, model, timeoutMs, apiKey, fetchImpl = fetch }) {
   const t0 = Date.now()
   const done = (outcome, extra = {}) => ({ cls: null, confidence: 0, outcome, latencyMs: Date.now() - t0, ...extra })
-  if (!apiKey) return done('no-key')
+  const local = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|host\.docker\.internal)(:\d+)?\//.test(endpoint ?? '')
+  if (!apiKey && !local) return done('no-key')
   let raw
   try {
     const res = await fetchImpl(endpoint, {
       method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      headers: { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}), 'content-type': 'application/json' },
       body: JSON.stringify(buildJevRequest(pub, model)),
       signal: AbortSignal.timeout(timeoutMs),
     })

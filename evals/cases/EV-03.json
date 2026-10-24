@@ -1,0 +1,98 @@
+{
+ "id": "EV-03",
+ "title": "Where did this session's money go?",
+ "use_cases": [
+  "UC-11",
+  "UC-12",
+  "UC-13",
+  "UC-20"
+ ],
+ "setup": [
+  {
+   "name": "lenops",
+   "cmd": [
+    "python3",
+    "tools/lenops.py",
+    "view",
+    "--project",
+    "{PROJ:slow-report}",
+    "--session",
+    "{SID:slow-report}"
+   ]
+  },
+  {
+   "name": "sessiongraph",
+   "cmd": [
+    "python3",
+    "tools/sessiongraph.py",
+    "{SID:slow-report}"
+   ]
+  },
+  {
+   "name": "ctxwatch",
+   "cmd": [
+    "python3",
+    "tools/ctxwatch.py",
+    "--once",
+    "--session",
+    "{SID:slow-report}",
+    "--project",
+    "{PROJ:slow-report}"
+   ]
+  },
+  {
+   "name": "savings",
+   "cmd": [
+    "python3",
+    "tools/savings.py",
+    "--since",
+    "2026-10-01"
+   ]
+  }
+ ],
+ "task": "Session {SID:slow-report} is the most expensive one this week. Explain, in at most 200 words, where its money went and the two changes most likely to make the next session like it cheaper, with what each is worth.",
+ "checks": [
+  {
+   "id": "C1",
+   "kind": "provenance",
+   "critical": true
+  },
+  {
+   "id": "C2",
+   "kind": "max_words",
+   "n": 220
+  },
+  {
+   "id": "C3",
+   "kind": "regex",
+   "pattern": "\\b(priced|guess|ceiling|estimate|upper bound)\\b",
+   "note": "labels its savings"
+  }
+ ],
+ "rubric": [
+  {
+   "id": "R1",
+   "weight": 3,
+   "critical": true,
+   "text": "Identifies the driver the artifacts show: a large context that grows request after request (from about 140k toward 320k tokens), so cache writes and reads of that context dominate the bill, rather than output or thinking."
+  },
+  {
+   "id": "R2",
+   "weight": 2,
+   "text": "Picks its two changes from the levers the tools priced for this session (e.g. trim/compaction or new session per task, cache TTL, effort), with the figure each tool gave for this session."
+  },
+  {
+   "id": "R3",
+   "weight": 2,
+   "critical": true,
+   "text": "Does not add up savings the tools say do not stack (standalone ceilings, or D sonnet-ceiling on top of A/B); quotes a combined figure only where a tool printed one."
+  },
+  {
+   "id": "R4",
+   "weight": 1,
+   "text": "Says the savings are estimates that a replay would have to confirm."
+  }
+ ],
+ "pass": 0.75,
+ "files": []
+}

@@ -11,7 +11,9 @@ const ok = (name, cond, got) => { if (cond) { pass++; console.log(`  ✓ ${name}
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-p-test-'))
 process.env.OPT_HOME = path.join(tmp, 'home')
 const { LEVELS, planFor, recordOutcome, skillDirs, loadProfile } = await import('../lib/claude-profile.mjs')
-const { armScript, treeDigest, parseArgs } = await import('../claude-run.mjs')
+const { armScript, treeDigest, parseArgs, withLever, parameters, reportData, experimentStory } = await import('../claude-run.mjs')
+const { buildHtml } = await import('../report.mjs')
+const { localPlan, mergePlans } = await import('../lib/local-run.mjs')
 const { auditClaims, readEvents } = await import('../lib/claims.mjs')
 const { AuditLog } = await import('../lib/ult/audit.mjs')
 const { startTask } = await import('../lib/task-audit.mjs')
@@ -57,6 +59,52 @@ ok('tree digest changes with the source', treeDigest(tree) !== d1)
 ok('flags parse: -p, --compare, --repeats, claude args after --', (() => { const f = parseArgs(['-p', 'fix it', '--compare', '--repeats', '3', '--', '--verbose']); return f.prompt === 'fix it' && f.compare && f.repeats === 3 && f.extra[0] === '--verbose' })())
 let threw = false; try { parseArgs(['--level', 'reckless']) } catch { threw = true }
 ok('an unknown rung is refused', threw)
+
+// opt optimize, merged in: a catalog lever on top of the profile
+const lever = mergePlans([localPlan({ id: 'x', arm: { model: 'sonnet46', effort: 'low', claude: { thinkingTokens: 8000, fallbackModel: "o'pus" }, appendPrompt: 'Keep diffs small.' } })])
+const lp = withLever(planFor('balanced'), lever)
+const pairs = Object.fromEntries(lp.flags.flatMap((x, i) => (i % 2 ? [] : [[x, lp.flags[i + 1]]])))
+ok('a lever replaces the profile flag it sets, and adds its own', lp.flags.length === 6 && pairs['--effort'] === 'low' && pairs['--model'] === 'sonnet' && pairs['--fallback-model'] === "o'pus", lp.flags)
+ok('a lever adds its environment and its working rules', lp.env.MAX_THINKING_TOKENS === '8000' && lp.rules.endsWith('Keep diffs small.'))
+const lo = armScript({ optimized: true, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
+const lpl = armScript({ optimized: false, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
+ok('only the optimized arm gets the lever; a quoted value is quoted once', lo.includes("--model 'sonnet'") && lo.includes("--fallback-model 'o'\\''pus'") && !lpl.includes('sonnet') && !lpl.includes('MAX_THINKING'))
+// the summary: every parameter side by side, and the report with the spider chart
+const { config: ucfg } = await import('../lib/ult/config.mjs').then((m) => m.loadConfig({ flags: { routing: 'local' } }))
+const P = parameters({ model: 'opus', plan: lp, strategy: { id: 'x' }, config: ucfg, skills: ['/a/house-rules'], cred: { kind: 'oauth' }, timeoutSec: 600 })
+const pv = (n) => P.find((p) => p.name === n)
+ok('parameters: what the optimized side changed differs, the rest match', pv('model').optimized === 'sonnet' && pv('model').plain === 'opus' && pv('effort').optimized === 'low'
+   && pv('gateway').plain.startsWith('none') && /qwen3:8b/.test(pv('local tier').optimized) && pv('strategy').optimized === 'x' && pv('timeout').plain === pv('timeout').optimized, P)
+ok('parameters: every lever flag and env var gets a row', !!pv('fallback-model') && pv('env MAX_THINKING_TOKENS')?.optimized === '8000' && /strategy's/.test(pv('appended rules').optimized))
+const evd = { 'plain-1': { events: { result: { usage: { input_tokens: 10, cache_read_input_tokens: 9000, output_tokens: 400 }, total_cost_usd: 0.4 } } },
+              'optimized-1': { events: { result: { usage: { input_tokens: 10, cache_read_input_tokens: 8000, output_tokens: 200 }, total_cost_usd: 0.2 } } } }
+const rrows = [{ label: 'plain-1', side: 'baseline', cost_usd: 0.4, duration_ms: 60000, turns: 12, model: 'opus', check: 'pass', files: ['~a.py'] },
+               { label: 'optimized-1', side: 'optimized', cost_usd: 0.2, duration_ms: 40000, turns: 8, model: 'opus', check: 'pass', files: ['~a.py'] }]
+const rd = reportData({ runId: 'cp-test', rows: rrows, params: P, verdict: { verdict: 'keep', reason: '50% cheaper' }, checkFile: 'c.py', strategy: { id: 'x' }, plan: lp, auth: 'oauth', ev: evd })
+const html = buildHtml({ id: 'cp-test', data: rd })
+ok('report: the spider chart, both sides, one per side', html.includes('<svg') && html.includes('plain claude -p') && html.includes('optimize mode') && rd.arms.length === 2)
+ok('report: parameters side by side, changed rows highlighted, the fixed arms table gone', html.includes('Parameters, side by side') && (html.match(/class="pchg"/g) ?? []).length === P.filter((p) => p.plain !== p.optimized).length && !html.includes('<h2>The arms</h2>'))
+ok('report: header says what this run is, not the E2B benchmark', html.includes('opt claude -p · local Docker sandbox') && !html.includes('changes exactly one thing'))
+// the experiment in plain words: what was allowed against what the router actually did
+const keepAll = rrows.map((r) => (r.side === 'optimized' ? { ...r, router: { byDecision: { keep: 5 } } } : r))
+const story1 = experimentStory({ task: '# Fix the bug\nmore', params: P, rows: keepAll, verdict: { verdict: 'keep', reason: '50% cheaper' }, checkFile: 'c.py' })
+ok('story: the question, the task line, what changed', /same job/.test(story1.question) && story1.task === 'Fix the bug' && story1.changed.some((x) => /Effort: low/.test(x)) && story1.changed.some((x) => /local model was available/.test(x)))
+ok('story: a route that was allowed but never used says so', story1.used.some((x) => /5 stayed on opus, 0 went to the local model/.test(x)) && story1.used.some((x) => /available but never used/.test(x)))
+ok('story: with nothing routed, the saving is put down to the other changes', story1.result.some((x) => /Nothing was routed, so the difference comes from the effort setting/.test(x)))
+const moved = rrows.map((r) => (r.side === 'optimized' ? { ...r, router: { byDecision: { keep: 3, local: 2 } } } : r))
+const story2 = experimentStory({ task: 'x', params: P, rows: moved, verdict: null, checkFile: null })
+ok('story: local answers are counted, and not called unused', story2.used[0].includes('2 went to the local model') && !story2.used.some((x) => /local model was available but never used/.test(x)))
+ok('story: n under 3 a side is not a finding', /not a finding/.test(story2.confidence))
+// a scored check: quality counts items right, the summary gives accuracy per side
+const scored = rrows.map((r) => ({ ...r, score: r.side === 'optimized' ? { correct: false, accuracy: 0.8, passed: 8, total: 10 } : { correct: true, accuracy: 1, passed: 10, total: 10 } }))
+const rd2 = reportData({ runId: 'cp-s', rows: scored, params: P, verdict: null, checkFile: 'c.py', strategy: null, plan: lp, auth: 'oauth', ev: evd })
+ok('scored check: the quality axis counts items right, per side', rd2.arms[0].grade.passed === 10 && rd2.arms[1].grade.passed === 8 && rd2.arms[1].grade.total === 10, rd2.arms.map((a) => a.grade))
+const story3 = experimentStory({ task: 'x', params: P, rows: scored.map((r) => ({ ...r, router: { byDecision: { keep: 1 } } })), verdict: { verdict: 'drop', reason: 'r' }, checkFile: 'c.py' })
+ok('scored check: the summary gives the median accuracy of each side', story3.result.some((x) => /Accuracy .*1\.00 plain, 0\.80 optimized/.test(x)), story3.result)
+ok('opt optimize flags parse: --strategy, --goal, --temperature, --session, --task-file, --eligible', (() => {
+  const f = parseArgs(['--task', 'fix it', '--strategy', 'effort-low', '--goal', 'cost', '--temperature', 'aggressive', '--session', 'abc', '--task-file', 't.md', '--eligible', '--project', 'p', '--checks', 'c', '--force'])
+  return f.prompt === 'fix it' && f.strategy === 'effort-low' && f.goal === 'cost' && f.temperature === 'aggressive' && f.session === 'abc' && f.taskFile === 't.md' && f.eligible && f.project === 'p' && f.checks === 'c' && f.force
+})())
 
 console.log('\nclaims.mjs')
 const DUMMY = 'sk-ant-test-placeholder'

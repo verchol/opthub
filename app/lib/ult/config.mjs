@@ -53,6 +53,22 @@ export function flagsToOverlay(f = {}) {
   set('local.baseUrl', f.ollamaUrl)
   if (f.ollamaUrl) set('local.dockerBaseUrl', f.ollamaUrl)
   if (f.jev !== undefined) set('classifier.jev.enabled', f.jev)
+  if (f.routing === 'local') {
+    // `--routing local`: small tasks on Ollama, everything else and every failure on the frontier model.
+    set('mode', f.mode ?? 'route')
+    f.localCloud = true
+    const small = `scoped:${f.smallModel ?? 'qwen3:8b'}`
+    set('policy.routes', { 'background/utility': 'local', 'non-coding/explain': small, 'non-coding/summarize': small,
+                           'non-coding/pr-description': small, 'coding/*': 'keep', 'review/*': 'keep', 'unclear': 'keep' })
+  } else if (f.routing && f.routing !== 'frontier') throw new Error(`--routing expects local or frontier, got "${f.routing}"`)
+  if (f.routing === 'frontier') set('policy.pin', 'frontier')
+  if (f.localCloud) {
+    // Release plan "Local cloud": rules first, tev1 on the same Ollama when rules are unsure, local
+    // answers only for what capacity admits. Mode is untouched, so it starts in shadow.
+    const base = (f.ollamaUrl ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+    set('local.enabled', true)
+    set('classifier.jev', { enabled: true, endpoint: `${base}/v1/systemone`, model: 'tev1', timeoutMs: 3000 })
+  }
   if (f.pin) set('policy.pin', f.pin)
   if (f.auditPrompts) set('audit.prompts', true)
   if (f.routes?.length) {
@@ -62,7 +78,7 @@ export function flagsToOverlay(f = {}) {
       if (i < 1) throw new Error(`--route expects <class>=<target>, got "${r}"`)
       routes[r.slice(0, i)] = r.slice(i + 1)
     }
-    set('policy.routes', routes)
+    set('policy.routes', { ...(o.policy?.routes ?? {}), ...routes })
   }
   return o
 }
@@ -72,7 +88,7 @@ export function validate(cfg) {
   if (!['shadow', 'route'].includes(cfg.mode)) errs.push(`mode must be shadow or route, got ${cfg.mode}`)
   if (cfg.policy?.pin && cfg.policy.pin !== 'frontier') errs.push(`policy.pin supports only "frontier"`)
   for (const [cls, target] of Object.entries(cfg.policy?.routes ?? {})) {
-    if (!/^(keep|local|local:.+|remote:.+)$/.test(target)) errs.push(`route ${cls}: target must be keep, local, local:<model> or remote:<model>, got "${target}"`)
+    if (!/^(keep|local|local:.+|scoped:.+|remote:.+)$/.test(target)) errs.push(`route ${cls}: target must be keep, local, local:<model>, scoped:<model> or remote:<model>, got "${target}"`)
   }
   if (!Number.isInteger(cfg.listen?.port) || cfg.listen.port < 0 || cfg.listen.port > 65535) errs.push(`listen.port invalid: ${cfg.listen?.port}`)
   if (errs.length) throw new Error('ULT config:\n  ' + errs.join('\n  '))

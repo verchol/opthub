@@ -121,7 +121,7 @@ def main():
     ap.add_argument("--hours", type=float, default=24, help="window length in hours (default 24)")
     ap.add_argument("--days", type=float, help="window length in days (overrides --hours)")
     ap.add_argument("--since", help="pin the window start, YYYY-MM-DD (overrides --hours/--days)")
-    ap.add_argument("--root", default=os.path.expanduser("~/.claude/projects"))
+    ap.add_argument("--root", default=os.environ.get("OPTHUB_PROJECTS") or os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--sort", choices=["start", "cost", "reqs", "ctx"], default="start")
     ap.add_argument("--project", help="substring filter on the session's cwd")
     ap.add_argument("--billable-only", action="store_true",

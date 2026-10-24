@@ -2,18 +2,18 @@
 /**
  * opt — inspect harness experiments, running or finished.
  *
- *   opt ls                list every run this machine knows about
- *   opt ps                only what is live in E2B right now
- *   opt status [runId]    gather evidence and have Claude judge: healthy or stuck?
- *   opt logs <runId>      tail what each arm's agent has written
- *   opt kill <runId|all>  stop sandboxes
+ *   opt experiments ls                list every run this machine knows about
+ *   opt experiments ps                only what is live in E2B right now
+ *   opt experiments status [runId]    gather evidence and have Claude judge: healthy or stuck?
+ *   opt experiments logs <runId>      tail what each arm's agent has written
+ *   opt experiments kill <runId|all>  stop sandboxes
  *
  * `status` is the interesting one: it collects hard evidence — heartbeat age,
  * sandbox liveness, CPU, workspace contents, stderr tails — and asks Claude
  * (sonnet, cheap) to reason about whether a run is progressing or wedged.
  */
 import { Sandbox } from '../sandbox/e2b/index.mjs'
-import { STATE as STATE_DIR, ENV_FILE } from './lib/state.mjs'
+import { STATE as STATE_DIR, ENV_FILE, REPO_ROOT } from './lib/state.mjs'
 import { resolveSecrets, parseEnvFile, verifyKey, opFindAnthropic, opAvailable, isOpRef } from './secrets.mjs'
 import { startUi, snapshot, resolveRunId } from './statusui.mjs'
 import { collectSessions, countAll, findSession, renderTable, renderContext, startSessionsUi,
@@ -197,20 +197,20 @@ function heuristic(ev) {
   if (failed.length)
     return { state: 'failed', confidence: 'high',
              reason: `${failed.map((a) => a.arm).join(' and ')} reported step "failed".`,
-             action: 'opt logs to see why; the other arm may still finish' }
+             action: 'opt experiments logs to see why; the other arm may still finish' }
   const unfinished = arms.filter((a) => a.step !== 'done' && a.step !== 'failed')
   const hb = ev.run.heartbeatSecondsAgo
   if (ev.run.orchestratorAlive === false && unfinished.length)
     return { state: 'failed', confidence: 'high',
              reason: `The orchestrator process is gone while ${unfinished.length} arm(s) never reached "done".`,
-             action: 'opt kill ' + ev.run.id + ' , then re-run' }
+             action: 'opt experiments kill ' + ev.run.id + ' , then re-run' }
   if (unfinished.some((a) => !a.sandboxLive))
     return { state: 'failed', confidence: 'medium',
              reason: 'An unfinished arm has no live sandbox — it died or timed out.',
-             action: 'opt logs ' + ev.run.id + ' to see the last output' }
+             action: 'opt experiments logs ' + ev.run.id + ' to see the last output' }
   if (hb != null && hb > 15 * 60)
     return { state: 'stuck', confidence: 'medium',
-             reason: `No heartbeat for ${Math.round(hb / 60)} minutes.`, action: 'opt logs, then opt kill if dead' }
+             reason: `No heartbeat for ${Math.round(hb / 60)} minutes.`, action: 'opt experiments logs, then opt experiments kill if dead' }
   if (arms.length && arms.every((a) => a.step === 'grading' || a.step === 'done'))
     return { state: 'finishing', confidence: 'high', reason: 'All arms are grading or done.', action: 'wait' }
   return { state: 'progressing', confidence: 'low',
@@ -416,7 +416,7 @@ async function cmdSession(sub, rest) {
   if (sub === 'export') {
     const ref = positional[1]
     if (!ref) {
-      console.log(`\n  ${C.d}which session? ${C.x}opt session export <#|ref> [--run]${C.d}   (${C.x}opt session${C.d} lists them)${C.x}\n`)
+      console.log(`\n  ${C.d}which session? ${C.x}opt session export <#|ref>${C.d}   (${C.x}opt session${C.d} lists them)${C.x}\n`)
       return
     }
     const s = resolveSession(ROOT, ref)
@@ -424,6 +424,7 @@ async function cmdSession(sub, rest) {
     const bundle = exportSession(ROOT, s)
     console.log(renderExport(bundle, ROOT))
     if (!doRun) return
+    deprecated(`opt replay ${ref} --runner ${runnerId}`)
 
     const runner = getRunner(runnerId)
     console.log(`  ${C.d}runner${C.x}       ${C.m}${runner.id}${C.x} ${C.d}\u2014 ${runner.label}${C.x}`)
@@ -538,14 +539,16 @@ async function cmdInit(rest = []) {
 
 // ---------------------------------------------------------------- experiments
 /**
- * Everything about runs lives under one verb now. `opt ls` and friends still
- * work — they were in muscle memory before this existed — but the grouped form
- * is what the help teaches.
+ * Everything about runs lives under one verb. The old top-level forms (`opt ls`,
+ * `opt status`, …) still run but are deprecated: each says where it moved.
  */
 async function cmdExperiments(sub, rest) {
   switch (sub) {
     case undefined:
-    case 'ls': case 'list': await cmdLs(); return
+    case 'ls': case 'list': {
+      const i = rest.indexOf('--session')
+      await cmdLs({ session: i >= 0 ? rest[i + 1] : null }); return
+    }
     case 'ps': case 'live': await cmdLs({ live: true }); return
     case 'status': case 'st':
       if (rest[0] === 'ui') await cmdStatusUi(rest[1]); else await cmdStatus(rest[0])
@@ -921,7 +924,7 @@ async function cmdRun(rest) {
     const scores = r.arms.map((a) => a.total ? `${a.arm} ${a.passed}/${a.total}` : `${a.arm} —`).join('  ')
     console.log(`    ${C.d}${r.id}${C.x}  ${scores}`)
   }
-  console.log(`\n  ${C.d}opt ls --session ${session}   ·   opt open <runId>${C.x}\n`)
+  console.log(`\n  ${C.d}opt experiments ls --session ${session}   ·   opt experiments open <runId>${C.x}\n`)
 }
 
 // ---------------------------------------------------------------- watch
@@ -934,7 +937,7 @@ const lastWrote = (ms) => !Number.isFinite(ms) ? '  --'
   : Math.round(ms / 86400000) + 'd'
 
 /**
- * `opt watch` — what is running right now, redrawn in place.
+ * `opt session --watch` (formerly `opt watch`) — what is running right now, redrawn in place.
  *
  * live   wrote in the last 90s
  * open   a claude process is running in that directory, newest transcript there
@@ -968,7 +971,7 @@ async function cmdWatch(rest = []) {
     const c = w.counts
     const out = []
     out.push('')
-    out.push(`  ${C.b}opt watch${C.x}  ${C.d}${new Date().toLocaleTimeString()}${C.x}`
+    out.push(`  ${C.b}opt session --watch${C.x}  ${C.d}${new Date().toLocaleTimeString()}${C.x}`
       + `   ${C.g}live ${c.live ?? 0}${C.x}  ${C.c}open ${c.open ?? 0}${C.x}`
       + `  ${C.y}idle ${c.idle ?? 0}${C.x}  ${C.d}closed ${c.closed ?? 0}${C.x}`
       + (dateArg ? `   ${C.m}created ${describeRange(created)}${C.x}` : '')
@@ -1065,7 +1068,7 @@ async function cmdDemo(sub, rest) {
 
   console.log(`\n  ${C.b}demo${C.x}  task ${C.b}${task}${C.x} · scenario ${C.b}${scenario}${C.x} · model ${model} · budget $${budget}/arm`)
   console.log(`  ${C.d}control vs ${scenario}, two sandboxes, live below. ${C.x}`)
-  console.log(`  ${C.d}another terminal: opt status · opt logs · opt kill all${C.x}`)
+  console.log(`  ${C.d}another terminal: opt experiments status · opt experiments logs · opt experiments kill all${C.x}`)
 
   const args = [path.join(ROOT, 'run-demo.mjs'), '--scenarios', scenario, '--task', task,
                 ...(control ? ['--control', control] : []), ...(dry ? ['--dry'] : [])]
@@ -1089,11 +1092,14 @@ const [cmd, arg] = process.argv.slice(2)
 const usage = `
 ${C.b}opt${C.x} — harness experiment monitor
 
+  ${C.b}opt scan${C.x}               what this machine's Claude Code spend could save: settings, routing and
+                         the rest, priced from the transcripts; free, no text leaves  ${C.d}· --dry · --help${C.x}
+       ${C.d}--days 30   --since 2026-10-01   --admin-report usage.json   --no-open
+       opt scan rollup DIR [DIR …]   one org view from several developers' scans${C.x}
+
   ${C.b}opt analyse${C.x}            load every session and classify it: interactive or not,
                          kind of work, the strategy to try first  ${C.d}(Jev on local Ollama)${C.x}
-  ${C.b}opt optimize${C.x} [strategy]  run one non-interactive task in the local sandbox with that
-                         strategy; the sandbox exits when the task does  ${C.d}· --help${C.x}
-  ${C.b}opt audit${C.x}              every task analyse and optimize ran  ${C.d}· --verify · <task>${C.x}
+  ${C.b}opt audit${C.x}              every task analyse and opt claude -p ran  ${C.d}· --verify · <task>${C.x}
 
   ${C.b}opt claude optimize${C.x} [dir] [--mode shadow|route] …   ${C.d}interactive: Claude Code behind LLM Ultra Light · --help${C.x}
   ${C.b}opt run${C.x} --experiments <a,b,c> [--session <id>] [--task <t>] [--budget N]
@@ -1117,10 +1123,11 @@ ${C.b}opt${C.x} — harness experiment monitor
        ${C.d}--since 7d   --all      window covered, default the last 48h
        --e2b   --local        one kind only
        --window 1m            pin a local session's context window
-       --runner openmodel     run it on an open-weights model in the sandbox
-       --sort cost            order by a column (-cost to reverse)${C.x}
+       --sort cost            order by a column (-cost to reverse)
+       --watch                what is running right now, redrawn in place:
+                              --live · --on 2026-09-01 · --once · --every=2 · --rows=20${C.x}
 
-  ${C.b}opt session export${C.x} <#>  bundle a session so a sandbox can run it (${C.b}--run${C.x} boots one)
+  ${C.b}opt session export${C.x} <#>  bundle a session so a sandbox can run it (${C.b}opt replay${C.x} runs it)
   ${C.b}opt replay${C.x} <#>          run a session again in a sandbox on an open-weights
                          model, and put the two side by side
   ${C.b}opt replay --new${C.x}       the whole experiment: start a local session, export it,
@@ -1131,13 +1138,6 @@ ${C.b}opt${C.x} — harness experiment monitor
                          generation and proposes the next
        ${C.d}-g 3   -n 4   --budget 4${C.x}
 
-  ${C.b}opt watch${C.x}              what is running right now, redrawn in place
-       ${C.d}--live                 only sessions that are live or still open
-       --since 7d             by creation date: 7d, today, yesterday, 90m
-       --on 2026-09-01        one calendar day  (--since a..b for a range)
-       --once                 print once instead of following
-       --every=2  --rows=20${C.x}
-
   ${C.b}opt hub start${C.x}          the Optimization Hub — sessions + analytics in a browser
   ${C.b}opt hub demo${C.x}           the hub on a synthetic AI-native startup (Tallyfox): triage,
                          experiments, optimize mode and audits, all generated
@@ -1145,9 +1145,19 @@ ${C.b}opt${C.x} — harness experiment monitor
   ${C.b}opt claude -p${C.x} "<task>"   Claude Code headless in optimize mode: sandbox, LLM Ultra Light
                          gateway, the project's tuned profile and skills
        ${C.d}--compare              also run plain claude -p, then audit every claim
+       --routing local        small tasks on local Ollama, the rest on the frontier model
+       --strategy <id>  ·  --goal cost|latency|balanced  ·  --temperature conservative|balanced|aggressive
+       --task "…"  ·  --task-file <f>  ·  --session <id>  ·  --eligible
+       opt claude plan · strategies     each temperature's proposal · every lever in the catalog
        opt claude example     the repo's example, both ways, audited
        opt claude runs · audit [run] · profile${C.x}
   ${C.b}opt models${C.x}             every model the gateway can use: Anthropic, local Ollama, Hugging Face
+  ${C.b}opt models bench${C.x} [model]  what this machine's Ollama serves within the first-token budget (free)
+  ${C.b}opt install${C.x}            the local tier: Ollama version, settings, tev1 and the worker, a bench profile
+       ${C.d}--profile full|lean    full (default, ~43 GB): tev1, qwen2.5-coder:1.5b, qwen3:8b, qwen3-coder:30b, gpt-oss:20b
+                              lean (~11 GB): tev1, qwen2.5-coder:1.5b, qwen3:8b
+       --yes                  apply the settings and pull missing models; Ollama itself is yours to install${C.x}
+  ${C.b}opt claude optimize --local-cloud${C.x}  route what capacity admits to local Ollama (shadow by default)
 
   ${C.b}opt monitor on${C.x}         send Claude Code's OpenTelemetry (metrics, events, spans) to
                          the local collector the hub runs; ${C.b}off${C.x} undoes it
@@ -1167,24 +1177,63 @@ ${C.b}opt${C.x} — harness experiment monitor
   ${C.b}opt experiments results${C.x} [runId]
                          the written comparison, plus the levers to copy
        ${C.d}ps · status [ui] · logs <runId> · open <runId> · kill <runId|all>${C.x}
-       ${C.d}the old top-level forms (opt ls, opt status, opt kill \u2026) still work${C.x}
+       ${C.d}deprecated, still run: opt ls · ps · status · ui · logs · open · kill · results · watch · opt opt
+       opt optimize → opt claude -p (--strategy, --goal, --session, --eligible) · opt claude plan · strategies${C.x}
 `
+/** The opt claude form of an opt optimize command line, for its deprecation line. */
+function optimizeEquivalent(a) {
+  if (a[0] === 'strategies') return 'opt claude strategies'
+  if (a[0] === 'plan') return `opt claude plan ${a.slice(1).join(' ')}`.trim()
+  if (a[0] === 'ls') return 'opt claude runs'
+  if (a[0] === 'install-command') return 'opt claude optimize install-command'
+  const out = ['opt claude -p']
+  const pos = a.filter((x, i) => !x.startsWith('-') && !(a[i - 1] ?? '').startsWith('--'))
+  const goals = ['cost', 'latency', 'balanced'], temps = ['conservative', 'aggressive', 'hot', 'cold', 'safe', 'bold']
+  for (const p of pos) out.push(goals.includes(p) && !out.includes('--goal') ? `--goal ${p}` : temps.includes(p) || /^[\d.]+$/.test(p) ? `--temperature ${p}` : `--strategy ${p}`)
+  const rest = a.filter((x, i) => x.startsWith('-') || (a[i - 1] ?? '').startsWith('--')).map((x) => (/\s/.test(x) ? JSON.stringify(x) : x)).join(' ').replace(/--no-baseline\b/, '').replace(/--baseline\b/, '')
+  return [...out, rest, a.includes('--no-baseline') ? '' : '--compare'].filter(Boolean).join(' ')
+}
+
+// Overlapping forms with one home now: they still run, after one line on stderr naming it.
+function deprecated(now) {
+  process.stderr.write(`  ${C.y}deprecated:${C.x} opt ${process.argv.slice(2).join(' ')}  ${C.d}\u2192${C.x} ${C.b}${now}${C.x}\n`)
+}
+const tail = process.argv.slice(3).join(' ')
+const moved = (sub) => deprecated(`opt experiments ${sub}${tail ? ' ' + tail : ''}`)
+
 switch (cmd) {
+  case 'scan': {
+    // The engine is stdlib Python (tools/scan.py); this passes the flags through and opens the report.
+    const args = process.argv.slice(3).filter((a) => a !== '--no-open')
+    const out = process.env.OPT_HOME && !args.includes('--out') && args[0] !== 'rollup' ? ['--out', path.join(STATE_DIR, 'scan')] : []
+    const code = await new Promise((r) => spawn('python3', [path.join(REPO_ROOT, 'tools', 'scan.py'), ...args, ...out], { stdio: 'inherit' })
+      .on('error', (e) => { console.log(`\n  ${C.r}\u2717${C.x} python3 not found: ${e.message}\n`); r(127) }).on('exit', r))
+    process.exitCode = code ?? 1
+    const quiet = ['--dry', '--json', '--help', '-h', '--no-open', '--out'].some((f) => process.argv.includes(f)) || args[0] === 'rollup'
+    if (code === 0 && !quiet && process.stdout.isTTY) {
+      const report = path.join(out.length ? out[1] : path.join(REPO_ROOT, 'data', 'private', 'scan'), new Date().toISOString().slice(0, 10), 'report.html')
+      if (fs.existsSync(report)) try { spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [report], { detached: true, stdio: 'ignore' }).unref() } catch {}
+    }
+    break
+  }
   case 'init': case 'doctor': case 'setup':
     await cmdInit(process.argv.slice(3)); break
   case 'demo': await cmdDemo(arg, process.argv.slice(4)); break
   case 'experiments': case 'experiment': case 'exp': case 'x':
     await cmdExperiments(arg, process.argv.slice(4)); break
-  case 'results': case 'report': await cmdResults(arg); break
+  case 'results': case 'report': moved('results'); await cmdResults(arg); break
   case 'secrets': await cmdSecrets(arg !== '--no-verify'); break
-  case 'open': await cmdOpen(arg); break
+  case 'open': moved('open'); await cmdOpen(arg); break
   case 'session': case 'sessions': case 'se':
+    if (process.argv.includes('--watch')) { await cmdWatch(process.argv.slice(3).filter((a) => a !== '--watch')); break }
     await cmdSession(arg, process.argv.slice(4)); break
   case 'replay': await cmdReplay(arg, process.argv.slice(4)); break
   case 'tune': await cmdTune(arg, process.argv.slice(4)); break
   case 'flow': await cmdFlow(arg, process.argv.slice(4)); break
   case 'hub': await cmdHub(arg); break
-  case 'watch': case 'w': await cmdWatch(process.argv.slice(3)); break
+  case 'watch': case 'w':
+    deprecated(`opt session --watch${tail ? ' ' + tail : ''}`)
+    await cmdWatch(process.argv.slice(3)); break
   case 'artifacts': case 'art': await cmdArtifacts(arg); break
   case 'run': await cmdRun(process.argv.slice(3)); break
   case 'claude': {
@@ -1206,9 +1255,16 @@ switch (cmd) {
     process.exitCode = await cmdAnalyse(process.argv.slice(3)); break
   }
   case 'optimize': case 'opt': {
-    // Non-interactive runs in the local sandbox. The interactive, router-in-the-path mode is `opt claude optimize`.
+    // Merged into opt claude -p (same sandbox, same compare, plus the gateway and the profile); still runs.
+    deprecated(optimizeEquivalent(process.argv.slice(3)))
     const { cmdOptimize } = await import('./core.mjs')
     process.exitCode = await cmdOptimize(process.argv.slice(3), { needSecrets }); break
+  }
+  case 'install': {
+    const { cmdInstall } = await import('./lib/install.mjs')
+    const { OLLAMA_URL } = await import('./lib/models.mjs')
+    const local = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'ult.default.json'), 'utf8')).local
+    process.exitCode = await cmdInstall(process.argv.slice(3), { baseUrl: OLLAMA_URL, worker: local.model, maxInFlight: local.maxInFlight ?? 1, stateDir: STATE_DIR }); break
   }
   case 'models': {
     const { cmdModels } = await import('./lib/models.mjs')
@@ -1222,13 +1278,14 @@ switch (cmd) {
     const { cmdAudit } = await import('./core.mjs')
     process.exitCode = await cmdAudit(process.argv.slice(3)); break
   }
-  case 'ls': await cmdLs({ session: (process.argv.indexOf('--session') >= 0 ? process.argv[process.argv.indexOf('--session') + 1] : null) }); break
-  case 'ps': await cmdLs({ live: true }); break
+  case 'ls': moved('ls'); await cmdLs({ session: (process.argv.indexOf('--session') >= 0 ? process.argv[process.argv.indexOf('--session') + 1] : null) }); break
+  case 'ps': moved('ps'); await cmdLs({ live: true }); break
   case 'status': case 'st':
+    moved('status')
     if (arg === 'ui') await cmdStatusUi(process.argv[4]); else await cmdStatus(arg)
     break
-  case 'ui': await cmdStatusUi(arg); break
-  case 'logs': await cmdLogs(arg); break
-  case 'kill': await cmdKill(arg ?? 'all'); break
+  case 'ui': deprecated(`opt experiments status ui${tail ? ' ' + tail : ''}`); await cmdStatusUi(arg); break
+  case 'logs': moved('logs'); await cmdLogs(arg); break
+  case 'kill': moved('kill'); await cmdKill(arg ?? 'all'); break
   default: console.log(usage)
 }

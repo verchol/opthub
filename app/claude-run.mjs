@@ -27,16 +27,19 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { stateDir } from './lib/state.mjs'
+import { stateDir, STATE } from './lib/state.mjs'
+import { withMachine } from './lib/model-scores.mjs'
+import { warmLocal, localModels } from './lib/ult/capacity.mjs'
 import { loadConfig } from './lib/ult/config.mjs'
 import { projectKey } from './lib/ult/context-store.mjs'
 import { launcherCredential } from './lib/ult/credentials.mjs'
 import { ensureSandbox, reapOrphans, routerRunArgs, DUMMY_KEY, NET_INT } from './optimize-live.mjs'
-import { runSandbox, readResult, diffTrees, outRoot, tilde } from './lib/local-run.mjs'
+import { runSandbox, readResult, diffTrees, outRoot, tilde, localPlan, mergePlans } from './lib/local-run.mjs'
 import { startTask, sha256 } from './lib/task-audit.mjs'
-import { verdictOf } from './core.mjs'
-import { loadProfile, saveProfile, resetProfile, planFor, recordOutcome, skillDirs, LEVELS } from './lib/claude-profile.mjs'
+import { verdictOf, taskFromSession, chooseStrategy, strategyEntries, printProposal, eligibleSessions, cmdPlan, cmdStrategies } from './core.mjs'
+import { loadProfile, saveProfile, resetProfile, planFor, recordOutcome, skillDirs, LEVELS, LEAN_RULES } from './lib/claude-profile.mjs'
 import { auditClaims, armEvidence, printClaims, listClaudeRuns } from './lib/claims.mjs'
+import { buildHtml } from './report.mjs'
 import { SANDBOX_SH } from '../sandbox/docker/index.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
@@ -70,14 +73,24 @@ export const USAGE = `
        --level guarded|balanced|aggressive    this run's rung (default: the project's)
        --model <id>            main model, both sides
        --local-model <tag>     the gateway's local target (opt models)    --no-local
+       --routing local         small tasks on local Ollama, the rest and every failure on the frontier model
+       --strategy <id[+id]>    add a lever from the catalog on top of the profile (opt claude strategies)
+       --goal cost|latency|balanced  --temperature conservative|balanced|aggressive|0-1
+                               or let opt pick the lever for the goal (opt claude plan shows each choice)
+       --task "…"  --task-file <f|->  --session <id>    what to run: text, a file, or a recorded
+                               non-interactive session (its prompt, directory and model; opt analyse first)
+       --eligible [--project <dir>] [--checks <dir>]   every non-interactive session, each compared
        --skill <dir|name>      attach a skill (repeatable): a directory, or one of opt's own (opt-lean);
                                <project>/.opthub/skills is always attached
        --no-warm               skip the one-turn cache warm-up each side gets before a comparison
        --timeout 10m  --budget <usd>  --json  --dry-run
 
+  ${C.b}opt claude strategies${C.x}              every lever in the catalog and what it changes in a run
+  ${C.b}opt claude plan${C.x} [goal] [--session <id>]   each temperature's proposal: risk, best case, worst case
   ${C.b}opt claude example${C.x} [name]          the repo's example, optimized and plain, then the claims audit
   ${C.b}opt claude runs${C.x}                    recent runs, with their verdicts and claim counts
   ${C.b}opt claude audit${C.x} [run]             re-check a run's claims from its files alone
+  ${C.b}opt claude report${C.x} [run]            rebuild a run's report from its files (free): the experiment, spider chart, parameters
   ${C.b}opt claude profile${C.x} [--dir] [--reset]   the project's rung on the ladder and its history
   ${C.b}opt claude optimize${C.x} …              the interactive session behind the gateway
 `
@@ -102,6 +115,18 @@ export function parseArgs(argv) {
       case '--model': f.model = val(); break
       case '--local-model': f.localModel = val(); break
       case '--no-local': f.noLocal = true; break
+      case '--routing': f.routing = val(); break
+      case '--task': f.prompt = val(); break
+      case '--task-file': f.taskFile = val(); break
+      case '--session': f.session = val(); break
+      case '--strategy': f.strategy = val(); break
+      case '--goal': f.goal = val(); break
+      case '--temperature': case '--temp': f.temperature = val(); break
+      case '--eligible': f.eligible = true; break
+      case '--project': f.project = val(); break
+      case '--checks': f.checks = val(); break
+      case '--force': f.force = true; break
+      case '--no-open': f.noOpen = true; break
       case '--skill': f.skills.push(val()); break
       case '--timeout': f.timeout = val(); break
       case '--budget': f.budget = Number(val()); break
@@ -188,6 +213,14 @@ async function startRouter({ name, alias, routerDir, config, hash, cred, key }) 
 }
 
 /** The hidden check, in a second sandbox, against the finished workspace mounted read-only. */
+/** The SCORE line a scored check prints (app/examples/claude-p/README.md), or null for a pass/fail check. */
+export function checkScore(outDir) {
+  try {
+    const line = fs.readFileSync(path.join(outDir, 'check', 'check.log'), 'utf8').split('\n').reverse().find((l) => l.startsWith('SCORE '))
+    return line ? JSON.parse(line.slice(6)) : null
+  } catch { return null }
+}
+
 async function runCheck({ checkFile, work, outDir, name, env }) {
   const cDir = path.join(outDir, 'check')
   fs.mkdirSync(cDir, { recursive: true })
@@ -224,12 +257,218 @@ export function defaultModel() {
 }
 
 // ---------------------------------------------------------------- run
+/**
+ * Everything a run set, plain side against optimized side, one row per parameter: what the report's
+ * side-by-side table and the terminal summary show. A row whose two values differ is what changed.
+ * @returns {{name:string, plain:string, optimized:string}[]}
+ */
+export function parameters({ model, plan, strategy = null, config, skills = [], cred = null, timeoutSec, budget = null, extra = [] }) {
+  const flag = (k) => { const i = plan.flags.indexOf(k); return i >= 0 ? plan.flags[i + 1] : null }
+  const rows = [['model', model ?? 'Claude Code default', flag('--model') ?? model ?? 'Claude Code default'],
+                ['effort', 'Claude Code default', flag('--effort') ?? 'Claude Code default']]
+  for (let i = 0; i < plan.flags.length; i += 2) {
+    if (['--model', '--effort'].includes(plan.flags[i])) continue
+    rows.push([plan.flags[i].replace(/^--/, ''), 'not set', plan.flags[i + 1] || 'on'])
+  }
+  const routes = Object.entries(config?.policy?.routes ?? {}).filter(([, t]) => t !== 'keep').map(([c, t]) => `${c} → ${t.replace(/^(remote|local|scoped):/, '')}`)
+  rows.push(
+    ['gateway', 'none: straight to the API', `LLM Ultra Light, ${config?.mode ?? 'route'} mode`],
+    ['routing', 'none', config?.policy?.pin === 'frontier' ? 'pinned to the frontier model' : routes.join('; ') || 'nothing moved'],
+    ['local tier', 'off', config?.local?.enabled ? `on: ${[...new Set([config.local.model, ...Object.values(config.policy?.routes ?? {}).filter((t) => /^(local|scoped):/.test(t)).map((t) => t.replace(/^(local|scoped):/, ''))])].join(', ')}` : 'off'],
+    ['profile level', 'none', plan.level],
+    ['strategy', 'none', strategy?.id ?? 'none'],
+    ['appended rules', 'none', !plan.rules ? 'none' : plan.rules === LEAN_RULES ? 'lean working rules' : `lean working rules + the strategy's (${plan.rules.length} chars)`],
+    ['skills', 'none', skills.map((d) => path.basename(d)).join(', ') || 'none'],
+    ['tool search', 'Claude Code default', 'on (ENABLE_TOOL_SEARCH)'],
+  )
+  for (const [k, v] of Object.entries(plan.env)) rows.push([`env ${k}`, 'unset', String(v)])
+  rows.push(['budget per run', budget ? `$${budget}` : 'none', budget ? `$${budget}` : 'none'],
+            ['timeout', `${timeoutSec}s`, `${timeoutSec}s`],
+            ['claude args after --', extra.join(' ') || 'none', extra.join(' ') || 'none'],
+            ['credential in the sandbox', cred ? (cred.kind === 'oauth' ? 'subscription token' : 'API key') : 'real', 'placeholder (the gateway holds it)'])
+  return rows.map(([name, plain, optimized]) => ({ name, plain: String(plain), optimized: String(optimized) }))
+}
+
+const sum = (xs) => xs.reduce((a, b) => a + (b ?? 0), 0)
+
+/**
+ * The run told plainly: the question, what was changed on the optimized side, what the router actually
+ * did with those changes, the result, and how sure it is. Configuration says what was allowed; the
+ * router's audit says what happened. Both the report and the terminal start with this.
+ */
+export function experimentStory({ task, params, rows, verdict, checkFile }) {
+  const opt = rows.filter((r) => r.side === 'optimized'), base = rows.filter((r) => r.side === 'baseline')
+  const chg = Object.fromEntries(params.filter((p) => p.plain !== p.optimized).map((p) => [p.name, p]))
+  const changed = []
+  if (chg.model) changed.push(`Main model: ${chg.model.optimized} (plain: ${chg.model.plain}).`)
+  if (chg.effort) changed.push(`Effort: ${chg.effort.optimized} (plain: Claude Code's default).`)
+  if (chg['appended rules']) changed.push(`Extra instructions in the system prompt: ${chg['appended rules'].optimized}.`)
+  if (chg.strategy) changed.push(`Strategy from the catalog: ${chg.strategy.optimized}.`)
+  if (chg.skills) changed.push(`Skills attached: ${chg.skills.optimized}.`)
+  for (const p of Object.values(chg)) if (p.name.startsWith('env ') || !['model', 'effort', 'appended rules', 'strategy', 'skills', 'gateway', 'routing', 'local tier', 'profile level', 'tool search', 'credential in the sandbox', 'budget per run', 'timeout', 'claude args after --'].includes(p.name)) changed.push(`${p.name}: ${p.optimized}.`)
+  if (chg.gateway) changed.push(`Every request went through the opthub router, which was allowed to move some of them: ${chg.routing?.optimized ?? 'nothing'}.`)
+  if (chg['local tier'] && chg['local tier'].optimized !== 'off') changed.push(`A local model was available to the router: ${chg['local tier'].optimized.replace(/^on: /, '')}.`)
+
+  // what the router actually did, from its own audit log
+  const dec = {}
+  for (const r of opt) for (const [k, v] of Object.entries(r.router?.byDecision ?? {})) dec[k] = (dec[k] ?? 0) + v
+  const total = sum(Object.values(dec)), local = dec.local ?? 0, routed = dec.route ?? 0, kept = dec.keep ?? 0, fell = dec.fallback ?? 0
+  const main = opt[0]?.model ?? 'the main model'
+  const used = []
+  if (chg.gateway) {
+    used.push(total ? `The router saw ${total} request${total === 1 ? '' : 's'} across ${opt.length} optimized run${opt.length === 1 ? '' : 's'}: ${kept} stayed on ${main}, ${local} went to the local model, ${routed} went to a cheaper Anthropic model${fell ? `, ${fell} tried elsewhere and fell back to ${main}` : ''}.` : 'The router logged no requests.')
+    if (chg['local tier'] && chg['local tier'].optimized !== 'off' && !local) used.push('The local model was available but never used: no request was a small or background task.')
+    if (/haiku|sonnet/i.test(chg.routing?.optimized ?? '') && !routed) used.push('The cheaper Anthropic model was available but never used: no request qualified.')
+  }
+
+  const med = (rs, k) => { const v = rs.map((r) => r[k]).filter((x) => x != null).sort((a, b) => a - b); return v.length ? v[Math.floor((v.length - 1) / 2)] : null }
+  const pct = (b, o) => (b ? Math.round(((o - b) / b) * 100) : null)
+  const result = []
+  if (base.length) {
+    const cb = med(base, 'cost_usd'), co = med(opt, 'cost_usd'), tb = med(base, 'duration_ms'), to = med(opt, 'duration_ms')
+    const pass = (rs) => `${rs.filter((r) => r.check === 'pass').length} of ${rs.length}`
+    result.push(`Verdict: ${verdict?.verdict ?? 'none'}${verdict?.reason ? `, ${verdict.reason}` : ''}.`)
+    if (checkFile) result.push(`Same job? The hidden check passed on ${pass(base)} plain runs and ${pass(opt)} optimized runs.`)
+    const acc = (rs) => med(rs.map((r) => ({ a: r.score?.accuracy })), 'a')
+    const fmt = (x) => (x == null ? '—' : x.toFixed(2))
+    if ([...base, ...opt].some((r) => r.score)) result.push(`Accuracy (share of the check's items right, median): ${fmt(acc(base))} plain, ${fmt(acc(opt))} optimized.`)
+    if (cb != null && co != null) result.push(`Cost: $${cb.toFixed(4)} plain, $${co.toFixed(4)} optimized (${pct(cb, co) > 0 ? '+' : ''}${pct(cb, co)}%), median per run.`)
+    if (tb && to) result.push(`Time: ${Math.round(tb / 1000)} s plain, ${Math.round(to / 1000)} s optimized.`)
+    if (chg.gateway && !local && !routed) {
+      const others = [chg.effort && 'the effort setting', chg['appended rules'] && 'the extra instructions', chg.strategy && 'the strategy', chg.model && 'the model'].filter(Boolean)
+      const list = others.length > 1 ? `${others.slice(0, -1).join(', ')} and ${others.at(-1)}` : others[0] ?? 'the profile'
+      result.push(`Nothing was routed, so the difference comes from ${list}, not from the router or the local model.`)
+    }
+  } else result.push('No plain side was run (no --compare), so there is nothing to compare against and no verdict.')
+  const n = Math.min(opt.length, base.length || opt.length)
+  return {
+    question: base.length ? 'Does optimize mode do the same job as plain claude -p, for less? Same task, same model, same source tree; the hidden check decides "same job".'
+                          : 'What does this task cost in optimize mode?',
+    task: (task ?? '').split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').slice(0, 200) ?? '',
+    changed, used, result,
+    confidence: `${n} run${n === 1 ? '' : 's'} a side on one task: ${n >= 3 ? 'a direction for tasks like this one' : 'not a finding (fewer than 3 runs a side)'}, not proof for other work.`,
+  }
+}
+
+/** The experiment, in plain words, at the top of the terminal summary. */
+function printStory(st) {
+  err(`\n  ${C.b}The experiment${C.x}`)
+  err(`  ${C.d}question${C.x}   ${st.question}`)
+  if (st.task) err(`  ${C.d}task${C.x}       ${st.task}`)
+  st.changed.forEach((x, i) => err(`  ${C.d}${i ? '          ' : 'changed  '}${C.x}  ${x}`))
+  st.used.forEach((x, i) => err(`  ${C.d}${i ? '          ' : 'used     '}${C.x}  ${x}`))
+  st.result.forEach((x, i) => err(`  ${C.d}${i ? '          ' : 'result   '}${C.x}  ${C.b}${x}${C.x}`))
+  err(`  ${C.d}how sure   ${st.confidence}${C.x}`)
+}
+
+/**
+ * Build report.html from a run's own files: run.json, each arm's evidence and task, the router's
+ * resolved config. Used at the end of every run and by \`opt claude report <run>\`, so a past run's
+ * report can be rebuilt without running anything.
+ */
+export function writeRunReport(runDir) {
+  const rj = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'))
+  const ev = Object.fromEntries(rj.arms.map((a) => [a.label, armEvidence(runDir, a)]))
+  const rows = rj.arms.map((a) => ({ ...a, router: ev[a.label].router, score: a.score ?? checkScore(path.join(runDir, a.label)) }))
+  const optArm = rj.arms.find((a) => a.side === 'optimized')
+  let config = null
+  try { config = JSON.parse(fs.readFileSync(path.join(runDir, optArm.label, 'router', 'ult.config.json'), 'utf8')).config } catch {}
+  const plan = { level: rj.profile.level, flags: rj.profile.flags, env: rj.profile.env,
+                 rules: rj.profile.rules_sha256 === sha256(LEAN_RULES) ? LEAN_RULES : rj.profile.rules_sha256 ? '(custom rules)' : '' }
+  const params = parameters({ model: rj.model ?? optArm?.model, plan, strategy: rj.strategy ? { id: rj.strategy } : null, config,
+    skills: rj.profile.skills ?? [], cred: { kind: rj.auth }, timeoutSec: rj.timeout_s ?? '—', budget: rj.budget ?? null, extra: rj.extra ?? [] })
+  let task = null
+  try { task = fs.readFileSync(path.join(runDir, optArm.label, 'task.md'), 'utf8') } catch {}
+  const checkFile = rj.check?.name ?? null
+  const story = experimentStory({ task, params, rows, verdict: rj.verdict, checkFile })
+  const proj = String(rj.project ?? '').split('/').filter(Boolean)
+  const name = proj.at(-1) === 'project' ? proj.at(-2) : proj.at(-1)
+  const data = reportData({ runId: rj.run, rows, params, verdict: rj.verdict, checkFile, strategy: rj.strategy ? { id: rj.strategy } : null, plan, auth: rj.auth, ev, task: name })
+  const file = path.join(runDir, 'report.html')
+  fs.writeFileSync(file, buildHtml({ id: rj.run, data: { ...data, story } }))
+  return { file, story, params }
+}
+
+/** Print the parameters that differ, plain against optimized. */
+function printParameters(params) {
+  const chg = params.filter((p) => p.plain !== p.optimized)
+  err(`\n  ${C.d}${'parameter'.padEnd(26)}${'plain claude -p'.padEnd(30)}optimize mode${C.x}`)
+  for (const p of chg) err(`  ${p.name.padEnd(26)}${p.plain.slice(0, 28).padEnd(30)}${C.b}${p.optimized.slice(0, 70)}${C.x}`)
+  err(`  ${C.d}${chg.length} of ${params.length} parameters differ; the rest are the same on both sides (report.html lists all)${C.x}`)
+}
+
+/**
+ * The run as report.mjs reads it, so the HTML is the same document every opt run produces: the radar
+ * (spider chart) of six metrics, the raw numbers, and the parameters side by side. One arm per side:
+ * the run with the median cost.
+ */
+export function reportData({ runId, rows, params, verdict, checkFile, strategy, plan, auth, ev, task = null }) {
+  // One arm per side, every metric the median of that side's runs, so the chart and the summary agree.
+  const med = (xs) => { const v = xs.filter((x) => x != null).sort((p, q) => p - q); return v.length ? v[Math.floor((v.length - 1) / 2)] : 0 }
+  const arm = (side, name) => {
+    const all = rows.filter((x) => x.side === side)
+    const ok = all.filter((x) => !x.is_error)
+    const rs = ok.length ? ok : all
+    if (!rs.length) return null
+    const usage = (k) => med(rs.map((r) => ev[r.label]?.events?.result?.usage?.[k]))
+    return { arm: side, label: name, model: rs[0].model, trueCost: med(rs.map((r) => r.cost_usd)), totalWallSec: med(rs.map((r) => r.duration_ms)) / 1000,
+             result: { usage: { input_tokens: usage('input_tokens'), cache_creation_input_tokens: usage('cache_creation_input_tokens'),
+                                cache_read_input_tokens: usage('cache_read_input_tokens'), output_tokens: usage('output_tokens') },
+                       num_turns: med(rs.map((r) => r.turns)), total_cost_usd: med(rs.map((r) => ev[r.label]?.events?.result?.total_cost_usd)),
+                       duration_ms: med(rs.map((r) => r.duration_ms)) },
+             // a scored check grades items (accuracy); a pass/fail check grades runs
+             grade: all.some((x) => x.score) ? { passed: sum(all.map((x) => x.score?.passed ?? 0)), total: sum(all.map((x) => x.score?.total ?? 0)) }
+               : checkFile ? { passed: all.filter((x) => x.check === 'pass').length, total: all.length } : { kind: 'artifacts' },
+             levers: side === 'baseline' ? ['plain claude -p: nothing changed'] : params.filter((p) => p.plain !== p.optimized).map((p) => `${p.name}: ${p.optimized}`),
+             paramTable: params.map((p) => [p.name, side === 'baseline' ? p.plain : p.optimized]),
+             linesOfCode: `${(rs[0].files ?? []).length} files` }
+  }
+  const arms = [arm('baseline', 'plain claude -p'), arm('optimized', 'optimize mode')].filter(Boolean)
+  const n = Math.min(...['baseline', 'optimized'].map((s) => rows.filter((r) => r.side === s).length).filter(Boolean))
+  return {
+    eyebrow: 'opt claude -p · local Docker sandbox · plain vs optimize mode',
+    headline: `The same task, the same model, run plain and in optimize mode${strategy ? ` with ${strategy.id}` : ''} (profile ${plan.level}). ${verdict ? `Verdict: ${verdict.verdict}, ${verdict.reason}` : 'No plain side: run with --compare for a verdict.'}`,
+    lede: '', experiment: strategy?.id ?? `profile ${plan.level}`, task: task ?? runId, auth,
+    chips: [runId, `profile ${plan.level}${strategy ? ` + ${strategy.id}` : ''}`, task ?? null, auth, `n = ${n} a side, medians`].filter(Boolean),
+    caveat: `${n} run${n === 1 ? '' : 's'} a side, compared by median. Agent runs vary between passes, so ${n >= 3 ? 'this is a direction for this task' : 'this is not yet a finding (three runs a side is the minimum)'}, not proof for other work. Costs are list-price equivalents of each run's tokens, not a bill.`,
+    footer: `opt claude -p · ${runId} · every metric the median of its side's runs · costs at list price, the optimized side net of what the gateway saved`,
+    arms,
+  }
+}
+
+/**
+ * A catalog lever (config/optimizations.json, via localPlan) on top of the run's profile: its flags
+ * replace the profile's own, its environment is added, its working rules join the appended rules.
+ */
+export function withLever(plan, lever) {
+  const flags = [...plan.flags]
+  for (const fl of lever.flags) {
+    const i = fl.indexOf(' ')
+    const k = i < 0 ? fl : fl.slice(0, i)
+    let v = i < 0 ? null : fl.slice(i + 1)
+    if (v && /^'[\s\S]*'$/.test(v)) v = v.slice(1, -1).replace(/'\\''/g, "'")
+    const at = flags.indexOf(k)
+    if (at >= 0) flags.splice(at, 2)
+    flags.push(k, v ?? '')
+  }
+  return { ...plan, flags, env: { ...plan.env, ...lever.env },
+           rules: lever.appendPrompt ? `${plan.rules}\n\n${lever.appendPrompt}` : plan.rules }
+}
+
 export async function runP(f) {
+  let session = null
+  if (f.session) {
+    const t = taskFromSession(f.session, { force: f.force })
+    if (t.error) { err(t.error); return { code: 2 } }
+    session = t
+    f = { ...f, prompt: f.prompt ?? t.text, dir: f.dir ?? t.dir ?? undefined, model: f.model ?? t.sessionModel ?? undefined }
+  }
+  if (f.taskFile) f = { ...f, prompt: f.taskFile === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(f.taskFile, 'utf8') }
   const dir = path.resolve((f.dir ?? '.').replace(/^~(?=$|\/)/, os.homedir()))
   if (!fs.existsSync(dir)) { err(`no such directory: ${dir}`); return { code: 2 } }
   let prompt = f.prompt
   if (prompt === '-') prompt = fs.readFileSync(0, 'utf8')
-  if (!prompt?.trim()) { err('nothing to run: opt claude -p "<task>"'); return { code: 2 } }
+  if (!prompt?.trim()) { err('nothing to run: opt claude -p "<task>", --task-file or --session'); return { code: 2 } }
   prompt = prompt.trim()
   const checkFile = f.check ? path.resolve(f.check) : null
   if (checkFile && (!fs.existsSync(checkFile) || !RUNNER[path.extname(checkFile)])) { err(`--check: ${f.check} is missing or not a .py/.sh/.js file`); return { code: 2 } }
@@ -239,9 +478,26 @@ export async function runP(f) {
 
   const key = projectKey(dir)
   const profile = loadProfile(key)
-  const plan = planFor(f.level ?? profile.level)
+  let plan = planFor(f.level ?? profile.level)
+  // a lever from the catalog, named (--strategy) or picked for a goal (--goal / --temperature)
+  let strategy = null
+  if (f.strategy || f.goal || f.temperature) {
+    const entries = strategyEntries()
+    const choice = chooseStrategy({ goal: f.goal, temperature: f.temperature, _: f.strategy ? [f.strategy] : [], model: f.model },
+                                  entries, { session: session?.session ?? null, analysed: session?.analysed ?? null })
+    if (choice.error) { err(choice.error); return { code: 2 } }
+    const parts = choice.strategyId.split('+').map((id) => entries.find((e) => e.id === id))
+    if (parts.some((e) => !e)) { err(`unknown strategy ${choice.strategyId}: opt claude strategies`); return { code: 2 } }
+    const lever = mergePlans(parts.map(localPlan))
+    if (lever.error) { err(`cannot run ${choice.strategyId}: ${lever.error}`); return { code: 2 } }
+    if (lever.settings) { err(`${choice.strategyId} writes .claude/settings.json, which opt claude -p does not apply yet`); return { code: 2 } }
+    plan = withLever(plan, lever)
+    strategy = { id: choice.strategyId, why: choice.strategyWhy, proposal: choice.proposal, notes: lever.notes }
+  }
   const skills = skillDirs(dir, f.skills)
-  const { config, hash } = loadConfig({ projectDir: dir, flags: { mode: 'route', ...(f.localModel ? { localModel: f.localModel } : {}), ...(f.noLocal ? { noLocal: true } : {}) } })
+  const { config, hash } = loadConfig({ projectDir: dir, flags: { mode: 'route', ...(f.localModel ? { localModel: f.localModel } : {}), ...(f.noLocal ? { noLocal: true } : {}), ...(f.routing ? { routing: f.routing } : {}) } })
+  withMachine(config, STATE)
+  if (config.local.enabled && !f.dryRun) for (const model of localModels(config)) warmLocal({ baseUrl: config.local.baseUrl, model, keepAlive: config.local.keepAlive })
   const dm = f.model ? { model: f.model, from: '--model' } : defaultModel()
   f = { ...f, model: dm.model }
   const runId = `cp-${stamp()}-${crypto.randomBytes(2).toString('hex')}`
@@ -254,6 +510,8 @@ export async function runP(f) {
   err(`  project   ${tilde(dir)} ${C.d}(read-only; each run works in its own copy)${C.x}`)
   err(`  model     ${dm.model} ${C.d}both sides · from ${dm.from}${C.x}`)
   err(`  profile   ${C.b}${plan.level}${C.x} ${C.d}${plan.flags.join(' ') || 'no flags'} · lean rules · skills ${skills.map((s) => path.basename(s)).join(', ') || 'none'}${f.level ? ' (--level)' : ''}${C.x}`)
+  if (strategy) { err(`  strategy  ${C.b}${strategy.id}${C.x} ${C.d}(${strategy.why}) · on top of the profile${C.x}`); printProposal(err, strategy.proposal); for (const n of strategy.notes ?? []) err(`  ${C.y}note${C.x}      ${n}`) }
+  if (session) err(`  session   ${session.session.slice(0, 8)} ${C.d}(${session.analysed?.mode?.label ?? 'recorded'}; its first prompt is the task)${C.x}`)
   err(`  gateway   LLM Ultra Light, route mode · local ${config.local.enabled ? config.local.model : 'off'} ${C.d}· config ${hash}${C.x}`)
   err(`  runs      optimized ×${repeats}${f.compare ? ` + plain claude -p ×${repeats}, in parallel` : ''}${checkFile ? ` · hidden check ${path.basename(checkFile)}` : ''}`)
   if (f.dryRun) {
@@ -280,6 +538,7 @@ export async function runP(f) {
     level: plan.level, flags: plan.flags, env: Object.keys(plan.env), rules_sha256: sha256(plan.rules), skills: skills.map((s) => path.basename(s)),
     gateway: { mode: 'route', config: hash, local: config.local.enabled ? config.local.model : null }, compare: !!f.compare, repeats,
     check: checkFile ? path.basename(checkFile) : null, auth: cred.kind,
+    strategy: strategy?.id ?? null, session: session?.session ?? null,
   })
   fs.mkdirSync(runDir, { recursive: true })
   const treeSha = treeDigest(dir)
@@ -325,7 +584,11 @@ export async function runP(f) {
     const diff = fs.existsSync(work) ? diffTrees(dir, work) : { added: [], changed: [] }
     a.exit = code; a.timedOut = code === 124
     a.files = [...diff.added.map((x) => '+' + x), ...diff.changed.map((x) => '~' + x)]
-    if (checkFile && !warm && fs.existsSync(work)) { live.set(a.label, 'checking'); tick(); a.check = await runCheck({ checkFile, work, outDir, name: `${runId}-${a.label}-check`, env: { ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } }) }
+    if (checkFile && !warm && fs.existsSync(work)) {
+      live.set(a.label, 'checking'); tick()
+      a.check = await runCheck({ checkFile, work, outDir, name: `${runId}-${a.label}-check`, env: { ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } })
+      a.score = checkScore(outDir)
+    }
     live.set(a.label, code === 0 ? `done${a.check ? ' · ' + a.check : ''}` : 'failed'); tick()
   }
 
@@ -342,7 +605,7 @@ export async function runP(f) {
   // ---- the numbers, from the evidence each run left
   const ev = Object.fromEntries(arms.map((a) => [a.label, armEvidence(runDir, a)]))
   const rows = arms.map((a) => ({ ...a, cost_usd: ev[a.label].cost, duration_ms: ev[a.label].durationMs, is_error: ev[a.label].isError || a.exit !== 0,
-    turns: ev[a.label].events.result?.num_turns ?? null, model: ev[a.label].events.init?.model ?? null, router: ev[a.label].router, check: a.check ?? null }))
+    turns: ev[a.label].events.result?.num_turns ?? null, model: ev[a.label].events.init?.model ?? null, router: ev[a.label].router, check: a.check ?? null, score: a.score ?? null }))
   const opt = rows.filter((r) => r.side === 'optimized'), base = rows.filter((r) => r.side === 'baseline')
   // a comparison across two models measures the models, not optimize mode
   const models = new Set(rows.filter((r) => !r.is_error).map((r) => r.model))
@@ -350,7 +613,8 @@ export async function runP(f) {
     ? { verdict: 'inconclusive', reason: `the sides ran different models (${[...models].join(' vs ')}), so this compares models, not optimize mode` }
     : verdictOf(base, opt, { hasCheck: !!checkFile, goal: 'cost' })
   let move = null
-  if (f.compare && !f.level) { move = recordOutcome(profile, { level: plan.level, verdict: verdict?.verdict, run: runId, cost: median(opt.map((r) => r.cost_usd)), baseCost: median(base.map((r) => r.cost_usd)), check: opt[0]?.check }); saveProfile(profile) }
+  // a strategy on top is not the rung's own result, so it does not move the rung
+  if (f.compare && !f.level && !strategy) { move = recordOutcome(profile, { level: plan.level, verdict: verdict?.verdict, run: runId, cost: median(opt.map((r) => r.cost_usd)), baseCost: median(base.map((r) => r.cost_usd)), check: opt[0]?.check }); saveProfile(profile) }
 
   const runJson = {
     run: runId, kind: 'claude-p', task_id: task.id, started: new Date(t0).toISOString(), seconds: Math.round((Date.now() - t0) / 1000),
@@ -360,17 +624,23 @@ export async function runP(f) {
     gateway: { config: hash, local: config.local.enabled ? config.local.model : null }, compare: !!f.compare, repeats,
     warmup: warmArms.length ? { prompt_sha256: sha256(WARM_PROMPT), cost_usd: warmup, note: 'one turn per side before the measured runs; not in the comparison' } : null,
     check: checkFile ? { name: path.basename(checkFile), sha256: sha256(fs.readFileSync(checkFile)) } : null,
-    arms: rows.map(({ label, side, exit, timedOut, files, check, cost_usd, duration_ms, turns, model, is_error }) => ({ label, side, exit, timed_out: timedOut, is_error, model, turns, cost_usd, duration_ms, check, files })),
+    arms: rows.map(({ label, side, exit, timedOut, files, check, score, cost_usd, duration_ms, turns, model, is_error }) => ({ label, side, exit, timed_out: timedOut, is_error, model, turns, cost_usd, duration_ms, check, score, files })),
     verdict, profile_move: move,
+    model: f.model ?? null, strategy: strategy?.id ?? null, timeout_s: timeoutSec, budget: f.budget ?? null, extra: f.extra ?? [],
   }
   fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(runJson, null, 2))
+  const { file: reportFile, story, params } = writeRunReport(runDir)
   task.end({ verdict: verdict?.verdict ?? null, cost_usd: +(rows.reduce((s, r) => s + (r.cost_usd ?? 0), 0) + Object.values(warmup).reduce((s, v) => s + (v ?? 0), 0)).toFixed(4), runs: rows.length, failed: rows.filter((r) => r.is_error).length, level_to: move?.to ?? null })
 
   const audit = auditClaims(runDir)
   if (f.json) { console.log(JSON.stringify({ ...runJson, claims: audit.summary }, null, 2)); return { code: opt.every((r) => !r.is_error) ? 0 : 1, runDir } }
 
   // ---- report (stderr), then the answer (stdout), as claude -p prints it
+  printStory(story)
   report({ rows, opt, base, verdict, move, checkFile, runDir })
+  printParameters(params)
+  err(`  report    ${tilde(reportFile)} ${C.d}(spider chart, raw numbers, every parameter side by side)${C.x}`)
+  if (process.stdout.isTTY && !f.noOpen) try { spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [reportFile], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref() } catch {}
   if (warmArms.length) err(`  warm-up   ${C.d}one turn a side to warm the prompt cache: plain ${money(warmup.baseline)} · optimized ${money(warmup.optimized)} (not in the comparison)${C.x}`)
   printClaims(audit.claims, audit.summary)
   err(`\n  ${C.d}${Math.round((Date.now() - t0) / 1000)}s end to end · ${tilde(runDir)} · claims.md · opt claude audit ${runId}${C.x}\n`)
@@ -466,6 +736,23 @@ export function examples() {
   try { return fs.readdirSync(EXAMPLES).filter((d) => fs.existsSync(path.join(EXAMPLES, d, 'task.md'))) } catch { return [] }
 }
 
+/** Every non-interactive session (opt analyse), each run and compared against plain claude -p. */
+async function runEligible(f) {
+  const list = eligibleSessions({ project: f.project })
+  if (!list.length) { err('no eligible sessions: run opt analyse first (and --project to narrow it)'); return 2 }
+  err(`\n  ${C.b}${list.length} non-interactive session${list.length === 1 ? '' : 's'}${C.x}, each against plain claude -p\n`)
+  const out = []
+  for (const x of list) {
+    const check = f.checks ? path.join(f.checks, `${path.basename(x.dir)}.py`) : null
+    const r = await runP({ ...f, eligible: false, session: x.session, prompt: undefined, dir: undefined, compare: true, check: check && fs.existsSync(check) ? check : f.check })
+    out.push({ session: x.session.slice(0, 8), code: r.code, run: r.runId })
+  }
+  err(`\n  ${C.b}eligible sessions${C.x}`)
+  for (const o of out) err(`    ${o.code === 0 ? C.g + '✓' : C.r + '✗'}${C.x} ${o.session} ${C.d}${o.run ?? ''}${C.x}`)
+  err(`  ${C.d}verdicts: opt claude runs${C.x}\n`)
+  return out.every((o) => o.code === 0) ? 0 : 1
+}
+
 async function cmdExample(f, opts) {
   const name = f._[1] ?? examples()[0]
   const ex = path.join(EXAMPLES, name ?? '')
@@ -483,9 +770,22 @@ export async function main(argv, opts = {}) {
   const verb = f._[0]
   if (verb === 'runs') return cmdRuns()
   if (verb === 'audit') return cmdAuditRun(f)
+  if (verb === 'report') {
+    const id = f._[1] ?? runDirs()[0]
+    const dir = id && path.join(outRoot(), runDirs().find((d) => d.startsWith(id)) ?? id)
+    if (!id || !fs.existsSync(path.join(dir, 'run.json'))) { err(`\n  no run ${id ?? ''}: opt claude runs\n`); return 2 }
+    const { file, story } = writeRunReport(dir)
+    printStory(story)
+    err(`\n  report    ${tilde(file)}\n`)
+    if (process.stdout.isTTY && !f.noOpen) try { spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [file], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref() } catch {}
+    return 0
+  }
   if (verb === 'profile') return cmdProfile(f)
   if (verb === 'example' || verb === 'examples') return cmdExample(f, opts)
-  if (f.prompt != null) return (await runP(f, opts)).code
+  if (verb === 'strategies') return cmdStrategies()
+  if (verb === 'plan') return cmdPlan({ ...f, _: f._.slice(1) })
+  if (f.eligible) return runEligible(f)
+  if (f.prompt != null || f.session || f.taskFile) return (await runP(f, opts)).code
   err(USAGE)
   return verb ? 2 : 0
 }

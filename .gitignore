@@ -34,6 +34,7 @@ app/tuning/
 app/analysis/
 app/audit/
 app/sandbox-out/
+app/bench/
 app/otel/
 app/claude-profile/
 app/.authcode

@@ -1,7 +1,7 @@
 ---
 description: Run a task non-interactively in the opthub local sandbox, optimized for a goal, and compare it with the baseline
 argument-hint: "[cost|latency|balanced] [conservative|balanced|aggressive] [task…]"
-allowed-tools: Bash(opt optimize:*)
+allowed-tools: Bash(opt claude -p:*)
 ---
 
 Arguments: `$ARGUMENTS`
@@ -25,7 +25,7 @@ Do this, without asking first:
 2. Run exactly one Bash command, with a 600000 ms timeout, passing the brief on stdin:
 
    ```
-   opt optimize <goal> <temperature> --model <your own model id> --baseline --repeats 3 --dir "$PWD" --task-file - <<'TASK'
+   opt claude -p --goal <goal> --temperature <temperature> --model <your own model id> --compare --repeats 3 --dir "$PWD" --task-file - <<'TASK'
    <the brief>
    TASK
    ```

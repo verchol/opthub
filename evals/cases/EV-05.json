@@ -1,0 +1,65 @@
+{
+ "id": "EV-05",
+ "title": "Read a replay verdict",
+ "use_cases": [
+  "UC-40",
+  "UC-41"
+ ],
+ "setup": [],
+ "files": [
+  {
+   "from": "{REPO}/examples/golden/expected/4-verify.txt"
+  },
+  {
+   "from": "{REPO}/examples/golden/expected/5-compare.txt"
+  },
+  {
+   "from": "{REPO}/examples/golden/expected/summary.json"
+  }
+ ],
+ "task": "These are the verify and compare outputs from replaying three sessions under a cheaper configuration. For each session, should the team adopt the cheaper arm? One line each with the reason, then one line on how much weight these numbers can bear. At most 150 words.",
+ "checks": [
+  {
+   "id": "C1",
+   "kind": "provenance",
+   "critical": true
+  },
+  {
+   "id": "C2",
+   "kind": "max_words",
+   "n": 170
+  },
+  {
+   "id": "C3",
+   "kind": "regex",
+   "pattern": "simulat|synthetic",
+   "critical": true,
+   "note": "says the run is simulated"
+  }
+ ],
+ "rubric": [
+  {
+   "id": "R1",
+   "weight": 3,
+   "critical": true,
+   "text": "Each per-session verdict matches what 5-compare.txt says (cheaper wins only where quality and done are no worse than the baseline arm)."
+  },
+  {
+   "id": "R2",
+   "weight": 2,
+   "text": "Compares the candidate arm with the baseline arm, never with the original session."
+  },
+  {
+   "id": "R3",
+   "weight": 2,
+   "critical": true,
+   "text": "States the outputs are simulated (examples/golden) and none of the figures may be quoted as a measurement."
+  },
+  {
+   "id": "R4",
+   "weight": 1,
+   "text": "Mentions the repeat count behind each verdict."
+  }
+ ],
+ "pass": 0.75
+}

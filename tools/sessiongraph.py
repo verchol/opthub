@@ -379,7 +379,7 @@ def probe(sessions, win, window_usd):
 def main():
     ap = argparse.ArgumentParser(description="One Claude Code session as a graph of tasks.")
     ap.add_argument("session", help="session id (prefix ok) or a .jsonl path")
-    ap.add_argument("--root", default=os.path.expanduser("~/.claude/projects"))
+    ap.add_argument("--root", default=os.environ.get("OPTHUB_PROJECTS") or os.path.expanduser("~/.claude/projects"))
     ap.add_argument("-o", "--out", help="write graph JSON here")
     ap.add_argument("--html", help="write a self-contained page here")
     ap.add_argument("--page", choices=["triage", "session"], default="triage", help="which view --html renders")

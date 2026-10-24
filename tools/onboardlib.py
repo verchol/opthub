@@ -30,7 +30,8 @@ def _agent_type(f):
 
 def load(root=PROJECTS, since=None, until=None, only=None):
     """Sessions with at least one billed request, oldest first. Each request:
-    t, model, u (usage), side ('main' | 'sub'), agent, stop, tools (names called).
+    t, model, u (usage), side ('main' | 'sub'), agent, stop, tools (names called), effort, skill.
+    A session's project_dir is the transcript folder name (a path): local use only, never output.
     Also returns the counting check: (usage records read, distinct requests). only: session ids."""
     S, by_key, raw = {}, {}, 0
     for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
@@ -63,9 +64,9 @@ def load(root=PROJECTS, since=None, until=None, only=None):
                     q = by_key[key] = dict(t=t, model=m["model"], u=u, side=side,
                                            agent=agent or ("sidechain" if side == "sub" else None),
                                            stop=m.get("stop_reason"), tools=[],
-                                           effort=r.get("effort"))
-                    s = S.setdefault(sid, dict(sid=sid, project=proj, entry=r.get("entrypoint") or "",
-                                               reqs=[], subs=[]))
+                                           effort=r.get("effort"), skill=r.get("attributionSkill"))
+                    s = S.setdefault(sid, dict(sid=sid, project=proj, project_dir=os.path.basename(os.path.dirname(f)),
+                                               entry=r.get("entrypoint") or "", reqs=[], subs=[]))
                     (s["reqs"] if side == "main" else s["subs"]).append(q)
                     s["entry"] = s["entry"] or r.get("entrypoint") or ""
                 q["stop"] = q["stop"] or m.get("stop_reason")

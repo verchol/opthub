@@ -151,7 +151,7 @@ function SessionRow({ s, inOpt }: { s: Session; inOpt: boolean }) {
     <>
       <TableRow className={rowCls(h.sel.sessions === s.id, watchTone)} onClick={() => h.select({ sessions: s.id, exp: null })}>
         <TableCell className="font-mono text-[11px]"><StatusDot s={s} />{modelOf(s.model)}</TableCell>
-        <TableCell><Pill tone={s.kind}>{s.kind}</Pill></TableCell>
+        <TableCell><Pill tone={s.kind}>{s.kind}</Pill>{s.where === 'sandbox' && <Pill tone="code" className="ml-1" title={`ran in the sandbox of ${s.run}`}>sandbox</Pill>}</TableCell>
         <TableCell className="w-[29%] min-w-[24ch] text-[12.5px] whitespace-normal break-words">
           {s.intent.slice(0, 120)}{!inOpt && exps.length > 0 && <> <Pill tone="code">{exps.length} exp</Pill></>}
         </TableCell>

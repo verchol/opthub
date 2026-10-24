@@ -1,9 +1,10 @@
 # Local inference capacity: knowing there is room before routing to Ollama
 
-**Status:** proposal, 2026-10-23. Nothing here is built yet. **Applies to:** the `local` route of
+**Status:** proposal 2026-10-23; layers 1–3 built 2026-10-24 (see "As built" at the end). §1 describes the
+router before that. **Applies to:** the `local` route of
 ULT (`opt claude optimize`, [`runtime-optimization.md`](runtime-optimization.md) §4.2, story RO-4).
-**Code today:** `app/lib/ult/server.mjs`, `app/lib/ult/upstream.mjs`, `app/config/ult.default.json`,
-`app/lib/models.mjs`.
+**Code:** `app/lib/ult/capacity.mjs`, `app/lib/ult/server.mjs`, `app/lib/ult/upstream.mjs` (`forwardLocal`),
+`app/lib/bench.mjs`, `app/lib/install.mjs`, `app/config/ult.default.json` (`local.*`).
 
 Routing work to a local open-weights model only saves money if the machine can actually serve it:
 the model has to fit in memory, the full prompt has to fit in its context, and the answer has to
@@ -130,3 +131,26 @@ ran on.
    no-fit) in `app/test/ult.test.mjs`. No network, no spend.
 2. Layer 3: `opt models bench` and the capacity profile; layer 2 switches from defaults to the profile.
 3. Hub: capacity fallbacks and local latency next to the savings.
+
+## As built (2026-10-24)
+
+Steps 1 and 2 are done; step 3 (the hub view) is not.
+
+- **Layer 1.** `fitCheck` reads `/api/tags`, `/api/show` and `/api/ps` once per router start: weights plus
+  KV cache at `min(num_ctx, native context)` against 75% of memory less other loaded models (a guess on
+  non-Apple machines). Ollama unreachable or the model not pulled counts as `no-fit`. The router cannot set
+  `num_ctx` per request on Ollama's Anthropic endpoint, so `local.numCtx` must match the server's
+  `OLLAMA_CONTEXT_LENGTH`; `opt install` sets both to 65,536.
+- **Layer 2.** `LocalGate` refuses with `context`, `busy` or `breaker` (3 failures, 5 minutes off) before a
+  byte is sent; `forwardLocal` buffers the local answer and gives up on `slow` (no first token in
+  `local.firstTokenMs`, 5 s) or `malformed` (a tool call not offered, or input that is not a JSON object).
+  Every case answers on the requested Anthropic model at once and lands in the audit log as `capacity`, in
+  shadow mode too. The launcher warms the model at start (`keep_alive` 30 minutes).
+- **Layer 3.** `opt models bench` writes `$OPT_HOME/bench/<model>.json`; the gate takes `maxPromptTokens`
+  and `maxInFlight` from it. First run on the development Mac (48 GiB, Ollama 0.35.1, `qwen2.5-coder:1.5b`,
+  3 repeats per cell): first token 784 ms at 1K tokens, 3.4 s at 4K, 19.7 s at 17K; prefill 984–1,548
+  tokens/s; two in flight roughly doubles first-token time. Recommendation: prompts up to 4K, one at a time.
+  The median Claude Code request carries about 35K tokens, so on this machine local takes side calls only.
+- **Setup.** `opt install` checks Ollama (≥ 0.14.0, pinned 0.40.10), the four server settings, tev1 and the
+  worker, and the bench profile; `--yes` applies settings with `launchctl` and pulls models. 
+  `opt claude optimize --local-cloud` turns on the tier with tev1 as the classifier when rules are unsure.

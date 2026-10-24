@@ -207,7 +207,7 @@ export function renderExport({ dir, manifest }, ROOT) {
   L.push(`  ${C.d}flags${C.x}        ${manifest.flags}`)
   L.push(`  ${C.d}gradeable${C.x}    ${manifest.gradeable ? `${C.g}yes${C.x} ${C.d}— the task's hidden suite still applies${C.x}` : `${C.d}no — nothing to grade against${C.x}`}`)
   L.push('')
-  L.push(`  ${C.d}opt session export ${manifest.session.ref} --run    boot a sandbox from it${C.x}`)
+  L.push(`  ${C.d}opt replay ${manifest.session.ref} --runner anthropic    run it in a sandbox${C.x}`)
   L.push(`  ${C.d}opt tune ${rel}${' '.repeat(Math.max(1, 24 - rel.length))}search for a better configuration${C.x}`)
   L.push('')
   return L.join('\n')

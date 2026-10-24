@@ -25,7 +25,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
+// OPT_PROJECTS_DIR points it at another transcript store, as for every other reader (lib/sessions-index.mjs)
+export const PROJECTS_ROOT = process.env.OPT_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
 
 // API list rates, $/Mtok in/out — the same table lenops prices with.
 const PRICE = {

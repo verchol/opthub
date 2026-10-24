@@ -1,5 +1,5 @@
 /**
- * `opt status ui` — a live view of a run, served locally and refreshed in place.
+ * `opt experiments status ui` — a live view of a run, served locally and refreshed in place.
  * Shows the shared task, per-arm progress against an ETA learned from past runs,
  * and a metrics comparison that fills in while the agents work.
  */

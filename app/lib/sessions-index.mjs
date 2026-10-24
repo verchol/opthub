@@ -8,6 +8,26 @@ import path from 'node:path'
 
 // OPT_PROJECTS_DIR points every reader at another transcript store, e.g. a demo with only demo sessions
 const PROJ = process.env.OPT_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects')
+import { STATE } from './state.mjs'
+
+/**
+ * Where transcripts are: this machine's store, plus every sandboxed `opt claude optimize` run, whose
+ * Claude Code writes into the run's own home (results/<run>/home/.claude/projects). A demo store
+ * (OPT_PROJECTS_DIR) stands alone.
+ */
+function roots() {
+  const out = [{ dir: PROJ, run: null }]
+  if (process.env.OPT_PROJECTS_DIR) return out
+  const results = path.join(STATE, 'results')
+  let runs = []
+  try { runs = fs.readdirSync(results) } catch {}
+  for (const run of runs) {
+    const dir = path.join(results, run, 'home', '.claude', 'projects')
+    if (fs.existsSync(dir)) out.push({ dir, run })
+  }
+  return out
+}
+const allTranscripts = () => roots().flatMap(({ dir, run }) => walk(dir).map((f) => ({ f, run })))
 // API list prices $/1M tok, per exact model, from the Optimization Atlas (lib/atlas.mjs) — the table
 // that used to live here priced every Opus at $15/$75 and Fable at $3/$15, so Opus 5 sessions
 // showed three times their cost. Cache reads bill 0.1x input, writes 1.25x.
@@ -158,7 +178,7 @@ export function processTranscript(file, { withSeries = false } = {}) {
 /** The transcript file for a session id, or null. */
 export function findTranscript(id) {
   if (!/^[0-9a-fA-F-]{6,}$/.test(id)) return null
-  return walk(PROJ).find((f) => path.basename(f, '.jsonl').startsWith(id)) ?? null
+  return allTranscripts().find(({ f }) => path.basename(f, '.jsonl').startsWith(id))?.f ?? null
 }
 
 /** One session with its per-turn series — too big to carry in the list payload. */
@@ -179,13 +199,14 @@ export function sessionDetail(id) {
 const CACHE = new Map()   // path -> { mtimeMs, record }
 
 export function buildIndex({ limit = 500 } = {}) {
-  const files = walk(PROJ).map((f) => ({ f, t: fs.statSync(f).mtimeMs })).sort((a, b) => b.t - a.t).slice(0, limit)
+  const files = allTranscripts().map(({ f, run }) => ({ f, run, t: fs.statSync(f).mtimeMs })).sort((a, b) => b.t - a.t).slice(0, limit)
   const live = new Set(files.map(({ f }) => f))
   for (const k of CACHE.keys()) if (!live.has(k)) CACHE.delete(k)   // deleted by retention
-  const sessions = files.map(({ f, t }) => {
+  const sessions = files.map(({ f, t, run }) => {
     const hit = CACHE.get(f)
     if (hit && hit.mtimeMs === t) return hit.record
     const record = processTranscript(f)
+    if (record) Object.assign(record, { where: run ? 'sandbox' : 'local', run })
     CACHE.set(f, { mtimeMs: t, record })
     return record
   }).filter(Boolean)
