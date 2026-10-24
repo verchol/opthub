@@ -108,17 +108,19 @@ The hub's API is unchanged; `lib/web-dist.mjs` serves the page for both
 `node_modules`. The pre-React page is still at `/classic` on this branch, for
 side-by-side checks.
 
-## Watching what is running — `opt watch`
+## Watching what is running — `opt session --watch`
 
-    opt watch                # everything, live ones first, redrawn in place
-    opt watch --live         # only what is live or still open
-    opt watch --since 7d     # by creation date: 7d, 48h, 90m, today, yesterday
-    opt watch --on 2026-09-01            # one calendar day
-    opt watch --since 2026-09-01..09-05  # an inclusive range
-    opt watch --once         # print once instead of following
+    opt session --watch                # everything, live ones first, redrawn in place
+    opt session --watch --live         # only what is live or still open
+    opt session --watch --since 7d     # by creation date: 7d, 48h, 90m, today, yesterday
+    opt session --watch --on 2026-09-01            # one calendar day
+    opt session --watch --since 2026-09-01..09-05  # an inclusive range
+    opt session --watch --once         # print once instead of following
+
+`opt watch` still runs; it is deprecated and says so.
 
 ```
-  opt watch  15:50:27   live 2  open 1  idle 0  closed 151
+  opt session --watch  15:50:27   live 2  open 1  idle 0  closed 151
   2 claude process(es): ~/workspace/demos/newyear2026, ~/workspace/demos/opthub
 
   STATUS   SESSION   LAST    COST   TURNS  CONTEXT  INTENT
@@ -308,7 +310,7 @@ Exporting it produces a bundle that can happen again, somewhere clean:
 
 ```bash
 opt session export 3            # write exports/<ref>/
-opt session export 3 --run      # …and boot a sandbox from it
+opt replay 3 --runner anthropic # …and run it in a sandbox (was: export --run, deprecated)
 ```
 
 ```
@@ -647,7 +649,8 @@ opt experiments results      # the written comparison, plus the levers to copy
 opt experiments ps · status [ui] · logs <runId> · open <runId> · kill <runId|all>
 ```
 
-The old top-level forms (`opt ls`, `opt status`, `opt kill` …) still work.
+The old top-level forms (`opt ls`, `opt status`, `opt kill` …) still run, but are deprecated: each prints
+the `opt experiments …` form it moved to.
 
 ### `opt experiments ui`
 
@@ -682,30 +685,30 @@ each with a copy button and a line on what it does.
 **produced artifacts.** What each arm actually left behind, with line counts,
 pulled back from its sandbox.
 
-## Watching a run — the older single-purpose views
+## Watching a run — the single-purpose views
 
 ```bash
-opt ls                 # every run, live or finished
-opt ps                 # only what is live in E2B right now
-opt status [runId]     # evidence + a judgement: progressing or stuck?
+opt experiments ls     # every run, live or finished (--session <id> for one session)
+opt experiments ps     # only what is live in E2B right now
+opt experiments status [runId]   # evidence + a judgement: progressing or stuck?
 opt session            # last 48h, e2b arms + this machine's own sessions
 opt session --since 7d # widen the window (--all for everything)
 opt session --e2b      # one kind only (--local for this machine)
 opt session --sort cost # order by a column (-cost to reverse)
 opt session <#>        # one session's context window, the way /context draws it
 opt session ui         # the same table in a browser, click a row
-opt logs <runId>       # what each arm's agent has written
-opt kill <runId|all>   # stop sandboxes
+opt experiments logs <runId>       # what each arm's agent has written
+opt experiments kill <runId|all>   # stop sandboxes
 ```
 
-`opt status` collects hard evidence — heartbeat age, sandbox liveness, CPU and
+`opt experiments status` collects hard evidence — heartbeat age, sandbox liveness, CPU and
 memory, workspace contents, whether `sheet.py` exists yet, files touched in the
 last three minutes, stderr tails — then asks Claude (sonnet, a fraction of a
 cent) to judge whether the run is progressing or wedged, and what to do.
 
 ### `opt session` — the sessions, not the runs
 
-`opt ls` is organised by run; `opt session` is organised by **session** — one
+`opt experiments ls` is organised by run; `opt session` is organised by **session** — one
 Claude Code process, wherever it ran. Two kinds land in the same table:
 
 | `SRC` | what it is | where it comes from |

@@ -6,7 +6,7 @@
  * package manager, the install directory is read-only (and replaced on upgrade),
  * so the caller sets OPT_HOME and results, tuning and exports go there instead.
  *
- *   OPT_HOME=~/.opthub opt ls
+ *   OPT_HOME=~/.opthub opt experiments ls
  *
  * Only the four directories the harness writes to move. Assets it merely reads
  * — tasks/, flows/, config/, lib/ — stay with the code.

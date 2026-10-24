@@ -44,6 +44,6 @@ class Opthub < Formula
 
   test do
     assert_match "harness experiment monitor", shell_output("#{bin}/opt --help")
-    assert_match "no runs", shell_output("OPT_HOME=#{testpath} #{bin}/opt ls")
+    assert_match "no runs", shell_output("OPT_HOME=#{testpath} #{bin}/opt experiments ls")
   end
 end

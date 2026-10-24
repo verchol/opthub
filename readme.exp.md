@@ -103,7 +103,7 @@ python3 tools/rerun.py report <session-id>              # radar report under dat
 
 ### 5.4 Not in this repo
 
-The hub (`opt hub start`), `opt watch`, the E2B experiment loop and the `opt claude optimize` router live in `app/`, and the sandbox providers in `sandbox/`. Check the README's status section before depending on them.
+The hub (`opt hub start`), `opt session --watch`, the E2B experiment loop and the `opt claude optimize` router live in `app/`, and the sandbox providers in `sandbox/`. Check the README's status section before depending on them.
 
 ## 6. Where to find things
 

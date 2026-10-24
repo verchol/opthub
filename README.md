@@ -87,7 +87,7 @@ A local server over the transcript store. Rail on the left, list in the middle, 
 - **Analytics** — opened from a session, never from the sidebar, so it always says which session it is about. Real per-turn series: context carried, cumulative cost, the priced input mix, output with thinking split out.
 - **ROI** — artifact value per dollar.
 
-**`opt watch`** is the same thing in a terminal, redrawn in place, with a status per session:
+**`opt session --watch`** is the same thing in a terminal, redrawn in place, with a status per session:
 
 | status | evidence |
 |---|---|
@@ -189,7 +189,7 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 - [x] **Measurements** E1 / E1b — one month of real transcripts, two runs, pinned ledgers in `docs/data/`
 - [x] **`SPEC.md` v0.2 → v0.4** — v0.2 rebuilt on measured data (§2 lists what died from v0.1); v0.3 session storage and scale (§5.3–§5.5); v0.4 runtime optimization (§16)
 - [x] **Read-only analysis tools** — `sessions` · `lenops` · `loopscan` · `savings` · `costmodel` · `ctxwatch`, plus the `/lenops` command
-- [x] **The Optimization Hub** (`opt hub start`) and **`opt watch`** — sessions, per-session analytics, catalog, runs, ROI
+- [x] **The Optimization Hub** (`opt hub start`) and **`opt session --watch`** — sessions, per-session analytics, catalog, runs, ROI
 - [x] **The experiment loop** — real session replayed in E2B microVMs, arms named by what they vary, no-op arms flagged, blind grading
 - [x] **Lever catalog** — 13 levers, 8 runnable, 4 gateway-only, each estimate labelled `priced` / `guess` / `detector`
 - [x] **Sandbox templates** — E2B (Claude Code + LiteLLM), open-weights (Ollama), Kong AI Gateway, and the local Docker sandbox with eight verified guarantees
@@ -266,7 +266,7 @@ Fleet/team aggregation · non-Anthropic providers (interface stubbed) · IDE ext
 ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
 ```
 
-One JSONL file per session, one line per record. The directory name is the working directory with `/` → `-`, which is how `opt watch` maps a running `claude` process back to a session. The hub re-walks this tree on every request — nothing is cached, which is why live sessions update.
+One JSONL file per session, one line per record. The directory name is the working directory with `/` → `-`, which is how `opt session --watch` maps a running `claude` process back to a session. The hub re-walks this tree on every request — nothing is cached, which is why live sessions update.
 
 **This store expires.** `cleanupPeriodDays` unset defaults to **30 days**. Set it explicitly if you want history:
 
