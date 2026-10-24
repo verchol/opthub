@@ -8,7 +8,7 @@ import datetime as dt, hashlib, json, os, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import gapscan, onboardlib as ob, probe_cache, ratecard, savings  # noqa: E402
+import cachestatus, gapscan, onboardlib as ob, probe_cache, ratecard, savings  # noqa: E402
 
 PLANTED = "PLANTED-PROMPT-zx81"                     # must never appear in any output
 PLANTED_PATH = "/Users/planted-user/secret/file.py"
@@ -202,6 +202,45 @@ class P3GapScan(unittest.TestCase):
         self.assertGreater(f["delta"]["usd"], 0)
         self.assertEqual(f["status"], "silent")
         self.assertGreater(f["stability"]["sign_flips"], 0)
+
+
+class P1CacheStatus(unittest.TestCase):
+    def test_shares_are_exact(self):
+        d = tempfile.mkdtemp()
+        write_session(d, "s", T0, [req(raw=1000, cr=0, w5=3000), req(raw=500, cr=3000, w1=1500)])
+        S, _ = ob.load(d)
+        sh = cachestatus.shares(cachestatus.tokens(S[0]["reqs"]))
+        self.assertEqual((sh["uncached"], sh["hit"], sh["ttl_1h"]), (1500 / 9000, 3000 / 7500, 1500 / 4500))
+
+    def test_uncached_sessions_emit_cache_enable_at_the_hand_calculated_saving(self):
+        d = tempfile.mkdtemp()
+        for i in range(10):     # 100k, 110k, 120k prompts 30 s apart, nothing cached, Opus 5.5 at $4
+            write_session(d, f"s{i}", T0 + dt.timedelta(hours=i), [req(gap=0, raw=100_000, out=0), req(raw=110_000, out=0), req(raw=120_000, out=0)])
+        S, _ = ob.load(d)
+        f = cachestatus.probe(S, ob.window(S), sum(s["cost"] for s in S))[0]
+        self.assertEqual(f["status"], "emit")
+        # as run 330k x $4/M; cached: 100k x 1.25, then 100k read + 10k write, then 110k read + 10k write
+        per = (330_000 - (125_000 + 5_000 + 12_500 + 5_500 + 12_500)) * 4 / 1e6
+        self.assertAlmostEqual(f["delta"]["usd"], round(10 * per, 4), places=4)
+
+    def test_a_97_percent_hit_rate_emits_nothing(self):
+        d = tempfile.mkdtemp()
+        write_session(d, "s", T0, [req(gap=0, cr=0, w1=3_000)] + [req(cr=97_000, w1=3_000) for _ in range(30)])
+        S, _ = ob.load(d)
+        f = cachestatus.probe(S, ob.window(S), sum(s["cost"] for s in S))[0]
+        self.assertEqual(f["status"], "silent")
+        self.assertIn("nothing to win", f["note"])
+
+    def test_admin_report_ceiling_matches_a_hand_calculation(self):
+        doc = dict(data=[dict(results=[
+            dict(api_key_id="k1", model="claude-opus-5-5", uncached_input_tokens=1_000_000, cache_read_input_tokens=0, output_tokens=0, speed="fast"),
+            dict(api_key_id="k2", model="claude-opus-5-5", uncached_input_tokens=0, cache_read_input_tokens=5_000_000,
+                 cache_creation=dict(ephemeral_5m_input_tokens=100_000), output_tokens=0)])])
+        (f,), side = cachestatus.admin_probe(doc, {})
+        self.assertEqual((f["status"], f["population"]["keys"]), ("emit", 1))   # k2's hits don't hide k1
+        self.assertAlmostEqual(f["delta"]["usd"], 1_000_000 * 4 * (1 - 0.05) / 1e6)
+        self.assertEqual(side["fast mode"], 4.0)
+        self.assertNotIn("batch", side)
 
 
 if __name__ == "__main__":
