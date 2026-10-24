@@ -12,7 +12,8 @@ import { decide, priceOf } from '../lib/ult/policy.mjs'
 import { AuditLog, verifyAudit, readAudit, summarize } from '../lib/ult/audit.mjs'
 import { loadConfig, merge, flagsToOverlay } from '../lib/ult/config.mjs'
 import { createUlt } from '../lib/ult/server.mjs'
-import { sanitizeForLocal, UsageTap, remoteHeaders, adaptForModel, adaptHeaders } from '../lib/ult/upstream.mjs'
+import { sanitizeForLocal, UsageTap, remoteHeaders, adaptForModel, adaptHeaders, forwardLocal } from '../lib/ult/upstream.mjs'
+import { LocalGate, caps as capsOf, fitCheck, estimateTokens } from '../lib/ult/capacity.mjs'
 import { buildJevRequest } from '../lib/ult/jev.mjs'
 import { render as renderStatus } from '../lib/ult/statusline.mjs'
 import { execFile } from 'node:child_process'
@@ -187,11 +188,21 @@ console.log('upstream helpers')
   ok('Jev request drops hashes and ids', !JSON.stringify(jr).includes('abc') && jr.questions.task_class.type === 'choice')
 }
 
+// What a small Ollama model reports: weights 1 GB, 28 layers, 2 KV heads of 128, 32k native context.
+const fakeOllamaApi = (url, r, { pulled = ['qwen-test'] } = {}) => {
+  r.writeHead(200, { 'content-type': 'application/json' })
+  if (url === '/api/tags') return r.end(JSON.stringify({ models: pulled.map((name) => ({ name, model: name, size: 1e9 })) }))
+  if (url === '/api/ps') return r.end(JSON.stringify({ models: [] }))
+  r.end(JSON.stringify({ model_info: { 'general.architecture': 'qwen2', 'qwen2.block_count': 28, 'qwen2.attention.head_count_kv': 2,
+    'qwen2.attention.head_count': 12, 'qwen2.attention.key_length': 128, 'qwen2.embedding_length': 1536, 'qwen2.context_length': 32768 } }))
+}
+
 console.log('integration — fake upstreams')
 {
   const seen = []
   const mkUpstream = (name, behave) => http.createServer((q, r) => {
     let b = ''; q.on('data', d => b += d); q.on('end', () => {
+      if (q.url.startsWith('/api/')) return fakeOllamaApi(q.url, r)     // the fit check, not traffic
       const body = b ? JSON.parse(b) : {}
       seen.push({ name, path: q.url, model: body.model, auth: q.headers['x-api-key'] ?? q.headers.authorization ?? null, cacheCtl: b.includes('cache_control') })
       behave(body, r)
@@ -290,6 +301,120 @@ console.log('integration — fake upstreams')
   ok('--audit-prompts stores the prompt', readAudit(path.join(P.runDir, 'audit.jsonl'))[0].prompt_text === 'add a retry test')
 
   remote.close(); local.close()
+}
+
+console.log('local capacity — fake Ollama: slow, malformed, busy, small context, not pulled, failing')
+{
+  // One fake Ollama whose behaviour each test sets. The remote answers everything else.
+  let mode = 'ok', calls = 0
+  const sse = (events) => events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('')
+  const local = http.createServer((q, r) => {
+    let b = ''; q.on('data', (d) => b += d); q.on('end', () => {
+      if (q.url.startsWith('/api/')) return fakeOllamaApi(q.url, r, { pulled: mode === 'not-pulled' ? ['other'] : ['qwen-test'] })
+      calls++
+      const streamed = JSON.parse(b || '{}').stream
+      const send = () => {
+        if (mode === 'down') { r.writeHead(500, { 'content-type': 'application/json' }); return r.end('{"type":"error","error":{"message":"boom"}}') }
+        if (!streamed) {
+          r.writeHead(200, { 'content-type': 'application/json' })
+          return r.end(JSON.stringify({ type: 'message', model: 'qwen-test', usage: { input_tokens: 40, output_tokens: 3 },
+            content: mode === 'malformed' ? [{ type: 'tool_use', id: 't', name: 'Bash', input: { command: 'ls' } }] : [{ type: 'text', text: 'local' }] }))
+        }
+        r.writeHead(200, { 'content-type': 'text/event-stream' })
+        const tool = mode === 'malformed'
+        r.end(sse([{ type: 'message_start', message: { model: 'qwen-test', usage: { input_tokens: 40 } } },
+          tool ? { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 't', name: 'Bash', input: {} } }
+               : { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+          tool ? { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"command": "ls"' } }
+               : { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'local' } },
+          { type: 'content_block_stop', index: 0 },
+          { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } }]))
+      }
+      mode === 'slow' ? setTimeout(send, 400) : mode === 'hold' ? setTimeout(send, 150) : send()
+    })
+  })
+  const remote = http.createServer((q, r) => { q.resume(); q.on('end', () => { r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify({ type: 'message', model: 'claude-haiku-4-5', content: [{ type: 'text', text: 'remote' }], usage: { input_tokens: 10, output_tokens: 2 } })) }) })
+  await new Promise((r) => local.listen(0, '127.0.0.1', r)); await new Promise((r) => remote.listen(0, '127.0.0.1', r))
+  const at = (s) => `http://127.0.0.1:${s.address().port}`
+  const start = async (over = {}) => {
+    const { config } = loadConfig({ flags: { mode: 'route', port: 1 } })
+    const cfg = merge(config, merge({ remote: { baseUrl: at(remote) }, local: { baseUrl: at(local), model: 'qwen-test', firstTokenMs: 200, breaker: { failures: 2, cooldownMs: 60000 } } }, over))
+    const runDir = path.join(tmp, `cap-${Date.now()}-${Math.random()}`)
+    const u = createUlt({ config: cfg, runDir, env: { CLAUDE_CODE_OAUTH_TOKEN: 't' } })
+    const a = await u.listen(0, '127.0.0.1')
+    return { u, url: `http://127.0.0.1:${a.port}`, runDir }
+  }
+  const sideCall = (U, prompt = 'Summarize this session in 5 words', extra = {}) =>
+    fetch(`${U.url}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ ...req(prompt, { tools: 0, model: 'claude-haiku-4-5', maxTokens: 128 }), ...extra }) })
+  const last = (U) => readAudit(path.join(U.runDir, 'audit.jsonl')).at(-1)
+
+  let U = await start()
+  let r = await sideCall(U); let j = await r.json()
+  ok('a side call that fits runs locally', j.content[0].text === 'local' && last(U).decision === 'local' && last(U).capacity === null, last(U).capacity)
+  mode = 'slow'
+  r = await sideCall(U); j = await r.json()
+  ok('no first token within the budget: answered remotely, reason slow', j.content[0].text === 'remote' && last(U).decision === 'fallback' && last(U).capacity?.reason === 'slow', last(U).capacity)
+  mode = 'malformed'
+  r = await sideCall(U); j = await r.json()
+  ok('a tool call that was not offered never reaches the client', j.content[0].text === 'remote' && last(U).capacity?.reason === 'malformed', last(U).capacity)
+  await U.u.close()
+  U = await start()
+  mode = 'malformed'
+  r = await sideCall(U, 'Summarize this session in 5 words', { stream: true }); const t = await r.text()
+  ok('streamed: an unfinished tool-call JSON is caught before the client sees a byte', t.includes('remote') && !t.includes('input_json_delta') && last(U).capacity?.reason === 'malformed', last(U).capacity)
+  mode = 'slow'
+  await (await sideCall(U)).json()
+  mode = 'ok'; const before = calls
+  r = await sideCall(U); j = await r.json()
+  ok('two failures in a row open the breaker: local not even tried', j.content[0].text === 'remote' && calls === before && last(U).capacity?.reason === 'breaker', last(U).capacity)
+  const st = await (await fetch(`${U.url}/ult/status`)).json()
+  ok('/ult/status counts refusals by reason', st.capacity.refused.slow === 1 && st.capacity.refused.malformed === 1 && st.capacity.refused.breaker === 1, st.capacity)
+  await U.u.close()
+
+  U = await start({ local: { numCtx: 50 } })
+  r = await sideCall(U, 'Summarize this session in 5 words, please, carefully and with all the context you have'); await r.json()
+  ok('a prompt longer than num_ctx goes remote, reason context', last(U).decision === 'keep' && last(U).capacity?.reason === 'context', last(U).capacity)
+  await U.u.close()
+
+  mode = 'hold'
+  U = await start({ local: { maxInFlight: 1 } })
+  const [a1, a2] = await Promise.all([sideCall(U), (async () => { await new Promise((z) => setTimeout(z, 30)); return sideCall(U, 'Summarize this session in 4 words') })()])
+  await a1.json(); await a2.json()
+  const both = readAudit(path.join(U.runDir, 'audit.jsonl'))
+  ok('every slot taken: the next request goes remote at once, reason busy', both.some((e) => e.capacity?.reason === 'busy') && both.some((e) => e.decision === 'local'), both.map((e) => e.capacity?.reason ?? e.decision))
+  await U.u.close()
+
+  mode = 'not-pulled'
+  U = await start()
+  await (await sideCall(U)).json()
+  ok('a model that is not pulled never gets traffic, reason no-fit', last(U).capacity?.reason === 'no-fit' && /not pulled/.test(last(U).capacity.why), last(U).capacity)
+  await U.u.close()
+
+  mode = 'ok'
+  U = await start()
+  const S = await (async () => { const { config } = loadConfig({ flags: { mode: 'shadow', port: 1 } }); return config })()
+  await U.u.close()
+  const sh = createUlt({ config: merge(S, { remote: { baseUrl: at(remote) }, local: { baseUrl: at(local), model: 'qwen-test', numCtx: 50 } }), runDir: path.join(tmp, 'cap-shadow'), env: { CLAUDE_CODE_OAUTH_TOKEN: 't' } })
+  const sa = await sh.listen(0, '127.0.0.1')
+  await (await fetch(`http://127.0.0.1:${sa.port}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req('Summarize this session in 5 words, please, carefully and with all the context you have', { tools: 0, model: 'claude-haiku-4-5', maxTokens: 128 })) })).json()
+  await sh.close()
+  const se = readAudit(path.join(tmp, 'cap-shadow', 'audit.jsonl')).at(-1)
+  ok('shadow mode logs whether local would have been admitted', se.decision === 'keep' && se.proposed.decision === 'local' && se.capacity?.reason === 'context', se.capacity)
+
+  local.close(); remote.close()
+
+  // the arithmetic, without servers
+  const fit = await fitCheck({ baseUrl: 'http://x', model: 'qwen-test', numCtx: 65536, totalMem: 8 * 2 ** 30,
+    fetchImpl: async (u) => ({ ok: true, json: async () => { const out = {}; let body; fakeOllamaApi(new URL(u).pathname, { writeHead() {}, end: (t) => { body = t } }); return JSON.parse(body) } }) })
+  // KV: 2 x 28 layers x 2 heads x 128 dims x 32768 tokens (native cap) x 1 byte (q8_0) = 469,762,048; plus 1e9 weights
+  ok('fit: weights + KV at the native context cap, against 75% of memory', fit.ok && fit.numCtx === 32768 && fit.needBytes === 1e9 + 469762048, fit)
+  const tiny = await fitCheck({ baseUrl: 'http://x', model: 'qwen-test', numCtx: 65536, totalMem: 1.5 * 2 ** 30,
+    fetchImpl: async (u) => ({ ok: true, json: async () => { let body; fakeOllamaApi(new URL(u).pathname, { writeHead() {}, end: (t) => { body = t } }); return JSON.parse(body) } }) })
+  ok('fit: a machine too small says how much is needed', !tiny.ok && /GiB/.test(tiny.why), tiny)
+  const g = new LocalGate({ caps: capsOf({ numCtx: 1000, maxInFlight: 2 }, { date: '2026-10-24', recommended: { maxInFlight: 1, maxPromptTokens: 500 } }) })
+  ok('a bench profile overrides the configured caps', g.c.maxInFlight === 1 && g.c.numCtx === 500 && /bench/.test(g.c.source), g.c)
+  ok('tokens estimated at 4 characters', estimateTokens({ messages: [{ role: 'user', content: 'x'.repeat(400) }] }) > 100)
 }
 
 if (process.env.ULT_TEST_OLLAMA === '1') {

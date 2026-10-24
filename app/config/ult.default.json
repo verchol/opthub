@@ -13,7 +13,13 @@
     "baseUrl": "http://127.0.0.1:11434",
     "dockerBaseUrl": "http://host.docker.internal:11434",
     "model": "qwen2.5-coder:1.5b",
-    "timeoutMs": 120000
+    "timeoutMs": 120000,
+    "numCtx": 65536,
+    "kvCacheType": "q8_0",
+    "maxInFlight": 1,
+    "firstTokenMs": 5000,
+    "breaker": { "failures": 3, "cooldownMs": 300000 },
+    "keepAlive": "30m"
   },
   "classifier": {
     "rules": true,

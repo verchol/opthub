@@ -209,6 +209,86 @@ export async function forward({ url, headers, body, res, timeoutMs = 600000, fet
   return { ok: true, status: up.status, usage, model, ttftMs, latencyMs: Date.now() - t0 }
 }
 
+/**
+ * A local model's answer, held back until it is known to be usable. Nothing reaches the client
+ * until the whole answer is in: no first token within `firstTokenMs` is `slow`, a tool call whose
+ * name was not offered or whose input is not a JSON object is `malformed`, and either way the
+ * caller can still send the request to the remote model. Local answers are short by policy
+ * (background calls, tool-less turns), so buffering costs little.
+ * @returns {Promise<{ok, status, error?, chunks?, headers?, usage, model, ttftMs, latencyMs}>}
+ */
+export async function forwardLocal({ url, headers, body, tools = [], firstTokenMs = 5000, timeoutMs = 120000, fetchImpl = fetch }) {
+  const t0 = Date.now()
+  const ctl = new AbortController()
+  let why = 'slow'
+  let timer = setTimeout(() => ctl.abort(), firstTokenMs)
+  const fail = (error, status = 0, extra = {}) => { clearTimeout(timer); ctl.abort(); return { ok: false, status, error, latencyMs: Date.now() - t0, ...extra } }
+  let up
+  try {
+    up = await fetchImpl(url, { method: 'POST', headers, body, signal: ctl.signal })
+  } catch (e) {
+    return fail(ctl.signal.aborted ? why : `failed: ${e?.cause?.code ?? e?.message}`)
+  }
+  if (!up.ok) return fail(`failed: http-${up.status}`, up.status, { errorBody: await up.text().catch(() => '') })
+  const chunks = []
+  let ttftMs = null
+  try {
+    for await (const chunk of up.body) {
+      if (ttftMs === null) {
+        ttftMs = Date.now() - t0
+        clearTimeout(timer); why = 'timeout'
+        timer = setTimeout(() => ctl.abort(), Math.max(0, timeoutMs - ttftMs))
+      }
+      chunks.push(Buffer.from(chunk))
+    }
+  } catch {
+    return fail(why)
+  }
+  clearTimeout(timer)
+  const text = Buffer.concat(chunks).toString('utf8')
+  const sse = (up.headers.get('content-type') ?? '').includes('text/event-stream')
+  const offered = new Set(tools.map((t) => t?.name).filter(Boolean))
+  const calls = sse ? toolCallsFromSse(text) : toolCallsFromJson(text)
+  const bad = calls.find((c) => !offered.has(c.name) || !c.input || typeof c.input !== 'object' || Array.isArray(c.input))
+  if (bad) return fail('malformed', 200, { detail: !offered.has(bad.name) ? `tool ${bad.name} was not offered` : 'tool input is not a JSON object' })
+  let usage = {}, model = null
+  if (sse) { const tap = new UsageTap(); tap.push(text + '\n\n'); usage = tap.usage; model = tap.model }
+  else { try { const j = JSON.parse(text); usage = j.usage ?? {}; model = j.model ?? null } catch { return fail('malformed', 200, { detail: 'not JSON' }) } }
+  const out = {}
+  up.headers.forEach((v, k) => { if (!['content-length', 'content-encoding', 'transfer-encoding', 'connection'].includes(k)) out[k] = v })
+  return { ok: true, status: up.status, headers: out, chunks, usage, model, ttftMs, latencyMs: Date.now() - t0 }
+}
+
+/** Send a buffered local answer to the client. */
+export function writeBuffered(res, r) {
+  res.writeHead(r.status, r.headers)
+  for (const c of r.chunks) res.write(c)
+  res.end()
+}
+
+function toolCallsFromJson(text) {
+  try { return (JSON.parse(text).content ?? []).filter((b) => b?.type === 'tool_use').map((b) => ({ name: b.name, input: b.input })) } catch { return [] }
+}
+
+function toolCallsFromSse(text) {
+  const open = new Map(), calls = []
+  for (const evt of text.split('\n\n')) {
+    const data = evt.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('')
+    if (!data) continue
+    let d; try { d = JSON.parse(data) } catch { continue }
+    if (d.type === 'content_block_start' && d.content_block?.type === 'tool_use') open.set(d.index, { name: d.content_block.name, json: '', input: d.content_block.input })
+    else if (d.type === 'content_block_delta' && d.delta?.type === 'input_json_delta' && open.has(d.index)) open.get(d.index).json += d.delta.partial_json ?? ''
+    else if (d.type === 'content_block_stop' && open.has(d.index)) {
+      const c = open.get(d.index); open.delete(d.index)
+      let input = null
+      try { input = c.json ? JSON.parse(c.json) : (c.input ?? {}) } catch { input = null }
+      calls.push({ name: c.name, input })
+    }
+  }
+  for (const c of open.values()) calls.push({ name: c.name, input: null })     // never closed
+  return calls
+}
+
 /** Relay an upstream failure to the client unchanged (when no fallback applies). */
 export function relayFailure(res, r) {
   if (res.headersSent) return res.end()

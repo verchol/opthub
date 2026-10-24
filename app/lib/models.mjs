@@ -118,8 +118,31 @@ export async function modelsCatalog({ fresh = false } = {}) {
 
 const gb = (b) => (b == null ? '' : b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.round(b / 1e6) + ' MB')
 
+/** `opt models bench [model]`: measure this machine (lib/bench.mjs), write the profile the router reads. */
+async function cmdBench(argv) {
+  const C = { b: '\x1b[1m', d: '\x1b[2m', g: '\x1b[32m', y: '\x1b[33m', x: '\x1b[0m' }
+  const { bench, saveProfile } = await import('./bench.mjs')
+  const { STATE } = await import('./state.mjs')
+  const local = ultDefaults().local ?? {}
+  const flag = (n) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : undefined }
+  const model = argv.find((a, i) => !a.startsWith('--') && !(argv[i - 1] ?? '').startsWith('--')) ?? local.model
+  const sizes = flag('--sizes')?.split(',').map(Number) ?? undefined
+  const concurrency = Number(flag('--concurrency') ?? local.maxInFlight ?? 1) + 1
+  const repeats = Math.max(3, Number(flag('--repeats') ?? 3))
+  console.log(`\n  ${C.b}opt models bench${C.x} ${model} ${C.d}at ${OLLAMA_URL} · first-token budget ${local.firstTokenMs ?? 5000} ms · ${repeats} repeats · free${C.x}\n`)
+  console.log(`  ${C.d}${'tokens'.padStart(7)} ${'in flight'.padStart(9)}  ${'first token'.padStart(12)}  ${'prefill'.padStart(9)}  ${'decode'.padStart(8)}${C.x}`)
+  const p = await bench({ baseUrl: OLLAMA_URL, model, sizes, concurrency, repeats, numCtx: local.numCtx ?? 65536, budgetMs: local.firstTokenMs ?? 5000,
+    onStep: (r) => console.log(`  ${String(r.promptTokens ?? r.tokens).padStart(7)} ${String(r.concurrency).padStart(9)}  ${`${r.ttftMs} ms`.padStart(12)}  ${`${Math.round(r.prefillTps ?? 0)} t/s`.padStart(9)}  ${`${Math.round(r.decodeTps ?? 0)} t/s`.padStart(8)}`) })
+  const f = saveProfile(STATE, p)
+  const rec = p.recommended
+  console.log(`\n  local takes prompts up to ${C.b}${rec.maxPromptTokens}${C.x} tokens, ${C.b}${rec.maxInFlight}${C.x} at a time${rec.note ? `  ${C.y}${rec.note}${C.x}` : ''}`)
+  console.log(`  ${C.d}${f} · the router reads it at its next start${C.x}\n`)
+  return 0
+}
+
 /** `opt models` */
 export async function cmdModels(argv = []) {
+  if (argv[0] === 'bench') return cmdBench(argv.slice(1))
   const C = { b: '\x1b[1m', d: '\x1b[2m', g: '\x1b[32m', y: '\x1b[33m', x: '\x1b[0m' }
   const cat = await modelsCatalog({ fresh: true })
   if (argv.includes('--json')) { console.log(JSON.stringify(cat, null, 2)); return 0 }

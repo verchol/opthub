@@ -1150,6 +1150,10 @@ ${C.b}opt${C.x} — harness experiment monitor
        opt claude example     the repo's example, both ways, audited
        opt claude runs · audit [run] · profile${C.x}
   ${C.b}opt models${C.x}             every model the gateway can use: Anthropic, local Ollama, Hugging Face
+  ${C.b}opt models bench${C.x} [model]  what this machine's Ollama serves within the first-token budget (free)
+  ${C.b}opt install${C.x}            the local tier: Ollama version, settings, tev1 and the worker, a bench profile
+       ${C.d}--yes                  apply the settings and pull missing models; Ollama itself is yours to install${C.x}
+  ${C.b}opt claude optimize --local-cloud${C.x}  route what capacity admits to local Ollama (shadow by default)
 
   ${C.b}opt monitor on${C.x}         send Claude Code's OpenTelemetry (metrics, events, spans) to
                          the local collector the hub runs; ${C.b}off${C.x} undoes it
@@ -1236,6 +1240,12 @@ switch (cmd) {
     // Non-interactive runs in the local sandbox. The interactive, router-in-the-path mode is `opt claude optimize`.
     const { cmdOptimize } = await import('./core.mjs')
     process.exitCode = await cmdOptimize(process.argv.slice(3), { needSecrets }); break
+  }
+  case 'install': {
+    const { cmdInstall } = await import('./lib/install.mjs')
+    const { OLLAMA_URL } = await import('./lib/models.mjs')
+    const local = JSON.parse(fs.readFileSync(path.join(ROOT, 'config', 'ult.default.json'), 'utf8')).local
+    process.exitCode = await cmdInstall(process.argv.slice(3), { baseUrl: OLLAMA_URL, worker: local.model, maxInFlight: local.maxInFlight ?? 1, stateDir: STATE_DIR }); break
   }
   case 'models': {
     const { cmdModels } = await import('./lib/models.mjs')

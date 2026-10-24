@@ -494,3 +494,23 @@
   session after the fact, which no setting can do; read it as a ceiling, not a policy.
 - P2 is built and not yet run: about $0.09 on Opus 5.5, with approval. Its result decides whether smart-TTL
   savings may be counted.
+
+## 2026-10-24 · Release plan v1: opt scan, and the local tier with its capacity guards
+- **`opt scan`** (`tools/scan.py`, release plan phase 1) runs three layers over the transcripts: settings (the
+  onboarding probes plus dynconfig's fast mode, model switches, unused tools, output hook), routing (each
+  subagent type, skill and main loop re-priced on Haiku 5.5 or Sonnet 5.5 at 1.5× tokens, `priced`), and the
+  Optimization Atlas (16 of 38 scenarios measured here). T1/T2 findings must clear 3× the replays that would
+  verify them. Last 30 days: 74 sessions, $334, one finding emitted — the `/clear` ceiling, $94.71, a person's
+  action. Routing the main loop to Sonnet would be the largest priced line ($40.42 on the 8 longest
+  sessions), but it doesn't clear its replay cost, and re-runs measured it 2.4–3.9× more per task (n=2).
+  One day-1 profile: a 5-minute TTL for one repo, from a stable $8.50 gap-scan win.
+- **Local tier** (release plan phase 3, opt-in, shadow by default): `opt claude optimize --local-cloud`,
+  `opt install`, `opt models bench`, and capacity guards in the router (`docs/local-inference-capacity.md`,
+  "As built"). The router now refuses local before sending a byte when the model doesn't fit, the prompt
+  exceeds `num_ctx`, every slot is busy or the breaker is open; it gives up on no first token in 5 s or a
+  malformed tool call, and answers on the Anthropic model every time, with the reason in the audit log.
+  Before, a busy Ollama could cost up to 120 s per request.
+- **Measured** (`opt models bench`, development Mac, `qwen2.5-coder:1.5b`, n = 3 per cell): first token
+  0.8 s at 1K tokens, 3.4 s at 4K, 19.7 s at 17K; two in flight roughly double it. Within a 5 s budget the
+  local tier takes prompts up to 4K, one at a time. The median Claude Code request is about 35K tokens, so
+  on this machine local serves side calls only, as the plan expected.

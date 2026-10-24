@@ -47,6 +47,20 @@ All read `~/.claude/projects` and price with `tools/ratecard.py`, counting usage
 
 Anything derived from live sessions goes under the gitignored `data/private/`.
 
+## opt scan, the v1 product
+
+```sh
+opt scan                     # free: layers 1-3 over the last 30 days -> data/private/scan/<date>/report.html, opened
+opt scan --dry               # print every field that would leave the machine; write nothing
+opt scan --since 2026-10-01 [--admin-report usage.json] [--no-open]
+opt scan rollup DIR [DIR …]  # one org view from several developers' scan directories
+```
+
+Same as `python3 tools/scan.py …`. Layer 1 is settings (the onboarding probes plus dynconfig's fast mode, model
+switches, unused tools and output hook), layer 2 routing (each subagent type, skill and main loop re-priced on
+Haiku 5.5 or Sonnet 5.5), layer 3 the Optimization Atlas. Per-repo day-1 profiles land in `profiles/` and never
+leave the machine.
+
 ## Onboarding scan (`docs/onboarding-spec.md`)
 
 ```sh
@@ -103,6 +117,9 @@ opt session --watch [--live] [--once]   # what is running now, redrawn in place
 opt analyse                  # classify every session (Jev on local Ollama)
 opt audit [--verify]         # every task analyse and optimize ran
 opt models                   # every model the gateway can use
+opt models bench [model] [--sizes 1000,4000,16000]   # first token, prefill, decode on this machine; writes the profile the router reads
+opt install [--yes]          # the local tier: Ollama version, server settings, tev1 + worker, a bench profile
+                             # --yes: launchctl setenv + ollama pull (downloads); never installs Ollama itself
 opt experiments [ls|ps|status|logs|open|kill|results|ui]   # runs: list, live, health, logs, stop, compare
 opt artifacts [ls]           # render every deliverable to HTML
 opt monitor on|off|status    # send Claude Code's OpenTelemetry to the hub's collector
@@ -115,6 +132,7 @@ opt hub demo                 # the Tallyfox demo hub on :8950 (synthetic data)
 ```sh
 opt optimize [strategy]      # one task in the local sandbox
 opt claude optimize [dir]    # interactive Claude Code behind LLM Ultra Light
+opt claude optimize [dir] --local-cloud   # + the local tier: Ollama for what capacity admits, tev1 when rules are unsure (shadow)
 opt claude -p "<task>"       # headless, optimize mode   (also: opt claude example)
 opt run --experiments a,b    # scenarios, grouped under a session
 opt demo run                 # control vs a scenario   (opt demo scenarios lists them, free)

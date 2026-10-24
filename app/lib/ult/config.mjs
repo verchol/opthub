@@ -53,6 +53,13 @@ export function flagsToOverlay(f = {}) {
   set('local.baseUrl', f.ollamaUrl)
   if (f.ollamaUrl) set('local.dockerBaseUrl', f.ollamaUrl)
   if (f.jev !== undefined) set('classifier.jev.enabled', f.jev)
+  if (f.localCloud) {
+    // Release plan "Local cloud": rules first, tev1 on the same Ollama when rules are unsure, local
+    // answers only for what capacity admits. Mode is untouched, so it starts in shadow.
+    const base = (f.ollamaUrl ?? 'http://127.0.0.1:11434').replace(/\/$/, '')
+    set('local.enabled', true)
+    set('classifier.jev', { enabled: true, endpoint: `${base}/v1/systemone`, model: 'tev1', timeoutMs: 3000 })
+  }
   if (f.pin) set('policy.pin', f.pin)
   if (f.auditPrompts) set('audit.prompts', true)
   if (f.routes?.length) {
