@@ -11,7 +11,8 @@ const ok = (name, cond, got) => { if (cond) { pass++; console.log(`  ✓ ${name}
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-p-test-'))
 process.env.OPT_HOME = path.join(tmp, 'home')
 const { LEVELS, planFor, recordOutcome, skillDirs, loadProfile } = await import('../lib/claude-profile.mjs')
-const { armScript, treeDigest, parseArgs } = await import('../claude-run.mjs')
+const { armScript, treeDigest, parseArgs, withLever } = await import('../claude-run.mjs')
+const { localPlan, mergePlans } = await import('../lib/local-run.mjs')
 const { auditClaims, readEvents } = await import('../lib/claims.mjs')
 const { AuditLog } = await import('../lib/ult/audit.mjs')
 const { startTask } = await import('../lib/task-audit.mjs')
@@ -57,6 +58,20 @@ ok('tree digest changes with the source', treeDigest(tree) !== d1)
 ok('flags parse: -p, --compare, --repeats, claude args after --', (() => { const f = parseArgs(['-p', 'fix it', '--compare', '--repeats', '3', '--', '--verbose']); return f.prompt === 'fix it' && f.compare && f.repeats === 3 && f.extra[0] === '--verbose' })())
 let threw = false; try { parseArgs(['--level', 'reckless']) } catch { threw = true }
 ok('an unknown rung is refused', threw)
+
+// opt optimize, merged in: a catalog lever on top of the profile
+const lever = mergePlans([localPlan({ id: 'x', arm: { model: 'sonnet46', effort: 'low', claude: { thinkingTokens: 8000, fallbackModel: "o'pus" }, appendPrompt: 'Keep diffs small.' } })])
+const lp = withLever(planFor('balanced'), lever)
+const pairs = Object.fromEntries(lp.flags.flatMap((x, i) => (i % 2 ? [] : [[x, lp.flags[i + 1]]])))
+ok('a lever replaces the profile flag it sets, and adds its own', lp.flags.length === 6 && pairs['--effort'] === 'low' && pairs['--model'] === 'sonnet' && pairs['--fallback-model'] === "o'pus", lp.flags)
+ok('a lever adds its environment and its working rules', lp.env.MAX_THINKING_TOKENS === '8000' && lp.rules.endsWith('Keep diffs small.'))
+const lo = armScript({ optimized: true, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
+const lpl = armScript({ optimized: false, plan: lp, model: 'opus', timeoutSec: 60, extra: [] })
+ok('only the optimized arm gets the lever; a quoted value is quoted once', lo.includes("--model 'sonnet'") && lo.includes("--fallback-model 'o'\\''pus'") && !lpl.includes('sonnet') && !lpl.includes('MAX_THINKING'))
+ok('opt optimize flags parse: --strategy, --goal, --temperature, --session, --task-file, --eligible', (() => {
+  const f = parseArgs(['--task', 'fix it', '--strategy', 'effort-low', '--goal', 'cost', '--temperature', 'aggressive', '--session', 'abc', '--task-file', 't.md', '--eligible', '--project', 'p', '--checks', 'c', '--force'])
+  return f.prompt === 'fix it' && f.strategy === 'effort-low' && f.goal === 'cost' && f.temperature === 'aggressive' && f.session === 'abc' && f.taskFile === 't.md' && f.eligible && f.project === 'p' && f.checks === 'c' && f.force
+})())
 
 console.log('\nclaims.mjs')
 const DUMMY = 'sk-ant-test-placeholder'

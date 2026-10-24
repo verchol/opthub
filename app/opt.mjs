@@ -1099,9 +1099,7 @@ ${C.b}opt${C.x} — harness experiment monitor
 
   ${C.b}opt analyse${C.x}            load every session and classify it: interactive or not,
                          kind of work, the strategy to try first  ${C.d}(Jev on local Ollama)${C.x}
-  ${C.b}opt optimize${C.x} [strategy]  run one non-interactive task in the local sandbox with that
-                         strategy; the sandbox exits when the task does  ${C.d}· --help${C.x}
-  ${C.b}opt audit${C.x}              every task analyse and optimize ran  ${C.d}· --verify · <task>${C.x}
+  ${C.b}opt audit${C.x}              every task analyse and opt claude -p ran  ${C.d}· --verify · <task>${C.x}
 
   ${C.b}opt claude optimize${C.x} [dir] [--mode shadow|route] …   ${C.d}interactive: Claude Code behind LLM Ultra Light · --help${C.x}
   ${C.b}opt run${C.x} --experiments <a,b,c> [--session <id>] [--task <t>] [--budget N]
@@ -1175,8 +1173,23 @@ ${C.b}opt${C.x} — harness experiment monitor
   ${C.b}opt experiments results${C.x} [runId]
                          the written comparison, plus the levers to copy
        ${C.d}ps · status [ui] · logs <runId> · open <runId> · kill <runId|all>${C.x}
-       ${C.d}deprecated, still run: opt ls · ps · status · ui · logs · open · kill · results · watch · opt opt${C.x}
+       ${C.d}deprecated, still run: opt ls · ps · status · ui · logs · open · kill · results · watch · opt opt
+       opt optimize → opt claude -p (--strategy, --goal, --session, --eligible) · opt claude plan · strategies${C.x}
 `
+/** The opt claude form of an opt optimize command line, for its deprecation line. */
+function optimizeEquivalent(a) {
+  if (a[0] === 'strategies') return 'opt claude strategies'
+  if (a[0] === 'plan') return `opt claude plan ${a.slice(1).join(' ')}`.trim()
+  if (a[0] === 'ls') return 'opt claude runs'
+  if (a[0] === 'install-command') return 'opt claude optimize install-command'
+  const out = ['opt claude -p']
+  const pos = a.filter((x, i) => !x.startsWith('-') && !(a[i - 1] ?? '').startsWith('--'))
+  const goals = ['cost', 'latency', 'balanced'], temps = ['conservative', 'aggressive', 'hot', 'cold', 'safe', 'bold']
+  for (const p of pos) out.push(goals.includes(p) && !out.includes('--goal') ? `--goal ${p}` : temps.includes(p) || /^[\d.]+$/.test(p) ? `--temperature ${p}` : `--strategy ${p}`)
+  const rest = a.filter((x, i) => x.startsWith('-') || (a[i - 1] ?? '').startsWith('--')).map((x) => (/\s/.test(x) ? JSON.stringify(x) : x)).join(' ').replace(/--no-baseline\b/, '').replace(/--baseline\b/, '')
+  return [...out, rest, a.includes('--no-baseline') ? '' : '--compare'].filter(Boolean).join(' ')
+}
+
 // Overlapping forms with one home now: they still run, after one line on stderr naming it.
 function deprecated(now) {
   process.stderr.write(`  ${C.y}deprecated:${C.x} opt ${process.argv.slice(2).join(' ')}  ${C.d}\u2192${C.x} ${C.b}${now}${C.x}\n`)
@@ -1238,8 +1251,8 @@ switch (cmd) {
     process.exitCode = await cmdAnalyse(process.argv.slice(3)); break
   }
   case 'optimize': case 'opt': {
-    if (cmd === 'opt') deprecated(`opt optimize${tail ? ' ' + tail : ''}`)
-    // Non-interactive runs in the local sandbox. The interactive, router-in-the-path mode is `opt claude optimize`.
+    // Merged into opt claude -p (same sandbox, same compare, plus the gateway and the profile); still runs.
+    deprecated(optimizeEquivalent(process.argv.slice(3)))
     const { cmdOptimize } = await import('./core.mjs')
     process.exitCode = await cmdOptimize(process.argv.slice(3), { needSecrets }); break
   }

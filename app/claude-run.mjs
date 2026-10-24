@@ -34,9 +34,9 @@ import { loadConfig } from './lib/ult/config.mjs'
 import { projectKey } from './lib/ult/context-store.mjs'
 import { launcherCredential } from './lib/ult/credentials.mjs'
 import { ensureSandbox, reapOrphans, routerRunArgs, DUMMY_KEY, NET_INT } from './optimize-live.mjs'
-import { runSandbox, readResult, diffTrees, outRoot, tilde } from './lib/local-run.mjs'
+import { runSandbox, readResult, diffTrees, outRoot, tilde, localPlan, mergePlans } from './lib/local-run.mjs'
 import { startTask, sha256 } from './lib/task-audit.mjs'
-import { verdictOf } from './core.mjs'
+import { verdictOf, taskFromSession, chooseStrategy, strategyEntries, printProposal, eligibleSessions, cmdPlan, cmdStrategies } from './core.mjs'
 import { loadProfile, saveProfile, resetProfile, planFor, recordOutcome, skillDirs, LEVELS } from './lib/claude-profile.mjs'
 import { auditClaims, armEvidence, printClaims, listClaudeRuns } from './lib/claims.mjs'
 import { SANDBOX_SH } from '../sandbox/docker/index.mjs'
@@ -73,11 +73,19 @@ export const USAGE = `
        --model <id>            main model, both sides
        --local-model <tag>     the gateway's local target (opt models)    --no-local
        --routing local         small tasks on local Ollama, the rest and every failure on the frontier model
+       --strategy <id[+id]>    add a lever from the catalog on top of the profile (opt claude strategies)
+       --goal cost|latency|balanced  --temperature conservative|balanced|aggressive|0-1
+                               or let opt pick the lever for the goal (opt claude plan shows each choice)
+       --task "…"  --task-file <f|->  --session <id>    what to run: text, a file, or a recorded
+                               non-interactive session (its prompt, directory and model; opt analyse first)
+       --eligible [--project <dir>] [--checks <dir>]   every non-interactive session, each compared
        --skill <dir|name>      attach a skill (repeatable): a directory, or one of opt's own (opt-lean);
                                <project>/.opthub/skills is always attached
        --no-warm               skip the one-turn cache warm-up each side gets before a comparison
        --timeout 10m  --budget <usd>  --json  --dry-run
 
+  ${C.b}opt claude strategies${C.x}              every lever in the catalog and what it changes in a run
+  ${C.b}opt claude plan${C.x} [goal] [--session <id>]   each temperature's proposal: risk, best case, worst case
   ${C.b}opt claude example${C.x} [name]          the repo's example, optimized and plain, then the claims audit
   ${C.b}opt claude runs${C.x}                    recent runs, with their verdicts and claim counts
   ${C.b}opt claude audit${C.x} [run]             re-check a run's claims from its files alone
@@ -106,6 +114,16 @@ export function parseArgs(argv) {
       case '--local-model': f.localModel = val(); break
       case '--no-local': f.noLocal = true; break
       case '--routing': f.routing = val(); break
+      case '--task': f.prompt = val(); break
+      case '--task-file': f.taskFile = val(); break
+      case '--session': f.session = val(); break
+      case '--strategy': f.strategy = val(); break
+      case '--goal': f.goal = val(); break
+      case '--temperature': case '--temp': f.temperature = val(); break
+      case '--eligible': f.eligible = true; break
+      case '--project': f.project = val(); break
+      case '--checks': f.checks = val(); break
+      case '--force': f.force = true; break
       case '--skill': f.skills.push(val()); break
       case '--timeout': f.timeout = val(); break
       case '--budget': f.budget = Number(val()); break
@@ -228,12 +246,39 @@ export function defaultModel() {
 }
 
 // ---------------------------------------------------------------- run
+/**
+ * A catalog lever (config/optimizations.json, via localPlan) on top of the run's profile: its flags
+ * replace the profile's own, its environment is added, its working rules join the appended rules.
+ */
+export function withLever(plan, lever) {
+  const flags = [...plan.flags]
+  for (const fl of lever.flags) {
+    const i = fl.indexOf(' ')
+    const k = i < 0 ? fl : fl.slice(0, i)
+    let v = i < 0 ? null : fl.slice(i + 1)
+    if (v && /^'[\s\S]*'$/.test(v)) v = v.slice(1, -1).replace(/'\\''/g, "'")
+    const at = flags.indexOf(k)
+    if (at >= 0) flags.splice(at, 2)
+    flags.push(k, v ?? '')
+  }
+  return { ...plan, flags, env: { ...plan.env, ...lever.env },
+           rules: lever.appendPrompt ? `${plan.rules}\n\n${lever.appendPrompt}` : plan.rules }
+}
+
 export async function runP(f) {
+  let session = null
+  if (f.session) {
+    const t = taskFromSession(f.session, { force: f.force })
+    if (t.error) { err(t.error); return { code: 2 } }
+    session = t
+    f = { ...f, prompt: f.prompt ?? t.text, dir: f.dir ?? t.dir ?? undefined, model: f.model ?? t.sessionModel ?? undefined }
+  }
+  if (f.taskFile) f = { ...f, prompt: f.taskFile === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(f.taskFile, 'utf8') }
   const dir = path.resolve((f.dir ?? '.').replace(/^~(?=$|\/)/, os.homedir()))
   if (!fs.existsSync(dir)) { err(`no such directory: ${dir}`); return { code: 2 } }
   let prompt = f.prompt
   if (prompt === '-') prompt = fs.readFileSync(0, 'utf8')
-  if (!prompt?.trim()) { err('nothing to run: opt claude -p "<task>"'); return { code: 2 } }
+  if (!prompt?.trim()) { err('nothing to run: opt claude -p "<task>", --task-file or --session'); return { code: 2 } }
   prompt = prompt.trim()
   const checkFile = f.check ? path.resolve(f.check) : null
   if (checkFile && (!fs.existsSync(checkFile) || !RUNNER[path.extname(checkFile)])) { err(`--check: ${f.check} is missing or not a .py/.sh/.js file`); return { code: 2 } }
@@ -243,7 +288,22 @@ export async function runP(f) {
 
   const key = projectKey(dir)
   const profile = loadProfile(key)
-  const plan = planFor(f.level ?? profile.level)
+  let plan = planFor(f.level ?? profile.level)
+  // a lever from the catalog, named (--strategy) or picked for a goal (--goal / --temperature)
+  let strategy = null
+  if (f.strategy || f.goal || f.temperature) {
+    const entries = strategyEntries()
+    const choice = chooseStrategy({ goal: f.goal, temperature: f.temperature, _: f.strategy ? [f.strategy] : [], model: f.model },
+                                  entries, { session: session?.session ?? null, analysed: session?.analysed ?? null })
+    if (choice.error) { err(choice.error); return { code: 2 } }
+    const parts = choice.strategyId.split('+').map((id) => entries.find((e) => e.id === id))
+    if (parts.some((e) => !e)) { err(`unknown strategy ${choice.strategyId}: opt claude strategies`); return { code: 2 } }
+    const lever = mergePlans(parts.map(localPlan))
+    if (lever.error) { err(`cannot run ${choice.strategyId}: ${lever.error}`); return { code: 2 } }
+    if (lever.settings) { err(`${choice.strategyId} writes .claude/settings.json, which opt claude -p does not apply yet`); return { code: 2 } }
+    plan = withLever(plan, lever)
+    strategy = { id: choice.strategyId, why: choice.strategyWhy, proposal: choice.proposal, notes: lever.notes }
+  }
   const skills = skillDirs(dir, f.skills)
   const { config, hash } = loadConfig({ projectDir: dir, flags: { mode: 'route', ...(f.localModel ? { localModel: f.localModel } : {}), ...(f.noLocal ? { noLocal: true } : {}), ...(f.routing ? { routing: f.routing } : {}) } })
   withMachine(config, STATE)
@@ -260,6 +320,8 @@ export async function runP(f) {
   err(`  project   ${tilde(dir)} ${C.d}(read-only; each run works in its own copy)${C.x}`)
   err(`  model     ${dm.model} ${C.d}both sides · from ${dm.from}${C.x}`)
   err(`  profile   ${C.b}${plan.level}${C.x} ${C.d}${plan.flags.join(' ') || 'no flags'} · lean rules · skills ${skills.map((s) => path.basename(s)).join(', ') || 'none'}${f.level ? ' (--level)' : ''}${C.x}`)
+  if (strategy) { err(`  strategy  ${C.b}${strategy.id}${C.x} ${C.d}(${strategy.why}) · on top of the profile${C.x}`); printProposal(err, strategy.proposal); for (const n of strategy.notes ?? []) err(`  ${C.y}note${C.x}      ${n}`) }
+  if (session) err(`  session   ${session.session.slice(0, 8)} ${C.d}(${session.analysed?.mode?.label ?? 'recorded'}; its first prompt is the task)${C.x}`)
   err(`  gateway   LLM Ultra Light, route mode · local ${config.local.enabled ? config.local.model : 'off'} ${C.d}· config ${hash}${C.x}`)
   err(`  runs      optimized ×${repeats}${f.compare ? ` + plain claude -p ×${repeats}, in parallel` : ''}${checkFile ? ` · hidden check ${path.basename(checkFile)}` : ''}`)
   if (f.dryRun) {
@@ -286,6 +348,7 @@ export async function runP(f) {
     level: plan.level, flags: plan.flags, env: Object.keys(plan.env), rules_sha256: sha256(plan.rules), skills: skills.map((s) => path.basename(s)),
     gateway: { mode: 'route', config: hash, local: config.local.enabled ? config.local.model : null }, compare: !!f.compare, repeats,
     check: checkFile ? path.basename(checkFile) : null, auth: cred.kind,
+    strategy: strategy?.id ?? null, session: session?.session ?? null,
   })
   fs.mkdirSync(runDir, { recursive: true })
   const treeSha = treeDigest(dir)
@@ -356,7 +419,8 @@ export async function runP(f) {
     ? { verdict: 'inconclusive', reason: `the sides ran different models (${[...models].join(' vs ')}), so this compares models, not optimize mode` }
     : verdictOf(base, opt, { hasCheck: !!checkFile, goal: 'cost' })
   let move = null
-  if (f.compare && !f.level) { move = recordOutcome(profile, { level: plan.level, verdict: verdict?.verdict, run: runId, cost: median(opt.map((r) => r.cost_usd)), baseCost: median(base.map((r) => r.cost_usd)), check: opt[0]?.check }); saveProfile(profile) }
+  // a strategy on top is not the rung's own result, so it does not move the rung
+  if (f.compare && !f.level && !strategy) { move = recordOutcome(profile, { level: plan.level, verdict: verdict?.verdict, run: runId, cost: median(opt.map((r) => r.cost_usd)), baseCost: median(base.map((r) => r.cost_usd)), check: opt[0]?.check }); saveProfile(profile) }
 
   const runJson = {
     run: runId, kind: 'claude-p', task_id: task.id, started: new Date(t0).toISOString(), seconds: Math.round((Date.now() - t0) / 1000),
@@ -472,6 +536,23 @@ export function examples() {
   try { return fs.readdirSync(EXAMPLES).filter((d) => fs.existsSync(path.join(EXAMPLES, d, 'task.md'))) } catch { return [] }
 }
 
+/** Every non-interactive session (opt analyse), each run and compared against plain claude -p. */
+async function runEligible(f) {
+  const list = eligibleSessions({ project: f.project })
+  if (!list.length) { err('no eligible sessions: run opt analyse first (and --project to narrow it)'); return 2 }
+  err(`\n  ${C.b}${list.length} non-interactive session${list.length === 1 ? '' : 's'}${C.x}, each against plain claude -p\n`)
+  const out = []
+  for (const x of list) {
+    const check = f.checks ? path.join(f.checks, `${path.basename(x.dir)}.py`) : null
+    const r = await runP({ ...f, eligible: false, session: x.session, prompt: undefined, dir: undefined, compare: true, check: check && fs.existsSync(check) ? check : f.check })
+    out.push({ session: x.session.slice(0, 8), code: r.code, run: r.runId })
+  }
+  err(`\n  ${C.b}eligible sessions${C.x}`)
+  for (const o of out) err(`    ${o.code === 0 ? C.g + '✓' : C.r + '✗'}${C.x} ${o.session} ${C.d}${o.run ?? ''}${C.x}`)
+  err(`  ${C.d}verdicts: opt claude runs${C.x}\n`)
+  return out.every((o) => o.code === 0) ? 0 : 1
+}
+
 async function cmdExample(f, opts) {
   const name = f._[1] ?? examples()[0]
   const ex = path.join(EXAMPLES, name ?? '')
@@ -491,7 +572,10 @@ export async function main(argv, opts = {}) {
   if (verb === 'audit') return cmdAuditRun(f)
   if (verb === 'profile') return cmdProfile(f)
   if (verb === 'example' || verb === 'examples') return cmdExample(f, opts)
-  if (f.prompt != null) return (await runP(f, opts)).code
+  if (verb === 'strategies') return cmdStrategies()
+  if (verb === 'plan') return cmdPlan({ ...f, _: f._.slice(1) })
+  if (f.eligible) return runEligible(f)
+  if (f.prompt != null || f.session || f.taskFile) return (await runP(f, opts)).code
   err(USAGE)
   return verb ? 2 : 0
 }

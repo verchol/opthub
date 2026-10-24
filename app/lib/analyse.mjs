@@ -7,7 +7,7 @@
  *                rules: no model at all
  *
  * Three labels per session:
- *   mode      interactive | non-interactive   — only non-interactive sessions are eligible for `opt optimize`
+ *   mode      interactive | non-interactive   — only non-interactive sessions are eligible for `opt claude -p --session`
  *   work      coding | debugging | review | research | writing | operations
  *   strategy  the catalog lever to try first, picked by rules from the labels and the numbers
  *
@@ -179,7 +179,7 @@ export async function analyse({ source = 'claude-code', classifier = 'jev-local'
       return { ...rules[q], by: 'rules', agree: null }
     }
     const mode = decide('mode'), work = decide('work')
-    // the default proposal: goal cost at balanced temperature (opt optimize plan shows the others)
+    // the default proposal: goal cost at balanced temperature (opt claude plan shows the others)
     const p = propose(s, { goal: 'cost', temperature: 'balanced', work: work.label })
     const strategy = p.pick ? { id: p.pick.id, risk: p.pick.risk, best: p.pick.best.text, why: `goal cost · balanced: ${p.pick.best.text}` } : suggestStrategy(s, mode.label, work.label)
     const rec = {

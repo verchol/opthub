@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "about": "LLM Ultra Light (ULT) — the runtime router behind `opt optimize`. Layered: this file, then $OPT_HOME/ult.json, then <project>/.opthub/ult.json, then --config, then flags. Spec: opthub docs/runtime-optimization.md.",
+  "about": "LLM Ultra Light (ULT) — the runtime router behind `opt claude optimize` and `opt claude -p`. Layered: this file, then $OPT_HOME/ult.json, then <project>/.opthub/ult.json, then --config, then flags. Spec: opthub docs/runtime-optimization.md.",
   "mode": "shadow",
   "listen": { "host": "127.0.0.1", "port": 8787 },
   "remote": {

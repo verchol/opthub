@@ -6,7 +6,7 @@ templates, the scripts that build and start them, and one `index.mjs` the app im
 
 | provider | isolation | used by | needs |
 |---|---|---|---|
-| [`docker/`](docker/README.md) | a container: read-only source, one writable dir, no capabilities, egress only through an allowlisting proxy | `opt optimize`, `opt claude -p`, `opt claude optimize`, `tools/rerun.py` (default) | Docker; `CLAUDE_CODE_OAUTH_TOKEN` |
+| [`docker/`](docker/README.md) | a container: read-only source, one writable dir, no capabilities, egress only through an allowlisting proxy | `opt claude -p`, `opt claude optimize`, `tools/rerun.py` (default) | Docker; `CLAUDE_CODE_OAUTH_TOKEN` |
 | [`e2b/`](e2b/index.mjs) | a microVM per arm, in E2B's cloud | `opt demo run`, `opt replay`, `opt run`, flows, the session optimize loop | the `e2b` package (an optional dependency); `E2B_API_KEY` |
 
 A container shares the host kernel: read Docker as "the agent cannot touch my tree or phone home",

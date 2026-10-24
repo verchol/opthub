@@ -15,7 +15,7 @@ python3 tools/envfile.py check               # which secrets are set (masked) an
 ```
 
 Optional: `npm i -g @mermaid-js/mermaid-cli` (for `mmdc`), Docker Desktop (for `tools/rerun.py run` and
-`opt optimize`), `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` to keep transcripts.
+`opt claude -p`), `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` to keep transcripts.
 
 ## Checks
 
@@ -131,7 +131,6 @@ opt hub demo                 # the Tallyfox demo hub on :8950 (synthetic data)
 **Spends** (starts arms or boots sandboxes):
 
 ```sh
-opt optimize [strategy]      # one task in the local sandbox
 opt claude optimize [dir]    # interactive Claude Code behind LLM Ultra Light
 opt claude optimize [dir] --local-cloud   # + the local tier: Ollama for what capacity admits, tev1 when rules are unsure (shadow)
 opt claude -p "<task>"       # headless, optimize mode   (also: opt claude example)
@@ -140,6 +139,9 @@ opt demo run                 # control vs a scenario   (opt demo scenarios lists
 opt claude optimize [dir] --routing local # small tasks (explain, summarize, PR text; short, a person's turn) on local Ollama,
                                           # scoped and without thinking; everything else and every local failure on the frontier
 opt claude -p "<task>" --routing local    # the same, headless
+opt claude -p "<task>" --compare --strategy effort-low        # a catalog lever on top (opt claude strategies)
+opt claude -p --session <id> --goal cost --temperature balanced --compare   # a recorded session, lever picked for the goal
+opt claude -p --eligible --goal cost --compare                 # every non-interactive session (opt analyse first)
 opt replay <#> [--runner anthropic|openmodel] | --new   # a session again in E2B (default: open weights), side by side
 opt tune <bundle|#>          # configuration search, one arm per candidate
 opt flow run <name>          # controller + worker + judge sandboxes
@@ -154,7 +156,10 @@ The hub's run endpoints spend the same way: `/api/optimize`, `/api/experiment`, 
 | `opt ls`, `ps`, `status [ui]`, `logs`, `open`, `kill`, `results` / `report` | `opt experiments <same>` |
 | `opt ui` | `opt experiments status ui` |
 | `opt watch` / `opt w` | `opt session --watch` |
-| `opt opt` | `opt optimize` |
+| `opt optimize [goal] [temp] --task … ` | `opt claude -p --task … --goal … --temperature … --compare` |
+| `opt optimize <strategy>` · `--session` · `--eligible` | `opt claude -p --strategy <id>` · `--session` · `--eligible` |
+| `opt optimize plan` · `strategies` · `ls` | `opt claude plan` · `strategies` · `runs` |
+| `opt opt` | `opt claude -p` |
 | `opt session export <#> --run [--runner r]` | `opt replay <#> --runner r` (export, run, trace, and compare) |
 
 ## Sandboxes, docs, packaging
