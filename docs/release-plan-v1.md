@@ -35,13 +35,13 @@ all of what a free local or hosted tier could save. The shape is 96.6% cache rea
 0.71% output per input token (E1b, 214 sessions, writes counted at the 1h price). Short-context sessions,
 the work Haiku-class tiers take, carry more writes and output: 90.7% reads, 9.3% writes, 1.68% output.
 
-| Tier | $ per 1M input tokens, this shape | Note |
-| --- | --- | --- |
-| Opus 5.5 | $0.605 | List price, 1h writes |
-| Sonnet 5.5 | $0.3025 | Main loop on Sonnet measured 2.4–3.9× more per task (n=2, [`dynamic-config-analysis.md`](dynamic-config-analysis.md)) |
-| Haiku 5.5, prompt ≤ 100K | $0.0200 | Settable per subagent today |
-| Haiku 5.5, prompt > 100K | $0.0998 | The whole request reprices |
-| Local Ollama | $0 marginal | One replay: 7.1× cheaper, 18 points worse (n=1, [`evidence-catalog.md`](evidence-catalog.md)) |
+| Tier | $ per 1M input tokens, this shape | Saving vs Opus 5.5 | Note |
+| --- | --- | --- | --- |
+| Opus 5.5 | $0.605 | baseline | List price, 1h writes |
+| Sonnet 5.5 | $0.3025 | 50.0% | Main loop on Sonnet measured 2.4–3.9× more per task (n=2, [`dynamic-config-analysis.md`](dynamic-config-analysis.md)) |
+| Haiku 5.5, prompt ≤ 100K | $0.0200 | 96.7% | Settable per subagent today |
+| Haiku 5.5, prompt > 100K | $0.0998 | 83.5% | The whole request reprices |
+| Local Ollama | $0 marginal | 100% marginal | One replay: 7.1× cheaper, 18 points worse (n=1, [`evidence-catalog.md`](evidence-catalog.md)) |
 
 Routing 25% of a $250 per developer-month Opus 5.5 org saves $31.25 on Sonnet 5.5, $60.71 on Haiku 5.5,
 and $62.50 on a free tier. The free tier adds $1.79 over Haiku 5.5; across $150–388 per developer and

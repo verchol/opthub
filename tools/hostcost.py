@@ -174,8 +174,8 @@ def main():
     rows.append(("haiku-5.5 main thread (blend)", f"${per['haiku-5.5 main thread']:.4f}", "M", f"{over:.1%} of input $ priced at the >100K tier"))
     rows.append(("local Ollama (marginal)", "$0.0000", "G", "hardware already owned; latency and quality not priced"))
     rows.sort(key=lambda r: float(r[1][1:]))
-    rows = [r + (f"{float(r[1][1:]) / per[a.current]:.2f}x",) for r in rows]
-    table(rows, ("tier", "$/1M input", "label", "basis", f"vs {a.current}"))
+    rows = [r + (f"{float(r[1][1:]) / per[a.current]:.2f}x", f"{round(1 - float(r[1][1:]) / per[a.current], 3) + 0.0:.1%}") for r in rows]
+    table(rows, ("tier", "$/1M input", "label", "basis", f"vs {a.current}", f"saving vs {a.current}"))
     out["usd_per_m_input"] = per
 
     # dynconfig priced every cache read at 0.1x input; Opus and Sonnet 5.5 read at 0.05x. Undo that on the

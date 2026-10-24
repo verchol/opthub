@@ -70,25 +70,25 @@ The price of a cached token decides the bill, so a hosted tier has to beat Haiku
 Haiku-class work and Sonnet 5.5's $0.10 for Sonnet-class work. Same E1b traffic, $ per 1M input tokens with
 output included (`priced`):
 
-| Tier | $ per 1M input | vs Opus 5.5 |
+| Tier | $ per 1M input | Saving vs Opus 5.5 |
 | --- | --- | --- |
-| Haiku 5.5, prompt ≤ 100K | $0.0200 | 0.03× |
-| gpt-oss-120b · Fireworks | $0.0238 | 0.04× |
-| DeepSeek V4.1 Flash · Fireworks | $0.0244 | 0.04× |
-| GLM 5.3 Flash · Fireworks | $0.0376 | 0.06× |
-| MiniMax M3 · Fireworks | $0.0766 | 0.13× |
-| Haiku 5.5 on a main thread (75.5% of input $ past 100K) | $0.0802 | 0.13× |
-| Haiku 5.5, prompt > 100K | $0.0998 | 0.16× |
-| Qwen3-Coder-480B · DeepInfra | $0.1139 | 0.19× |
-| Sonnet 5.5 | $0.3025 | 0.50× |
-| MiniMax M2.5 · Bedrock (no cache price, billed uncached) | $0.3085 | 0.51× |
-| GLM 5.3 · Fireworks | $0.3297 | 0.54× |
-| Qwen3 Coder Next · Bedrock (no cache price, billed uncached) | $0.5085 | 0.84× |
-| Kimi K3 · Bedrock | $0.5229 | 0.86× |
-| Opus 5.5 | $0.6050 | 1.00× |
+| Haiku 5.5, prompt ≤ 100K | $0.0200 | 96.7% |
+| gpt-oss-120b · Fireworks | $0.0238 | 96.1% |
+| DeepSeek V4.1 Flash · Fireworks | $0.0244 | 96.0% |
+| GLM 5.3 Flash · Fireworks | $0.0376 | 93.8% |
+| MiniMax M3 · Fireworks | $0.0766 | 87.3% |
+| Haiku 5.5 on a main thread (75.5% of input $ past 100K) | $0.0802 | 86.7% |
+| Haiku 5.5, prompt > 100K | $0.0998 | 83.5% |
+| Qwen3-Coder-480B · DeepInfra | $0.1139 | 81.2% |
+| Sonnet 5.5 | $0.3025 | 50.0% |
+| MiniMax M2.5 · Bedrock (no cache price, billed uncached) | $0.3085 | 49.0% |
+| GLM 5.3 · Fireworks | $0.3297 | 45.5% |
+| Qwen3 Coder Next · Bedrock (no cache price, billed uncached) | $0.5085 | 15.9% |
+| Kimi K3 · Bedrock | $0.5229 | 13.6% |
+| Opus 5.5 | $0.6050 | baseline |
 
-Open models billed without a cache price cost as much as Sonnet 5.5 or more on this traffic, up to 84% of
-Opus 5.5. Haiku's price applies only to prompts up to 100K tokens; subagents and side calls start fresh and stay at $0.020.
+Open models billed without a cache price cost as much as Sonnet 5.5 or more on this traffic, saving only
+15.9–49.0% against Opus 5.5. Haiku's price applies only to prompts up to 100K tokens; subagents and side calls start fresh and stay at $0.020.
 
 | Dedicated endpoint, per customer | Hours | $/month with ops, one replica | Displaces | Break-even developers, 25% / 50% routed |
 | --- | --- | --- | --- | --- |
