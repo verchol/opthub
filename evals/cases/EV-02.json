@@ -1,0 +1,67 @@
+{
+ "id": "EV-02",
+ "title": "What should I change first? (scan)",
+ "use_cases": [
+  "UC-22"
+ ],
+ "setup": [
+  {
+   "name": "scan",
+   "cmd": [
+    "python3",
+    "tools/scan.py",
+    "--since",
+    "{SINCE}"
+   ]
+  }
+ ],
+ "files": [
+  {
+   "from": "{FX}/scan/*/findings.jsonl"
+  },
+  {
+   "from": "{FX}/scan/*/inventory.json"
+  },
+  {
+   "from": "{FX}/scan/*/report.html"
+  }
+ ],
+ "task": "A developer ran `opt scan` and asks you: \"What should I change first, and what is it worth per month?\" Answer them from the scan output in at most 150 words.",
+ "checks": [
+  {
+   "id": "C1",
+   "kind": "provenance",
+   "critical": true,
+   "note": "Rules for numbers: no figure a tool did not produce"
+  },
+  {
+   "id": "C2",
+   "kind": "max_words",
+   "n": 170
+  }
+ ],
+ "rubric": [
+  {
+   "id": "R1",
+   "weight": 3,
+   "critical": true,
+   "text": "Says the scan withheld its recommendations because there is too little data (it needs 20 sessions over 7 days; it had 4 sessions) and does not invent a recommendation the scan did not make."
+  },
+  {
+   "id": "R2",
+   "weight": 2,
+   "text": "Gives the developer the concrete next step the scan implies (keep collecting until the thresholds are met, then re-run), and if it mentions tools/probe_cache.py, says that it spends money."
+  },
+  {
+   "id": "R3",
+   "weight": 1,
+   "text": "Any figure it quotes is labelled (priced / guess / detector / measured) or clearly framed as observed spend, never as a saving."
+  },
+  {
+   "id": "R4",
+   "weight": 1,
+   "text": "Plain language a developer can act on; no internal jargon left unexplained."
+  }
+ ],
+ "pass": 0.75
+}

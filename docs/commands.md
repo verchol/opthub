@@ -26,6 +26,9 @@ python3 examples/golden/demo.py --check      # golden test of the whole pipeline
 python3 examples/golden/demo.py --update     # after a deliberate change; regenerates examples/golden/how-it-works.html
 python3 tools/ratecard.py check              # the rate card vs Claude Code's own per-model costs
 python3 -m unittest tools/test_onboard.py    # the onboarding probes: known answers, silent cases, no text in any output
+python3 -m unittest evals/test_usecases.py   # every use case in docs/use-cases.md on a synthetic workspace, inside an egress trap
+python3 evals/run.py list|prepare|check|record|report   # the Claude-run evals (evals/README.md)
+python3 evals/claude_p.py preflight|check|blind|record|report   # opt claude -p --compare evals (free); `run all --yes` spends
 ```
 
 ## Analysis tools (free, read-only)
@@ -45,7 +48,9 @@ All read `~/.claude/projects` and price with `tools/ratecard.py`, counting usage
 | `python3 tools/costmodel.py` | the supportbot cost model; run before editing any number in `docs/optimizers.md` |
 | `python3 tools/ratecard.py` | the rate card in force, with its version |
 
-Anything derived from live sessions goes under the gitignored `data/private/`.
+Anything derived from live sessions goes under the gitignored `data/private/`. To point a tool elsewhere:
+`OPTHUB_PROJECTS` (transcripts), `OPTHUB_RERUNS`, `OPTHUB_SCAN`, `OPTHUB_DYNCONFIG`, `OPTHUB_ONBOARD` (outputs);
+`OPT_PROJECTS_DIR` and `OPT_HOME` for the app.
 
 ## opt scan, the v1 product
 

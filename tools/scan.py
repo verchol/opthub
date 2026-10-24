@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 import dynconfig, gapscan, onboard, onboardlib as ob, ratecard, savings, sessiongraph  # noqa: E402
 
 REPO = os.path.dirname(HERE)
-OUT = os.path.join(REPO, "data", "private", "scan")
+OUT = os.environ.get("OPTHUB_SCAN") or os.path.join(REPO, "data", "private", "scan")
 ATLAS = os.path.join(REPO, "docs", "atlas", "scenarios.json")
 HAIKU, SONNET = "claude-haiku-5-5", "claude-sonnet-5-5"
 PENALTY = sessiongraph.TOKEN_PENALTY          # a smaller model spends more tokens on the same work (guess)

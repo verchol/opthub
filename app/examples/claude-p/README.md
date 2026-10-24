@@ -9,6 +9,10 @@ Each example is the same input run two ways, then audited:
 
 Both sides run in the local Docker sandbox, from the same read-only tree, on the same model and the same kind of credential. Each side gets a one-turn cache warm-up first. A hidden check, kept outside the agent's view, grades every result. Then `lib/claims.mjs` checks every claim the comparison makes against the evidence the run left on disk: never against the summary it printed.
 
+Examples: `fix-invoice` (two bugs to fix), `add-slugify` (a function to build from its docstring),
+`speed-dedupe` (make a quadratic function linear without changing its output). `evals/claude_p.py` runs
+all three as evals.
+
 An example is a directory with:
 
 | file | what it is |
@@ -16,4 +20,5 @@ An example is a directory with:
 | `project/` | the source tree the agent works on (mounted read-only; each run edits its own copy) |
 | `task.md` | the input, identical for both sides |
 | `check.py` | the hidden check: exit 0 means the result is right |
+| `solution/` | a reference fix laid over `project/`; `evals/claude_p.py preflight` proves the check fails without it and passes with it |
 | `audited-run/` | the last run we pinned: `run.json`, `claims.json`, `claims.md` |

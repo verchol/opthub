@@ -227,7 +227,7 @@ def main():
     ap.add_argument("--days", type=int, default=32)
     ap.add_argument("--since", help="pin the window start, YYYY-MM-DD (overrides --days)")
     ap.add_argument("--top", type=int, default=15)
-    ap.add_argument("--root", default=os.path.expanduser("~/.claude/projects"))
+    ap.add_argument("--root", default=os.environ.get("OPTHUB_PROJECTS") or os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--csv")
     ap.add_argument("--classes", action="store_true", help="lever B per session class (P4 effort-sizing)")
     a = ap.parse_args()

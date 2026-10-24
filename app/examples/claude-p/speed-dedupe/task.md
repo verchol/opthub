@@ -1,0 +1,1 @@
+ledger.merge.dedupe is far too slow on a full bank feed: tests/test_merge.py's large-feed test fails. Make it fast without changing what it returns, so the whole test suite passes. Do not change the tests.

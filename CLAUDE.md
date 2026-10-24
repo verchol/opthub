@@ -6,7 +6,7 @@ the read-only Python analysis tools, the runnable implementation (`app/`: the `o
 experiment loop) and the sandbox providers it runs arms in (`sandbox/`). Nothing points outside the
 checkout; `node sandbox/test.mjs` checks that.
 
-What spends money: `tools/rerun.py run|judge|go` (refuses without `--yes`); in `app/`, every command
+What spends money: `tools/rerun.py run|judge|go` (refuses without `--yes`); `evals/claude_p.py run --yes`; in `app/`, every command
 that starts an arm (`opt demo run`, `opt run`, `opt replay`, `opt optimize`, `opt claude -p|example|optimize`)
 and the hub's run endpoints (`/api/optimize`, `/api/experiment`, `/api/triage/*`). Never trigger those
 when testing.
@@ -18,7 +18,7 @@ when testing.
 - `README.md` — front door and roadmap.
 - `docs/` — `experiments.md` (E1/E1b), `optimizers.md` + `optimizers-cookbook.md` (levers),
   `router-comparison.md`, `local-inference-capacity.md` (when a local Ollama route is safe),
-  `dynamic-config-analysis.md` (per-session Claude Code config savings, from `tools/dynconfig.py`), `demo-mock-spec.md` (four-terminal demo, source of all demo numbers),
+  `use-cases.md` (every use case and its tests and evals), `dynamic-config-analysis.md` (per-session Claude Code config savings, from `tools/dynconfig.py`), `demo-mock-spec.md` (four-terminal demo, source of all demo numbers),
   `demo-thesis.md` + `demo-diagrams.md` (developer demo), `ARTIFACTS.md` (shared-page index).
 - `docs/data/` — pinned ledgers `e1-sessions.csv` (215 sessions) and `e1b-sessions.csv`
   (214 sessions, $508.80). Prompts and absolute paths are stripped; keep it that way.
@@ -69,6 +69,9 @@ python3 tools/ratecard.py check              # the rate card vs Claude Code's ow
 ./opt scan                                   # the v1 scan: settings, routing, Atlas (free; --dry prints what would leave)
 python3 tools/onboard.py                     # day-0 onboarding scan, P0-P5 (free; --dry prints what would leave)
 python3 -m unittest tools/test_onboard.py    # the probes' fixtures: known answers, silent cases, no text out
+python3 -m unittest evals/test_usecases.py   # every use case in docs/use-cases.md, on a synthetic workspace (free)
+python3 evals/run.py prepare all             # the Claude-run evals: answerer + blind grader per card (evals/README.md)
+python3 evals/claude_p.py preflight          # opt claude -p --compare evals: free checks; `run all --yes` spends
 python3 examples/golden/demo.py --check      # golden test of the whole pipeline; --update after a deliberate change
 python3 tools/envfile.py check               # which secrets are set, from shell or .env
 cd experiments/session-triage && python3 src/run.py          # rules arm, pinned ledger, no egress
@@ -78,9 +81,11 @@ npm test                                     # the app's checks and the sandbox 
 ./opt hub start                              # the Optimization Hub on :8899 (opt hub demo: the Tallyfox demo on :8950)
 ```
 
-Three test suites: the golden check (Python stdlib only, and `mmdc` for diagrams), `npm test` (the app,
-plus `sandbox/test.mjs`; no network beyond 127.0.0.1, no Docker, no model calls) and
-`tools/test_onboard.py` (the onboarding probes on synthetic transcripts and a simulated API). After a change under
+Four test suites: the golden check (Python stdlib only, and `mmdc` for diagrams), `npm test` (the app,
+plus `sandbox/test.mjs`; no network beyond 127.0.0.1, no Docker, no model calls),
+`tools/test_onboard.py` (the onboarding probes on synthetic transcripts and a simulated API) and
+`evals/test_usecases.py` (each use case in `docs/use-cases.md`, run as subprocesses inside an egress trap).
+The evals in `evals/cases/` cover what a person reads; results in `evals/RESULTS.md`. After a change under
 `app/web/`, `npm run build:web`.
 
 ## Rules for numbers

@@ -28,7 +28,7 @@ sys.path.insert(0, HERE)
 import cachestatus, gapscan, onboardlib as ob, probe_cache, ratecard, savings, sessiongraph, sessions  # noqa: E402
 
 REPO = os.path.dirname(HERE)
-OUT = os.path.join(REPO, "data", "private", "onboard")
+OUT = os.environ.get("OPTHUB_ONBOARD") or os.path.join(REPO, "data", "private", "onboard")
 MIN_DAYS, MIN_SESSIONS = 7, 20
 SHADOW_DAYS = 7
 

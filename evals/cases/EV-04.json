@@ -1,0 +1,105 @@
+{
+ "id": "EV-04",
+ "title": "Recommend a configuration, and how to prove it",
+ "use_cases": [
+  "UC-21",
+  "UC-30",
+  "UC-31",
+  "UC-32"
+ ],
+ "setup": [
+  {
+   "name": "dynconfig",
+   "cmd": [
+    "python3",
+    "tools/dynconfig.py",
+    "--since",
+    "{SINCE}"
+   ]
+  },
+  {
+   "name": "tune-fix-rounding",
+   "cmd": [
+    "python3",
+    "tools/tune.py",
+    "{SID:fix-rounding}"
+   ]
+  },
+  {
+   "name": "tune-csv-export",
+   "cmd": [
+    "python3",
+    "tools/tune.py",
+    "{SID:csv-export}"
+   ]
+  },
+  {
+   "name": "tune-slow-report",
+   "cmd": [
+    "python3",
+    "tools/tune.py",
+    "{SID:slow-report}"
+   ]
+  },
+  {
+   "name": "rerun-plan",
+   "cmd": [
+    "python3",
+    "tools/rerun.py",
+    "plan",
+    "{SID:csv-export}",
+    "--goal",
+    "cost",
+    "--dynamic",
+    "--run-id",
+    "ev04"
+   ]
+  }
+ ],
+ "task": "The developer wants one Claude Code configuration change to adopt now, and a way to know it does not make the work worse before rolling it out. Recommend it in at most 200 words, with what it is worth and the exact commands to confirm it.",
+ "checks": [
+  {
+   "id": "C1",
+   "kind": "provenance",
+   "critical": true
+  },
+  {
+   "id": "C2",
+   "kind": "max_words",
+   "n": 220
+  },
+  {
+   "id": "C3",
+   "kind": "regex",
+   "pattern": "rerun\\.py (plan|run|go)|\\bT0\\b|changes no tokens|same prompts",
+   "note": "names how it is confirmed: a replay, or why none is needed"
+  }
+ ],
+ "rubric": [
+  {
+   "id": "R1",
+   "weight": 2,
+   "critical": true,
+   "text": "The figure it quotes is the marginal one from dynconfig's stacked table (or a single lever's row), not a sum of standalone ceilings."
+  },
+  {
+   "id": "R2",
+   "weight": 3,
+   "text": "Notices the tension: tune.py proposes a cheaper main model, while dynconfig reports that moving the main loop to Sonnet/Haiku measured 2.4-3.9x MORE in re-runs; it does not recommend a model downgrade as a sure saving."
+  },
+  {
+   "id": "R3",
+   "weight": 2,
+   "critical": true,
+   "text": "Its confirmation path fits the change. A change to what the model sees (model, effort, context) needs a replay: it says the replay spends money (the plan prints a ceiling), needs --yes and three repeats per arm, and does not run it. A change that alters no tokens (T0, e.g. cache TTL) may be confirmed from free data instead, and the answer says why no quality replay is needed."
+  },
+  {
+   "id": "R4",
+   "weight": 1,
+   "text": "Arms are compared with each other (baseline arm vs candidate), never with the original session."
+  }
+ ],
+ "pass": 0.75,
+ "files": [],
+ "revised": "2026-10-24: R3 and C3 widened after the first answer showed a T0 lever needs no quality replay"
+}
