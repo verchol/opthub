@@ -7,9 +7,10 @@ experiment loop) and the sandbox providers it runs arms in (`sandbox/`). Nothing
 checkout; `node sandbox/test.mjs` checks that.
 
 What spends money: `tools/rerun.py run|judge|go` (refuses without `--yes`); `evals/claude_p.py run --yes`; in `app/`, every command
-that starts an arm (`opt demo run`, `opt run`, `opt replay`, `opt optimize`, `opt claude -p|example|optimize`)
-and the hub's run endpoints (`/api/optimize`, `/api/experiment`, `/api/triage/*`). Never trigger those
-when testing.
+that starts an arm (`opt demo run`, `opt run`, `opt replay`, `opt tune`, `opt flow run`, `opt session export --run`,
+`opt optimize`, `opt claude -p|example|optimize`) and the hub's run endpoints (`/api/optimize`, `/api/experiment`,
+`/api/triage/*`); `tools/probe_cache.py conformance|path --yes`; and the J3 Jev arm (`experiments/session-triage`
+`--arms rules,jev`, or `score.py` with `JEV_API_KEY` set). Never trigger those when testing.
 
 ## Layout
 

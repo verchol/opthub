@@ -198,7 +198,10 @@ def main():
     have_f = any(s["features"] for s in sessions)
     if a.features:
         print(f"features joined for {sum(1 for s in sessions if s['features'])}/{len(sessions)} sessions")
-    out_dir = pathlib.Path(a.out_dir or (HERE / "data" / ("private" if a.features else "")))
+    # data/RESULTS.md is the committed record of the paid Jev run on the pinned ledger. A rules-only run
+    # (free, the README's setup step) goes to data/private/ so it never overwrites that record.
+    committed = not a.features and "jev" in a.arms.split(",")
+    out_dir = pathlib.Path(a.out_dir or (HERE / "data" / ("" if committed else "private")))
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if a.dry_run:

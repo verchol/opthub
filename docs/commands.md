@@ -98,7 +98,7 @@ Goals: `cost`, `speed`, `quality`, or `--flags "..."`. `--sandbox host` runs out
 
 ```sh
 cd experiments/session-triage
-python3 src/run.py                           # J3 rules arm on the pinned E1b ledger, no egress
+python3 src/run.py                           # J3 rules arm on the pinned E1b ledger, no egress (-> data/private/RESULTS.md)
 python3 src/run.py --dry-run                 # print the Jev payload for the top session, send nothing
 python3 src/run.py --mode interactive --limit 20   # label the 20 most expensive sessions yourself (gold)
 python3 src/score.py --days 30               # one-shot scoring pass; rules only while JEV_API_KEY is unset
@@ -128,7 +128,7 @@ opt install [--profile full|lean] [--yes]   # the local tier: Ollama version, se
                              # --yes: launchctl setenv + ollama pull (downloads); never installs Ollama itself
 opt experiments [ls|ps|status|logs|open|kill|results|ui]   # runs: list, live, health, logs, stop, compare
 opt artifacts [ls]           # render every deliverable to HTML
-opt monitor on|off|status    # send Claude Code's OpenTelemetry to the hub's collector
+opt monitor on|off|status [--endpoint URL] [--langsmith-endpoint URL]   # Claude Code's OpenTelemetry to the hub's collector, or any OTLP/HTTP one
 opt hub start                # the Optimization Hub on :8899
 opt hub demo                 # the Tallyfox demo hub on :8950 (synthetic data)
 ```
@@ -147,9 +147,9 @@ opt claude -p "<task>" --routing local    # the same, headless
 opt claude -p "<task>" --compare --strategy effort-low        # a catalog lever on top (opt claude strategies)
 opt claude -p --session <id> --goal cost --temperature balanced --compare   # a recorded session, lever picked for the goal
 opt claude -p --eligible --goal cost --compare                 # every non-interactive session (opt analyse first)
-opt replay <#> [--runner anthropic|openmodel] | --new   # a session again in E2B (default: open weights), side by side
+opt replay <#> [--runner anthropic|openmodel|openmodel-bedrock] | --new   # a session again in E2B (default: open weights), side by side
 opt tune <bundle|#>          # configuration search, one arm per candidate
-opt flow run <name>          # controller + worker + judge sandboxes
+opt flow run <name> [--github owner/repo]   # controller + worker + judge sandboxes; --github files the story as an issue
 ```
 
 The hub's run endpoints spend the same way: `/api/optimize`, `/api/experiment`, `/api/triage/*`.

@@ -1145,6 +1145,10 @@ ${C.b}opt${C.x} — harness experiment monitor
   ${C.b}opt claude -p${C.x} "<task>"   Claude Code headless in optimize mode: sandbox, LLM Ultra Light
                          gateway, the project's tuned profile and skills
        ${C.d}--compare              also run plain claude -p, then audit every claim
+       --routing local        small tasks on local Ollama, the rest on the frontier model
+       --strategy <id>  ·  --goal cost|latency|balanced  ·  --temperature conservative|balanced|aggressive
+       --task "…"  ·  --task-file <f>  ·  --session <id>  ·  --eligible
+       opt claude plan · strategies     each temperature's proposal · every lever in the catalog
        opt claude example     the repo's example, both ways, audited
        opt claude runs · audit [run] · profile${C.x}
   ${C.b}opt models${C.x}             every model the gateway can use: Anthropic, local Ollama, Hugging Face
