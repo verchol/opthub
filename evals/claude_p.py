@@ -55,6 +55,18 @@ def out_root():
     return node("import { outRoot } from './app/lib/local-run.mjs'; console.log(outRoot())")
 
 
+def score_of(stdout):
+    """The SCORE line a check prints: {"correct", "accuracy", "passed", "total", "integrity"}, or None for a
+    pass/fail-only check. Accuracy is the share of the check's items a result gets right (app/examples/claude-p/README.md)."""
+    for line in reversed((stdout or "").splitlines()):
+        if line.startswith("SCORE "):
+            try:
+                return json.loads(line[6:])
+            except ValueError:
+                return None
+    return None
+
+
 def check_case(name, project=None):
     """Run a case's hidden check on a copy of project (default: the untouched one), optionally with solution/."""
     ex = os.path.join(EXAMPLES, name)
@@ -168,14 +180,21 @@ def check(name):
     add("D6-key-claims", not missing, f"not verified: {missing}" if missing else "all of " + ", ".join(KEY_CLAIMS))
     ws = "ws-" + rj["run"][3:]
     chk = os.path.join(EXAMPLES, name, "check.py")
-    now = {}
+    now, acc = {}, {}
     for a in arms:                          # one at a time: the timing cases must not share the machine
         r = subprocess.run([sys.executable, chk], cwd=os.path.join(d, a["label"], ws), capture_output=True, text=True, timeout=300)
         now[a["label"]] = "pass" if r.returncode == 0 else "fail: " + "; ".join(x[5:] for x in r.stdout.splitlines() if x.startswith("FAIL "))
+        sc = score_of(r.stdout)
+        if sc:
+            acc[a["label"]] = sc["accuracy"]
+    accuracy = {s: med([acc[a["label"]] for a in side(s) if a["label"] in acc]) if acc else None
+                for s, sname in (("baseline", "plain"), ("optimized", "optimized"))}
+    accuracy = {"plain": accuracy["baseline"], "optimized": accuracy["optimized"]}
     revised = rj.get("check", {}).get("sha256") != sha256_file(chk)
     add("D8-check-as-it-stands", all(v == "pass" for v in now.values()),
         ("check revised since the run · " if revised else "") + f"plain {sum(now[a['label']] == 'pass' for a in side('baseline'))}/{len(side('baseline'))} · "
         f"optimized {sum(now[a['label']] == 'pass' for a in side('optimized'))}/{len(side('optimized'))}"
+        + (f" · accuracy plain {accuracy['plain']:.2f}, optimized {accuracy['optimized']:.2f}" if accuracy["plain"] is not None else "")
         + "".join(f" · {k} {v}" for k, v in now.items() if v != "pass"))
     leak = node("import './app/secrets.mjs'; import fs from 'node:fs'; import path from 'node:path';"
                 "import { launcherCredential } from './app/lib/ult/credentials.mjs';"
@@ -186,7 +205,7 @@ def check(name):
     lk = json.loads(leak or '{"files":0,"hit":["(scan failed)"],"cred":false}')
     add("D7-no-credential-in-files", lk["cred"] and not lk["hit"], f"{lk['files']} files scanned; found in {lk['hit'] or 'none'}")
     with open(os.path.join(WORK, name, "checks.json"), "w") as fh:
-        json.dump(dict(run=rj["run"], checks=out, verdict=rj.get("verdict"),
+        json.dump(dict(run=rj["run"], checks=out, verdict=rj.get("verdict"), accuracy=accuracy,
                        cost=dict(plain=med([a["cost_usd"] for a in side("baseline")]), optimized=med([a["cost_usd"] for a in side("optimized")])),
                        seconds=dict(plain=med([a["duration_ms"] / 1000 for a in side("baseline") if a["duration_ms"]]),
                                     optimized=med([a["duration_ms"] / 1000 for a in side("optimized") if a["duration_ms"]]))), fh, indent=1)
@@ -274,14 +293,17 @@ def record(name):
     fair = all(c["ok"] for k, c in by.items() if k not in ("D4-hidden-check", "D8-check-as-it-stands"))
     passes = {s: int(re.search(rf"{s} (\d+)/", by["D8-check-as-it-stands"]["detail"]).group(1)) for s in ("plain", "optimized")}
     runs = {s: int(re.search(rf"{s} \d+/(\d+)", by["D8-check-as-it-stands"]["detail"]).group(1)) for s in ("plain", "optimized")}
-    same_job = fair and passes["optimized"] >= passes["plain"] and pref["plain"] <= len(key) / 2
+    acc = ck.get("accuracy") or {}
+    # with a scored check, optimize mode must also get at least as much of the task right (median accuracy)
+    acc_ok = acc.get("plain") is None or (acc.get("optimized") or 0) >= acc["plain"]
+    same_job = fair and passes["optimized"] >= passes["plain"] and acc_ok and pref["plain"] <= len(key) / 2
     note = ("both sides miss the task's hidden cases" if passes["plain"] < runs["plain"] and passes["optimized"] < runs["optimized"] else "")
     res = dict(case=name, run=ck["run"], date=dt.date.today().isoformat(), fair=fair,
                failed=[f"{c['id']}: {c['detail']}" for c in ck["checks"] if not c["ok"]],
                check_now={s: f"{passes[s]}/{runs[s]}" for s in passes}, preferred=pref,
                mean_score={k: round(sum(v) / len(v), 2) if v else None for k, v in score.items()},
                cost=ck["cost"], seconds=ck["seconds"], tool_verdict=(ck.get("verdict") or {}).get("verdict"),
-               same_job=same_job, note=note)
+               same_job=same_job, note=note, accuracy=acc or None)
     with open(os.path.join(w, "result.json"), "w") as fh:
         json.dump(res, fh, indent=1)
     print(f"{name}: {'SAME JOB' if same_job else 'NOT SHOWN'} · fair {'yes' if fair else 'NO'} · hidden check now plain "
@@ -297,18 +319,22 @@ def report():
          "then the deterministic checks on the run's files and a blind A/B review of each pair's diffs.", "",
          "Costs are priced from Claude Code's token totals at list rates (not billed), medians per side. n = 3 a side per case: "
          "a direction for these tasks, not a finding for yours.", "",
-         "| case | run | fair comparison | hidden check now: plain / optimized | blind: plain / optimized / tie | cost plain → optimized | tool verdict | same job? |",
-         "|---|---|---|---|---|---|---|---|"]
+         "Correct: the hidden check passes (every item). Accuracy: the share of the check's items a result gets right, "
+         "median per side; — for a pass/fail-only check. See app/examples/claude-p/README.md.", "",
+         "| case | run | fair comparison | hidden check now: plain / optimized | accuracy: plain / optimized | blind: plain / optimized / tie | cost plain → optimized | tool verdict | same job? |",
+         "|---|---|---|---|---|---|---|---|---|"]
     for n in cases():
         p = os.path.join(WORK, n, "result.json")
         if not os.path.exists(p):
-            L.append(f"| {n} | — | not run | | | | | |")
+            L.append(f"| {n} | — | not run | | | | | | |")
             continue
         with open(p) as fh:
             r = json.load(fh)
         pr, unfair = r["preferred"], [f for f in r["failed"] if not f.startswith(("D4", "D8"))]
         L.append(f"| {n} | `{r['run']}` | {'yes' if r['fair'] else 'no: ' + '; '.join(unfair).replace('|', '/')} | "
-                 f"{r['check_now']['plain']} / {r['check_now']['optimized']} | {pr['plain']} / {pr['optimized']} / {pr['tie']} | "
+                 f"{r['check_now']['plain']} / {r['check_now']['optimized']} | "
+                 + (f"{r['accuracy']['plain']:.2f} / {r['accuracy']['optimized']:.2f} | " if (r.get('accuracy') or {}).get('plain') is not None else "— | ")
+                 + f"{pr['plain']} / {pr['optimized']} / {pr['tie']} | "
                  f"${r['cost']['plain']:.4f} → ${r['cost']['optimized']:.4f} | {r['tool_verdict']} | "
                  f"**{'yes' if r['same_job'] else 'not shown'}**{' (' + r['note'] + ')' if r['note'] else ''} |")
     with open(os.path.join(HERE, "CLAUDE-P-RESULTS.md"), "w") as fh:

@@ -95,6 +95,12 @@ const moved = rrows.map((r) => (r.side === 'optimized' ? { ...r, router: { byDec
 const story2 = experimentStory({ task: 'x', params: P, rows: moved, verdict: null, checkFile: null })
 ok('story: local answers are counted, and not called unused', story2.used[0].includes('2 went to the local model') && !story2.used.some((x) => /local model was available but never used/.test(x)))
 ok('story: n under 3 a side is not a finding', /not a finding/.test(story2.confidence))
+// a scored check: quality counts items right, the summary gives accuracy per side
+const scored = rrows.map((r) => ({ ...r, score: r.side === 'optimized' ? { correct: false, accuracy: 0.8, passed: 8, total: 10 } : { correct: true, accuracy: 1, passed: 10, total: 10 } }))
+const rd2 = reportData({ runId: 'cp-s', rows: scored, params: P, verdict: null, checkFile: 'c.py', strategy: null, plan: lp, auth: 'oauth', ev: evd })
+ok('scored check: the quality axis counts items right, per side', rd2.arms[0].grade.passed === 10 && rd2.arms[1].grade.passed === 8 && rd2.arms[1].grade.total === 10, rd2.arms.map((a) => a.grade))
+const story3 = experimentStory({ task: 'x', params: P, rows: scored.map((r) => ({ ...r, router: { byDecision: { keep: 1 } } })), verdict: { verdict: 'drop', reason: 'r' }, checkFile: 'c.py' })
+ok('scored check: the summary gives the median accuracy of each side', story3.result.some((x) => /Accuracy .*1\.00 plain, 0\.80 optimized/.test(x)), story3.result)
 ok('opt optimize flags parse: --strategy, --goal, --temperature, --session, --task-file, --eligible', (() => {
   const f = parseArgs(['--task', 'fix it', '--strategy', 'effort-low', '--goal', 'cost', '--temperature', 'aggressive', '--session', 'abc', '--task-file', 't.md', '--eligible', '--project', 'p', '--checks', 'c', '--force'])
   return f.prompt === 'fix it' && f.strategy === 'effort-low' && f.goal === 'cost' && f.temperature === 'aggressive' && f.session === 'abc' && f.taskFile === 't.md' && f.eligible && f.project === 'p' && f.checks === 'c' && f.force

@@ -213,6 +213,14 @@ async function startRouter({ name, alias, routerDir, config, hash, cred, key }) 
 }
 
 /** The hidden check, in a second sandbox, against the finished workspace mounted read-only. */
+/** The SCORE line a scored check prints (app/examples/claude-p/README.md), or null for a pass/fail check. */
+export function checkScore(outDir) {
+  try {
+    const line = fs.readFileSync(path.join(outDir, 'check', 'check.log'), 'utf8').split('\n').reverse().find((l) => l.startsWith('SCORE '))
+    return line ? JSON.parse(line.slice(6)) : null
+  } catch { return null }
+}
+
 async function runCheck({ checkFile, work, outDir, name, env }) {
   const cDir = path.join(outDir, 'check')
   fs.mkdirSync(cDir, { recursive: true })
@@ -321,11 +329,15 @@ export function experimentStory({ task, params, rows, verdict, checkFile }) {
     const pass = (rs) => `${rs.filter((r) => r.check === 'pass').length} of ${rs.length}`
     result.push(`Verdict: ${verdict?.verdict ?? 'none'}${verdict?.reason ? `, ${verdict.reason}` : ''}.`)
     if (checkFile) result.push(`Same job? The hidden check passed on ${pass(base)} plain runs and ${pass(opt)} optimized runs.`)
+    const acc = (rs) => med(rs.map((r) => ({ a: r.score?.accuracy })), 'a')
+    const fmt = (x) => (x == null ? '—' : x.toFixed(2))
+    if ([...base, ...opt].some((r) => r.score)) result.push(`Accuracy (share of the check's items right, median): ${fmt(acc(base))} plain, ${fmt(acc(opt))} optimized.`)
     if (cb != null && co != null) result.push(`Cost: $${cb.toFixed(4)} plain, $${co.toFixed(4)} optimized (${pct(cb, co) > 0 ? '+' : ''}${pct(cb, co)}%), median per run.`)
     if (tb && to) result.push(`Time: ${Math.round(tb / 1000)} s plain, ${Math.round(to / 1000)} s optimized.`)
     if (chg.gateway && !local && !routed) {
       const others = [chg.effort && 'the effort setting', chg['appended rules'] && 'the extra instructions', chg.strategy && 'the strategy', chg.model && 'the model'].filter(Boolean)
-      result.push(`Nothing was routed, so the difference comes from ${others.length ? others.join(' and ') : 'the profile'}, not from the router or the local model.`)
+      const list = others.length > 1 ? `${others.slice(0, -1).join(', ')} and ${others.at(-1)}` : others[0] ?? 'the profile'
+      result.push(`Nothing was routed, so the difference comes from ${list}, not from the router or the local model.`)
     }
   } else result.push('No plain side was run (no --compare), so there is nothing to compare against and no verdict.')
   const n = Math.min(opt.length, base.length || opt.length)
@@ -357,7 +369,7 @@ function printStory(st) {
 export function writeRunReport(runDir) {
   const rj = JSON.parse(fs.readFileSync(path.join(runDir, 'run.json'), 'utf8'))
   const ev = Object.fromEntries(rj.arms.map((a) => [a.label, armEvidence(runDir, a)]))
-  const rows = rj.arms.map((a) => ({ ...a, router: ev[a.label].router }))
+  const rows = rj.arms.map((a) => ({ ...a, router: ev[a.label].router, score: a.score ?? checkScore(path.join(runDir, a.label)) }))
   const optArm = rj.arms.find((a) => a.side === 'optimized')
   let config = null
   try { config = JSON.parse(fs.readFileSync(path.join(runDir, optArm.label, 'router', 'ult.config.json'), 'utf8')).config } catch {}
@@ -404,7 +416,9 @@ export function reportData({ runId, rows, params, verdict, checkFile, strategy, 
                                 cache_read_input_tokens: usage('cache_read_input_tokens'), output_tokens: usage('output_tokens') },
                        num_turns: med(rs.map((r) => r.turns)), total_cost_usd: med(rs.map((r) => ev[r.label]?.events?.result?.total_cost_usd)),
                        duration_ms: med(rs.map((r) => r.duration_ms)) },
-             grade: checkFile ? { passed: all.filter((x) => x.check === 'pass').length, total: all.length } : { kind: 'artifacts' },
+             // a scored check grades items (accuracy); a pass/fail check grades runs
+             grade: all.some((x) => x.score) ? { passed: sum(all.map((x) => x.score?.passed ?? 0)), total: sum(all.map((x) => x.score?.total ?? 0)) }
+               : checkFile ? { passed: all.filter((x) => x.check === 'pass').length, total: all.length } : { kind: 'artifacts' },
              levers: side === 'baseline' ? ['plain claude -p: nothing changed'] : params.filter((p) => p.plain !== p.optimized).map((p) => `${p.name}: ${p.optimized}`),
              paramTable: params.map((p) => [p.name, side === 'baseline' ? p.plain : p.optimized]),
              linesOfCode: `${(rs[0].files ?? []).length} files` }
@@ -570,7 +584,11 @@ export async function runP(f) {
     const diff = fs.existsSync(work) ? diffTrees(dir, work) : { added: [], changed: [] }
     a.exit = code; a.timedOut = code === 124
     a.files = [...diff.added.map((x) => '+' + x), ...diff.changed.map((x) => '~' + x)]
-    if (checkFile && !warm && fs.existsSync(work)) { live.set(a.label, 'checking'); tick(); a.check = await runCheck({ checkFile, work, outDir, name: `${runId}-${a.label}-check`, env: { ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } }) }
+    if (checkFile && !warm && fs.existsSync(work)) {
+      live.set(a.label, 'checking'); tick()
+      a.check = await runCheck({ checkFile, work, outDir, name: `${runId}-${a.label}-check`, env: { ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } })
+      a.score = checkScore(outDir)
+    }
     live.set(a.label, code === 0 ? `done${a.check ? ' · ' + a.check : ''}` : 'failed'); tick()
   }
 
@@ -587,7 +605,7 @@ export async function runP(f) {
   // ---- the numbers, from the evidence each run left
   const ev = Object.fromEntries(arms.map((a) => [a.label, armEvidence(runDir, a)]))
   const rows = arms.map((a) => ({ ...a, cost_usd: ev[a.label].cost, duration_ms: ev[a.label].durationMs, is_error: ev[a.label].isError || a.exit !== 0,
-    turns: ev[a.label].events.result?.num_turns ?? null, model: ev[a.label].events.init?.model ?? null, router: ev[a.label].router, check: a.check ?? null }))
+    turns: ev[a.label].events.result?.num_turns ?? null, model: ev[a.label].events.init?.model ?? null, router: ev[a.label].router, check: a.check ?? null, score: a.score ?? null }))
   const opt = rows.filter((r) => r.side === 'optimized'), base = rows.filter((r) => r.side === 'baseline')
   // a comparison across two models measures the models, not optimize mode
   const models = new Set(rows.filter((r) => !r.is_error).map((r) => r.model))
@@ -606,7 +624,7 @@ export async function runP(f) {
     gateway: { config: hash, local: config.local.enabled ? config.local.model : null }, compare: !!f.compare, repeats,
     warmup: warmArms.length ? { prompt_sha256: sha256(WARM_PROMPT), cost_usd: warmup, note: 'one turn per side before the measured runs; not in the comparison' } : null,
     check: checkFile ? { name: path.basename(checkFile), sha256: sha256(fs.readFileSync(checkFile)) } : null,
-    arms: rows.map(({ label, side, exit, timedOut, files, check, cost_usd, duration_ms, turns, model, is_error }) => ({ label, side, exit, timed_out: timedOut, is_error, model, turns, cost_usd, duration_ms, check, files })),
+    arms: rows.map(({ label, side, exit, timedOut, files, check, score, cost_usd, duration_ms, turns, model, is_error }) => ({ label, side, exit, timed_out: timedOut, is_error, model, turns, cost_usd, duration_ms, check, score, files })),
     verdict, profile_move: move,
     model: f.model ?? null, strategy: strategy?.id ?? null, timeout_s: timeoutSec, budget: f.budget ?? null, extra: f.extra ?? [],
   }

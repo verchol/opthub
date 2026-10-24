@@ -1,0 +1,1 @@
+pricing/quote.py repeats the same discount, tax and rounding code in all three quote functions. Refactor it so that code exists once, in a helper the three functions share. Every quote must stay exactly the same for every input, and quote_basic, quote_pro and quote_team keep their names and signatures. Do not change the tests.
