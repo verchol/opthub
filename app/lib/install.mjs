@@ -69,7 +69,7 @@ export function plan(s, { worker, profile = 'full', maxInFlight = 1, platform = 
     const have = s.settings[k]
     const ok = k === 'OLLAMA_CONTEXT_LENGTH' ? Number(have) >= Number(w) : have === w
     steps.push({ id: k, ok, have: have ?? 'unset', want: k === 'OLLAMA_CONTEXT_LENGTH' ? `>= ${w}` : w,
-                 fix: platform === 'darwin' ? `launchctl setenv ${k} ${w}   # then restart the Ollama app` : `set ${k}=${w} in the ollama service environment`,
+                 fix: platform === 'darwin' ? `launchctl setenv ${k} ${w}   # then: brew services restart ollama (or quit and reopen the app)` : `set ${k}=${w} in the ollama service environment`,
                  auto: platform === 'darwin' ? ['launchctl', ['setenv', k, w]] : null, restart: true })
   }
   for (const [role, m, gb] of PROFILES[profile]) steps.push({ id: `${role} ${m}`, ok: has(m), have: has(m) ? 'pulled' : `missing, ${gb} GB`, want: 'pulled', fix: `ollama pull ${m}`, auto: ['ollama', ['pull', m]], gb })
@@ -102,6 +102,6 @@ export async function cmdInstall(argv, { baseUrl, worker, maxInFlight, stateDir 
     if (code) console.log(`    ${C.r}failed${C.x}`)
     restart ||= !!st.restart
   }
-  if (restart) console.log(`\n  ${C.y}restart the Ollama app${C.x} so it reads the new settings, then run ${C.b}opt install${C.x} again.\n`)
+  if (restart) console.log(`\n  ${C.y}restart Ollama${C.x} so it reads the new settings: ${C.b}brew services restart ollama${C.x} (Homebrew) or quit and reopen the app. Then ${C.b}opt install${C.x} again.\n`)
   return 0
 }

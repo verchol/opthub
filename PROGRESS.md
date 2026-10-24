@@ -514,3 +514,27 @@
   0.8 s at 1K tokens, 3.4 s at 4K, 19.7 s at 17K; two in flight roughly double it. Within a 5 s budget the
   local tier takes prompts up to 4K, one at a time. The median Claude Code request is about 35K tokens, so
   on this machine local serves side calls only, as the plan expected.
+
+## 2026-10-24 · The local tier, validated against real Ollama: `--routing local` and per-model scores
+- **Installed** with `opt install` (profile `full`): qwen3:8b, qwen3-coder:30b and gpt-oss:20b pulled beside tev1 and
+  qwen2.5-coder:1.5b; `OLLAMA_CONTEXT_LENGTH` 65536, `NUM_PARALLEL` 1, q8_0 KV cache, flash attention. Ollama runs here
+  as a Homebrew service and had been loading models with a 131,072-token context and 4 slots: qwen3:8b took 99 s to
+  load under the machine's load (average ~190, mostly Docker's VM). After the restart, 12.8 s.
+- **Small task** (`--routing local`): Claude Code's smallest request on this machine carries 22K tokens (median 134K),
+  so a local model can't take its full context within a first-token budget. A small task is answered from a scoped
+  request instead: the question and recent turns, no tools, no thinking (thinking took a one-sentence qwen3:8b answer
+  from 2 s to 24 s). Small = explain, summarize or PR text, on a person's turn, prompt under 2,000 characters.
+- **Validated** through the router with the real Ollama and a fake frontier (n = 1 per row, not a benchmark): a side
+  call answered by qwen2.5-coder:1.5b in 1.4 s; an explain question by qwen3:8b in 4.0 s (68 scoped tokens instead of
+  the ~20K prefix); a streamed summary in 1.7 s (first token 0.3 s); a coding turn and an over-long prompt stayed on
+  the frontier; no thinking block reached the client. The router's Docker network reaches host Ollama.
+- **Found and fixed while validating:** warm-up loaded only the side model; a non-streamed request made the
+  first-token budget a total-time budget (local calls now always stream); a fit check that timed out was cached as
+  "does not fit" for the router's lifetime (now `unreachable`, re-checked after 30 s); a routing record demoted
+  models for memory, which every start re-checks anyway.
+- **The hub** shows each model's routing record (Optimize → Models; last 7 days of router audits): answered of
+  attempted, first-token p50, refusals and abandonments by reason, what the frontier caught, saved. A local model
+  that is `too slow` or `unreliable` gets no work until its record clears. Sessions that ran in a Docker sandbox
+  appear in the Sessions table, tagged with their run.
+- Not yet run: a real Claude Code session in the Docker sandbox with `--routing local` (needs `CLAUDE_CODE_OAUTH_TOKEN`
+  in `.env`, and uses the subscription).

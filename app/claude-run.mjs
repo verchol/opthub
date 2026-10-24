@@ -27,7 +27,9 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { stateDir } from './lib/state.mjs'
+import { stateDir, STATE } from './lib/state.mjs'
+import { withMachine } from './lib/model-scores.mjs'
+import { warmLocal, localModels } from './lib/ult/capacity.mjs'
 import { loadConfig } from './lib/ult/config.mjs'
 import { projectKey } from './lib/ult/context-store.mjs'
 import { launcherCredential } from './lib/ult/credentials.mjs'
@@ -70,6 +72,7 @@ export const USAGE = `
        --level guarded|balanced|aggressive    this run's rung (default: the project's)
        --model <id>            main model, both sides
        --local-model <tag>     the gateway's local target (opt models)    --no-local
+       --routing local         small tasks on local Ollama, the rest and every failure on the frontier model
        --skill <dir|name>      attach a skill (repeatable): a directory, or one of opt's own (opt-lean);
                                <project>/.opthub/skills is always attached
        --no-warm               skip the one-turn cache warm-up each side gets before a comparison
@@ -102,6 +105,7 @@ export function parseArgs(argv) {
       case '--model': f.model = val(); break
       case '--local-model': f.localModel = val(); break
       case '--no-local': f.noLocal = true; break
+      case '--routing': f.routing = val(); break
       case '--skill': f.skills.push(val()); break
       case '--timeout': f.timeout = val(); break
       case '--budget': f.budget = Number(val()); break
@@ -241,7 +245,9 @@ export async function runP(f) {
   const profile = loadProfile(key)
   const plan = planFor(f.level ?? profile.level)
   const skills = skillDirs(dir, f.skills)
-  const { config, hash } = loadConfig({ projectDir: dir, flags: { mode: 'route', ...(f.localModel ? { localModel: f.localModel } : {}), ...(f.noLocal ? { noLocal: true } : {}) } })
+  const { config, hash } = loadConfig({ projectDir: dir, flags: { mode: 'route', ...(f.localModel ? { localModel: f.localModel } : {}), ...(f.noLocal ? { noLocal: true } : {}), ...(f.routing ? { routing: f.routing } : {}) } })
+  withMachine(config, STATE)
+  if (config.local.enabled && !f.dryRun) for (const model of localModels(config)) warmLocal({ baseUrl: config.local.baseUrl, model, keepAlive: config.local.keepAlive })
   const dm = f.model ? { model: f.model, from: '--model' } : defaultModel()
   f = { ...f, model: dm.model }
   const runId = `cp-${stamp()}-${crypto.randomBytes(2).toString('hex')}`

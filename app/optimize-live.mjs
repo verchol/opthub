@@ -19,7 +19,8 @@ import { STATE, PACKAGE_ROOT, stateDir } from './lib/state.mjs'
 import { loadConfig } from './lib/ult/config.mjs'
 import { projectKey } from './lib/ult/context-store.mjs'
 import { createUlt } from './lib/ult/server.mjs'
-import { warmLocal } from './lib/ult/capacity.mjs'
+import { warmLocal, localModels } from './lib/ult/capacity.mjs'
+import { withMachine } from './lib/model-scores.mjs'
 import { readAudit, verifyAudit, summarize } from './lib/ult/audit.mjs'
 import { verifyCredential } from './lib/ult/upstream.mjs'
 import { launcherCredential, authMode, readStoredToken, storeToken, deleteStoredToken, storedTokenLocation, credentialFromValue } from './lib/ult/credentials.mjs'
@@ -51,6 +52,9 @@ ${C.b}opt claude optimize${C.x} — Claude Code in the sandbox, every request th
     --model <id>                 main model for Claude Code
     --local-model <ollama tag>   local target (e.g. qwen2.5-coder:1.5b); enables local routes
     --no-local                   disable local routes
+    --routing local              small tasks (explain, summarize, PR text; short, a person's turn) answered by
+                                 local Ollama from a scoped context; everything else and every failure on the
+                                 frontier model. Implies --mode route and --local-cloud. --routing frontier pins.
     --local-cloud                the local tier: Ollama for what capacity admits, tev1 when rules are unsure
                                  (opt install sets it up; stays in shadow unless --mode route)
     --ollama-url <url>           Ollama's address as the router sees it
@@ -98,6 +102,7 @@ export function parseArgs(argv) {
       case '--local-model': f.localModel = val(); break
       case '--no-local': f.noLocal = true; break
       case '--local-cloud': f.localCloud = true; break
+      case '--routing': f.routing = val(); break
       case '--ollama-url': f.ollamaUrl = val(); break
       case '--jev': f.jev = true; break
       case '--no-jev': f.jev = false; break
@@ -142,6 +147,9 @@ async function launch(flags, claudeArgs, agent = 'claude', secretReport = null, 
   if (!fs.existsSync(projectDir)) throw new Error(`no such directory: ${projectDir}`)
   const docker = flags.sandbox === 'docker'
   const { config, sources, hash } = loadConfig({ projectDir, configFile: flags.config, flags })
+  withMachine(config, STATE)
+  // Load the local model now, so the first request it takes does not pay the load. Best effort.
+  if (config.local.enabled && !flags.dryRun) for (const model of localModels(config)) warmLocal({ baseUrl: config.local.baseUrl, model, keepAlive: config.local.keepAlive })
   if (!docker) config.listen.host = '127.0.0.1'
   const runId = `ult-${path.basename(projectDir).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 24)}-${stamp()}`
   const runDir = flags.dryRun ? path.join(STATE, 'results', runId) : stateDir('results', runId)
@@ -186,8 +194,6 @@ async function launchHost({ flags, claudeArgs, config, projectDir, runDir, ctxDi
   const logFile = path.join(runDir, 'ult.log')
   const logFd = fs.openSync(logFile, 'a')
   const ult = createUlt({ config, runDir, contextFile: path.join(ctxDir, `${key}.json`), configHash: hash, stateDir: STATE, log: (m) => fs.writeSync(logFd, `${new Date().toISOString()} ${m}\n`) })
-  // Load the local model now, so the first request it takes does not pay the load. Best effort.
-  if (config.local.enabled && !flags.dryRun) warmLocal({ baseUrl: config.local.baseUrl, model: config.local.model, keepAlive: config.local.keepAlive })
   let addr
   try { addr = await ult.listen(config.listen.port, '127.0.0.1') } catch { addr = await ult.listen(0, '127.0.0.1') }
   console.log(`  router    http://127.0.0.1:${addr.port} ${C.d}(log ${logFile})${C.x}\n`)

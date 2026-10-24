@@ -28,6 +28,8 @@ export interface Session {
   live: boolean; secrets: boolean; status?: 'live' | 'open' | 'idle' | 'closed' | string
   ageMs?: number; pids?: number[]
   roi?: any; roiRaw?: any; potential?: Potential
+  /** sandbox: a Claude Code session that ran in an `opt claude optimize` sandbox; run is its run id */
+  where?: 'local' | 'sandbox'; run?: string | null
   tags?: any; shanaTova?: any
   [k: string]: any
 }
@@ -190,9 +192,17 @@ export interface CatalogModel {
   family?: string | null; params?: string | null; paramsB?: number | null; quant?: string | null; sizeBytes?: number | null
   context?: number | null; capabilities?: string[]; loaded?: boolean; router?: boolean; roles: string[]; maxOutput?: number | null; thinking?: string | null
 }
+/** One model's routing record from the router audits (lib/model-scores.mjs) */
+export interface ModelScore {
+  id: string; where: 'local' | 'remote'; verdict: string; demote?: boolean
+  requests: number; attempted: number; answered: number; answerRate: number | null; shadow: number
+  refused: Record<string, number>; failed: Record<string, number>; caughtFallbacks?: number
+  ttftP50: number | null; latencyP50: number | null; outTokens: number; costUsd: number; savedUsd: number
+}
 export interface ModelsPayload {
   at: number; router: { localModel: string | null; localEnabled: boolean; routes: Record<string, string> }
   providers: { id: string; label: string; kind: string; status: string; note: string; models: CatalogModel[] }[]
+  scores?: { window_days: number; budget_ms: number; models: ModelScore[] }
 }
 export interface MonthSpend {
   month: string; cost: number; sessions: number; byFamily: Record<string, number>; projected?: number

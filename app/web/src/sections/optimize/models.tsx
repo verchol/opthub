@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TableCell } from '@/components/ui/table'
 import { Blk, Empty, Head, Kv, Pill, SubLine } from '@/components/hub'
-import { getJSON, type CatalogModel, type ModelsPayload } from '@/lib/api'
+import { getJSON, type CatalogModel, type ModelScore, type ModelsPayload } from '@/lib/api'
 import { useHub } from '@/store'
 import { DetailTitle, Eyebrow, ListTable, MonoCell, Pre, SelRow } from './shared'
 
@@ -17,6 +17,36 @@ const useModels = create<{ data: ModelsPayload | null; loading: boolean; load: (
     set({ loading: false })
   },
 }))
+
+const VERDICT_TONE: Record<string, string> = { good: 'improved', learning: 'flat', frontier: 'flat', 'too slow': 'bad', unreliable: 'bad', 'does not fit': 'bad' }
+const reasons = (o: Record<string, number>) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(' · ') || '—'
+const ms = (x: number | null) => (x == null ? '—' : x >= 1000 ? (x / 1000).toFixed(1) + ' s' : Math.round(x) + ' ms')
+
+/** Every model's routing record: what it was given, what it delivered, how fast, why it was refused. */
+function RoutingRecord({ rows, days }: { rows: ModelScore[]; days: number }) {
+  if (!rows.length) return <div className="mb-5 font-mono text-xs text-muted-foreground">no routed requests in the last {days} days: run opt claude optimize --routing local</div>
+  return (
+    <div className="mb-5">
+      <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
+        <span className="font-heading text-[15px] font-bold">Routing record</span>
+        <span className="font-mono text-[11px] text-muted-foreground">last {days} days, every router audit · a local model marked bad gets no work until its record clears</span>
+      </div>
+      <ListTable head={<><Head>Model</Head><Head>Verdict</Head><Head>Answered</Head><Head>First token p50</Head><Head>Refused before sending</Head><Head>Abandoned → frontier</Head><Head>Saved</Head></>}>
+        {rows.map((r) => (
+          <SelRow key={r.where + r.id} on={false} onClick={() => {}}>
+            <MonoCell>{r.id}{r.where === 'local' && <Pill tone="live" className="ml-1.5">local</Pill>}</MonoCell>
+            <TableCell><Pill tone={VERDICT_TONE[r.verdict] ?? 'flat'}>{r.verdict}</Pill></TableCell>
+            <MonoCell>{r.where === 'local' ? `${r.answered} of ${r.attempted}${r.shadow ? ` · shadow ${r.shadow}` : ''}` : `${r.answered}${r.caughtFallbacks ? ` (caught ${r.caughtFallbacks})` : ''}`}</MonoCell>
+            <MonoCell>{ms(r.ttftP50)}</MonoCell>
+            <MonoCell>{r.where === 'local' ? reasons(r.refused) : ''}</MonoCell>
+            <MonoCell>{r.where === 'local' ? reasons(r.failed) : ''}</MonoCell>
+            <MonoCell>{r.savedUsd ? `$${r.savedUsd.toFixed(2)}` : '—'}</MonoCell>
+          </SelRow>
+        ))}
+      </ListTable>
+    </div>
+  )
+}
 
 const size = (b?: number | null) => (b == null ? '' : b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.round(b / 1e6) + ' MB')
 const price = (m: CatalogModel) => (m.where === 'remote' ? `$${m.priceIn} / $${m.priceOut}` : 'free')
@@ -33,6 +63,7 @@ export function ModelsView() {
         {data.providers.map((p) => `${p.label} ${p.models.length}`).join(' · ')} · {local} local, free per token
         <Button variant="ghost" size="icon-xs" title="ask Ollama again" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /></Button>
       </SubLine>
+      {data.scores && <RoutingRecord rows={data.scores.models} days={data.scores.window_days} />}
       {data.providers.map((p) => (
         <div key={p.id} className="mb-5">
           <div className="mb-1.5 flex flex-wrap items-baseline gap-2">

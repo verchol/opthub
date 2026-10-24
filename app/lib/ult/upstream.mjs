@@ -7,6 +7,8 @@
  * 2xx, so a failed route can still fall back to the requested model.
  */
 
+import { humanText } from './features.mjs'
+
 const PASS_HEADERS = ['anthropic-version', 'anthropic-beta', 'content-type', 'accept', 'user-agent', 'x-app', 'anthropic-dangerous-direct-browser-access']
 const OAUTH_BETA = 'oauth-2025-04-20'
 
@@ -73,6 +75,77 @@ export function remoteHeaders(clientHeaders, credential) {
 
 export function localHeaders(clientHeaders) {
   return { 'content-type': 'application/json', 'anthropic-version': clientHeaders['anthropic-version'] ?? '2023-06-01' }
+}
+
+const SCOPED_SYSTEM = 'You answer one request inside a coding session, briefly and directly. No tools are available: ' +
+  'answer from the conversation below. If the request needs files you cannot see, say what to look at.'
+
+/** Text of one message's content: text blocks kept, tool calls and results reduced to a line each. */
+function plainText(content, clip) {
+  if (typeof content === 'string') return humanText(content)
+  return (content ?? []).map((b) => {
+    if (b?.type === 'text') return humanText(b.text)
+    if (b?.type === 'tool_use') return `[ran ${b.name}]`
+    if (b?.type === 'tool_result') {
+      const t = typeof b.content === 'string' ? b.content : (b.content ?? []).map((c) => c?.text ?? '').join(' ')
+      return `[result: ${t.replace(/\s+/g, ' ').slice(0, clip)}${t.length > clip ? '…' : ''}]`
+    }
+    return ''
+  }).filter(Boolean).join('\n')
+}
+
+/**
+ * The small-task request: Claude Code's system prompt and tools dropped, the conversation reduced to
+ * text and cut from the end to `budgetTokens` (4 characters a token). Starts with a user turn, roles
+ * alternate, the person's latest request is last.
+ */
+export function scopeForLocal(body, model, { budgetTokens = 3000, maxOutput = 1024, clip = 300 } = {}) {
+  const turns = []
+  for (const m of body.messages ?? []) {
+    const text = plainText(m.content, clip)
+    if (!text) continue
+    if (turns.length && turns.at(-1).role === m.role) turns.at(-1).content += '\n' + text
+    else turns.push({ role: m.role, content: text })
+  }
+  const kept = []
+  let budget = budgetTokens * 4 - SCOPED_SYSTEM.length
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i]
+    if (budget - t.content.length < 0 && kept.length) break
+    kept.unshift(budget - t.content.length < 0 ? { ...t, content: t.content.slice(-budget) } : t)
+    budget -= t.content.length
+  }
+  while (kept.length && kept[0].role !== 'user') kept.shift()
+  // Thinking off: on qwen3:8b it took a one-sentence answer from 2 s to 24 s (measured 2026-10-24).
+  return { model, max_tokens: Math.min(body.max_tokens ?? maxOutput, maxOutput), ...(body.stream ? { stream: true } : {}),
+           thinking: { type: 'disabled' }, system: SCOPED_SYSTEM, messages: kept }
+}
+
+/**
+ * Thinking blocks from a local model carry no signature; sent back to Anthropic in a later turn they
+ * would be rejected, so the client never sees them. Content blocks are re-indexed.
+ */
+export function stripThinking(text, sse) {
+  const drop = (b) => b?.type === 'thinking' || b?.type === 'redacted_thinking'
+  if (!sse) {
+    try { const j = JSON.parse(text); j.content = (j.content ?? []).filter((b) => !drop(b)); return JSON.stringify(j) } catch { return text }
+  }
+  const out = [], dropped = new Set(), shift = new Map()
+  let next = 0
+  for (const evt of text.split('\n\n')) {
+    const data = evt.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('')
+    let d = null; try { d = data ? JSON.parse(data) : null } catch {}
+    if (d && typeof d.index === 'number') {
+      if (d.type === 'content_block_start' && drop(d.content_block)) { dropped.add(d.index); continue }
+      if (dropped.has(d.index)) continue
+      if (!shift.has(d.index)) shift.set(d.index, next++)
+      d.index = shift.get(d.index)
+      out.push(`event: ${d.type}\ndata: ${JSON.stringify(d)}`)
+      continue
+    }
+    if (evt.trim()) out.push(evt)
+  }
+  return out.join('\n\n') + '\n\n'
 }
 
 /** Fields a local model server rejects or ignores badly. */
@@ -218,6 +291,11 @@ export async function forward({ url, headers, body, res, timeoutMs = 600000, fet
  * @returns {Promise<{ok, status, error?, chunks?, headers?, usage, model, ttftMs, latencyMs}>}
  */
 export async function forwardLocal({ url, headers, body, tools = [], firstTokenMs = 5000, timeoutMs = 120000, fetchImpl = fetch }) {
+  // Always stream from Ollama: a non-streamed answer arrives all at once, which makes the first-token
+  // budget a total-time budget. A client that did not ask for a stream gets the message reassembled.
+  const asked = JSON.parse(body)
+  const clientStream = !!asked.stream
+  if (!clientStream) body = JSON.stringify({ ...asked, stream: true })
   const t0 = Date.now()
   const ctl = new AbortController()
   let why = 'slow'
@@ -254,9 +332,39 @@ export async function forwardLocal({ url, headers, body, tools = [], firstTokenM
   let usage = {}, model = null
   if (sse) { const tap = new UsageTap(); tap.push(text + '\n\n'); usage = tap.usage; model = tap.model }
   else { try { const j = JSON.parse(text); usage = j.usage ?? {}; model = j.model ?? null } catch { return fail('malformed', 200, { detail: 'not JSON' }) } }
+  let clean = stripThinking(text, sse)
+  if (!clean.replace(/"type":"(message_start|message_delta|message_stop|ping)"/g, '').includes('"text"')) return fail('malformed', 200, { detail: 'no answer text' })
   const out = {}
   up.headers.forEach((v, k) => { if (!['content-length', 'content-encoding', 'transfer-encoding', 'connection'].includes(k)) out[k] = v })
+  if (sse && !clientStream) { clean = JSON.stringify(sseToMessage(clean)); out['content-type'] = 'application/json' }
+  chunks.length = 0; chunks.push(Buffer.from(clean))
   return { ok: true, status: up.status, headers: out, chunks, usage, model, ttftMs, latencyMs: Date.now() - t0 }
+}
+
+/** A streamed answer as the single message a non-streaming client expects. */
+export function sseToMessage(text) {
+  const msg = { type: 'message', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, usage: {} }
+  const json = new Map()
+  for (const evt of text.split('\n\n')) {
+    const data = evt.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('')
+    let d; try { d = data ? JSON.parse(data) : null } catch { continue }
+    if (!d) continue
+    if (d.type === 'message_start') { Object.assign(msg, { id: d.message?.id, model: d.message?.model }); Object.assign(msg.usage, d.message?.usage ?? {}) }
+    else if (d.type === 'content_block_start') msg.content[d.index] = { ...d.content_block }
+    else if (d.type === 'content_block_delta') {
+      const b = msg.content[d.index]
+      if (!b) continue
+      if (d.delta?.type === 'text_delta') b.text = (b.text ?? '') + d.delta.text
+      else if (d.delta?.type === 'input_json_delta') json.set(d.index, (json.get(d.index) ?? '') + (d.delta.partial_json ?? ''))
+    } else if (d.type === 'content_block_stop' && json.has(d.index)) {
+      try { msg.content[d.index].input = JSON.parse(json.get(d.index)) } catch {}
+    } else if (d.type === 'message_delta') {
+      msg.stop_reason = d.delta?.stop_reason ?? msg.stop_reason
+      for (const [k, v] of Object.entries(d.usage ?? {})) if (v != null) msg.usage[k] = v
+    }
+  }
+  msg.content = msg.content.filter(Boolean)
+  return msg
 }
 
 /** Send a buffered local answer to the client. */

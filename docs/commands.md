@@ -118,7 +118,8 @@ opt analyse                  # classify every session (Jev on local Ollama)
 opt audit [--verify]         # every task analyse and optimize ran
 opt models                   # every model the gateway can use
 opt models bench [model] [--sizes 1000,4000,16000]   # first token, prefill, decode on this machine; writes the profile the router reads
-opt install [--yes]          # the local tier: Ollama version, server settings, tev1 + worker, a bench profile
+opt install [--profile full|lean] [--yes]   # the local tier: Ollama version, server settings, models, a bench profile
+                             # full (default): tev1, qwen2.5-coder:1.5b, qwen3:8b, qwen3-coder:30b, gpt-oss:20b · lean: the first three
                              # --yes: launchctl setenv + ollama pull (downloads); never installs Ollama itself
 opt experiments [ls|ps|status|logs|open|kill|results|ui]   # runs: list, live, health, logs, stop, compare
 opt artifacts [ls]           # render every deliverable to HTML
@@ -136,6 +137,9 @@ opt claude optimize [dir] --local-cloud   # + the local tier: Ollama for what ca
 opt claude -p "<task>"       # headless, optimize mode   (also: opt claude example)
 opt run --experiments a,b    # scenarios, grouped under a session
 opt demo run                 # control vs a scenario   (opt demo scenarios lists them, free)
+opt claude optimize [dir] --routing local # small tasks (explain, summarize, PR text; short, a person's turn) on local Ollama,
+                                          # scoped and without thinking; everything else and every local failure on the frontier
+opt claude -p "<task>" --routing local    # the same, headless
 opt replay <#> [--runner anthropic|openmodel] | --new   # a session again in E2B (default: open weights), side by side
 opt tune <bundle|#>          # configuration search, one arm per candidate
 opt flow run <name>          # controller + worker + judge sandboxes

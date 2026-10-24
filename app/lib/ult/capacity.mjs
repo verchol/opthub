@@ -4,7 +4,8 @@
  * context Ollama runs with, a slot is free, and recent local calls have not been failing. Anything
  * else goes to the Anthropic model at once, with the reason in the audit log:
  *
- *   no-fit    weights + KV cache at num_ctx exceed the memory the GPU can use, or Ollama is unreachable
+ *   no-fit    weights + KV cache at num_ctx exceed the memory the GPU can use, or the model is not pulled
+ *   unreachable Ollama did not answer the fit check (re-checked after 30 s, never cached as a verdict)
  *   context   the prompt is longer than the context the local model runs with
  *   busy      every slot (OLLAMA_NUM_PARALLEL) is taken; Ollama would queue it, silently
  *   breaker   the last N local calls failed or were slow; local is off for a cooldown
@@ -38,7 +39,7 @@ export function loadProfile(stateDir, model) {
 
 /** The caps in force: config, overridden by a bench profile's measured values. */
 export function caps(local, profile) {
-  const rec = profile?.recommended ?? {}
+  const rec = profile?.recommended ?? local.bench ?? {}
   return {
     numCtx: Math.min(local.numCtx ?? 65536, rec.maxPromptTokens ?? Infinity),
     maxInFlight: rec.maxInFlight ?? local.maxInFlight ?? 1,
@@ -55,7 +56,7 @@ export function caps(local, profile) {
  */
 export async function fitCheck({ baseUrl, model, numCtx, kvType = 'q8_0', totalMem = os.totalmem(), fetchImpl = fetch }) {
   const get = async (p, init) => {
-    const r = await fetchImpl(baseUrl.replace(/\/$/, '') + p, { ...init, signal: AbortSignal.timeout(3000) })
+    const r = await fetchImpl(baseUrl.replace(/\/$/, '') + p, { ...init, signal: AbortSignal.timeout(10000) })
     if (!r.ok) throw new Error(`${p} ${r.status}`)
     return r.json()
   }
@@ -76,7 +77,7 @@ export async function fitCheck({ baseUrl, model, numCtx, kvType = 'q8_0', totalM
     return { ok: need <= have, needBytes: Math.round(need), haveBytes: Math.round(have), numCtx: ctx,
              why: need <= have ? null : `needs ${(need / 2 ** 30).toFixed(1)} GiB at ${ctx} tokens, ${(have / 2 ** 30).toFixed(1)} GiB available` }
   } catch (e) {
-    return { ok: false, why: `Ollama unreachable at ${baseUrl}: ${e.message}` }
+    return { ok: false, reason: 'unreachable', why: `Ollama did not answer at ${baseUrl}: ${e.message}` }
   }
 }
 
@@ -85,12 +86,22 @@ export class LocalGate {
   constructor({ caps: c, now = Date.now }) {
     this.c = c; this.now = now
     this.inFlight = 0; this.failures = 0; this.openUntil = 0
-    this.fit = null                 // a promise of fitCheck's result, set by the router
+    this.fitter = null              // model -> promise of fitCheck's result, set by the router
+    this.fits = new Map()
     this.counts = {}
   }
-  async admit(promptTokens) {
-    const fit = this.fit ? await this.fit : { ok: true }
-    if (!fit.ok) return { ok: false, reason: 'no-fit', why: fit.why }
+  fitFor(model) {
+    if (!this.fitter) return Promise.resolve({ ok: true })
+    const hit = this.fits.get(model)
+    if (hit && !(hit.unreachable && this.now() - hit.at > 30000)) return hit.p
+    const entry = { at: this.now(), unreachable: false, p: null }
+    entry.p = this.fitter(model).then((r) => { entry.unreachable = r.reason === 'unreachable'; return r })
+    this.fits.set(model, entry)
+    return entry.p
+  }
+  async admit(promptTokens, model) {
+    const fit = await this.fitFor(model)
+    if (!fit.ok) return { ok: false, reason: fit.reason ?? 'no-fit', why: fit.why }
     if (this.now() < this.openUntil) return { ok: false, reason: 'breaker', why: `local off until ${new Date(this.openUntil).toISOString()}` }
     const ctx = Math.min(this.c.numCtx, fit.numCtx ?? Infinity)
     if (promptTokens > ctx) return { ok: false, reason: 'context', why: `~${promptTokens} tokens > num_ctx ${ctx}` }
@@ -105,6 +116,16 @@ export class LocalGate {
     if (++this.failures >= this.c.failures) { this.openUntil = this.now() + this.c.cooldownMs; this.failures = 0 }
   }
   count(reason) { this.counts[reason] = (this.counts[reason] ?? 0) + 1 }
+}
+
+/** Every local model the config can send work to: the side model and each local: or scoped: route. */
+export function localModels(config) {
+  const out = new Set(config.local?.enabled ? [config.local.model] : [])
+  for (const t of Object.values(config.policy?.routes ?? {})) {
+    if (t.startsWith('local:')) out.add(t.slice(6))
+    if (t.startsWith('scoped:')) out.add(t.slice(7))
+  }
+  return [...out]
 }
 
 /** Load the model before the first real request pays for it, and keep it loaded. Best effort. */

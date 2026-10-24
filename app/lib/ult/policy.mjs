@@ -7,6 +7,11 @@
  *    route must show an estimated saving.
  *  - Threads are sticky. Once a thread goes to a target it stays there, so its cache
  *    stays warm; flipping per turn pays a cache write every time.
+ *
+ * A `scoped:<model>` route is the local "small task" (`--routing local`): the local model answers
+ * from the question and the last few turns, with no tools, so Claude Code's 20K+ token prefix is
+ * never sent to it. Small means: a person's turn, a prompt under `policy.small.maxPromptChars`, in a
+ * class the route table sends to `scoped:`. Anything else stays on the requested model.
  */
 
 /** Model id → [input $/M, output $/M]. Unknown models price as the dearest known one. */
@@ -56,7 +61,18 @@ export function decide({ cls, confidence, features: f, config: cfg, threadTarget
 
   const rule = routeFor(cls, p.routes)
   if (rule === 'keep') return keep(`route table: ${cls} → keep`)
+  const localModel = rule.startsWith('scoped:') ? rule.slice(7) : rule === 'local' ? cfg.local?.model : rule.startsWith('local:') ? rule.slice(6) : null
+  const bad = localModel && (cfg.local?.demoted ?? []).find((m) => m.id === localModel)
+  if (bad) return keep(`${localModel} is ${bad.verdict} on this machine (its routing record, last 7 days)`)
   if ((confidence ?? 0) < (p.minConfidence ?? 0.6)) return keep(`confidence ${(confidence ?? 0).toFixed(2)} below ${p.minConfidence ?? 0.6}`)
+
+  if (rule.startsWith('scoped:')) {
+    if (!cfg.local?.enabled) return keep('small-task route, but local is disabled')
+    const max = p.small?.maxPromptChars ?? 2000
+    if (!f.humanTurn) return keep('small-task route: not a person\'s turn')
+    if ((f.promptChars ?? Infinity) > max) return keep(`small-task route: prompt over ${max} characters`)
+    return { decision: 'local', scoped: true, target: `local:${rule.slice(7)}`, reason: `small task: ${cls} → ${rule.slice(7)}, scoped`, estKeepUsd: null, estRouteUsd: 0, wouldAct: true }
+  }
 
   if (rule === 'local' || rule.startsWith('local:')) {
     if (!cfg.local?.enabled) return keep('local route, but local is disabled')

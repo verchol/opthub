@@ -12,7 +12,7 @@ import { decide, priceOf } from '../lib/ult/policy.mjs'
 import { AuditLog, verifyAudit, readAudit, summarize } from '../lib/ult/audit.mjs'
 import { loadConfig, merge, flagsToOverlay } from '../lib/ult/config.mjs'
 import { createUlt } from '../lib/ult/server.mjs'
-import { sanitizeForLocal, UsageTap, remoteHeaders, adaptForModel, adaptHeaders, forwardLocal } from '../lib/ult/upstream.mjs'
+import { sanitizeForLocal, UsageTap, remoteHeaders, adaptForModel, adaptHeaders, forwardLocal, scopeForLocal, stripThinking, sseToMessage } from '../lib/ult/upstream.mjs'
 import { LocalGate, caps as capsOf, fitCheck, estimateTokens } from '../lib/ult/capacity.mjs'
 import { buildJevRequest } from '../lib/ult/jev.mjs'
 import { render as renderStatus } from '../lib/ult/statusline.mjs'
@@ -415,6 +415,67 @@ console.log('local capacity — fake Ollama: slow, malformed, busy, small contex
   const g = new LocalGate({ caps: capsOf({ numCtx: 1000, maxInFlight: 2 }, { date: '2026-10-24', recommended: { maxInFlight: 1, maxPromptTokens: 500 } }) })
   ok('a bench profile overrides the configured caps', g.c.maxInFlight === 1 && g.c.numCtx === 500 && /bench/.test(g.c.source), g.c)
   ok('tokens estimated at 4 characters', estimateTokens({ messages: [{ role: 'user', content: 'x'.repeat(400) }] }) > 100)
+}
+
+console.log('small tasks — --routing local')
+{
+  const { config } = loadConfig({ flags: { routing: 'local', port: 1 } })
+  ok('--routing local: route mode, local on, tev1 on local Ollama', config.mode === 'route' && config.local.enabled && config.classifier.jev.model === 'tev1' && /11434\/v1\/systemone/.test(config.classifier.jev.endpoint))
+  ok('--routing local: explain, summarize, PR text are small; coding and review stay on the frontier',
+     config.policy.routes['non-coding/explain'] === 'scoped:qwen3:8b' && config.policy.routes['coding/*'] === 'keep' && config.policy.routes['review/*'] === 'keep')
+  ok('--routing local keeps a --route override', loadConfig({ flags: { routing: 'local', routes: ['non-coding/summarize=keep'] } }).config.policy.routes['non-coding/explain'] === 'scoped:qwen3:8b')
+  const f = extractFeatures(req('explain what a mutex is'))
+  const d = decide({ cls: 'non-coding/explain', confidence: 0.8, features: f, config, threadTarget: null })
+  ok('a short explain question is a small task, even with Claude Code\'s tools offered', d.decision === 'local' && d.scoped && d.target === 'local:qwen3:8b', d)
+  const long = decide({ cls: 'non-coding/explain', confidence: 0.8, features: extractFeatures(req('explain ' + 'this part '.repeat(300))), config, threadTarget: null })
+  ok('a long prompt is not small', long.decision === 'keep' && /2000/.test(long.reason), long.reason)
+  const loop = decide({ cls: 'non-coding/explain', confidence: 0.8, features: extractFeatures(req('explain', { history: editHistory, lastToolResult: true })), config, threadTarget: null })
+  ok('a tool-loop request is not a person\'s turn: not small', loop.decision === 'keep', loop.reason)
+  const sc = scopeForLocal({ max_tokens: 32000, stream: true, system: [{ type: 'text', text: 'You are Claude Code. '.repeat(2000) }], tools: [{ name: 'Bash' }],
+    messages: [...editHistory, { role: 'user', content: [{ type: 'text', text: '<system-reminder>secret</system-reminder>explain the retry logic' }] }] }, 'qwen3:8b')
+  ok('scoped: no tools, no Claude Code system prompt, output capped', !sc.tools && !JSON.stringify(sc.system).includes('Claude Code') && sc.max_tokens === 1024 && sc.stream === true)
+  ok('scoped: starts with the person, ends with the request, reminders stripped', sc.messages[0].role === 'user' && sc.messages.at(-1).content.endsWith('explain the retry logic') && !JSON.stringify(sc).includes('secret'))
+  ok('scoped: tool calls reduced to a line', JSON.stringify(sc.messages).includes('[ran Edit]'))
+  ok('scoped: alternating roles', sc.messages.every((m, i) => i === 0 || m.role !== sc.messages[i - 1].role))
+  const big = scopeForLocal({ messages: Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'x'.repeat(2000) })) }, 'm', { budgetTokens: 1000 })
+  ok('scoped: cut from the end to its token budget', estimateTokens(big) < 1300, estimateTokens(big))
+  const json = stripThinking(JSON.stringify({ content: [{ type: 'thinking', thinking: 'hm' }, { type: 'text', text: 'ok' }] }), false)
+  ok('thinking blocks removed from a local JSON answer', !json.includes('thinking') && json.includes('"ok"'))
+  const ev = (o) => `event: ${o.type}\ndata: ${JSON.stringify(o)}`
+  const sse = [ev({ type: 'message_start', message: {} }), ev({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+    ev({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'hm' } }), ev({ type: 'content_block_stop', index: 0 }),
+    ev({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }), ev({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'ok' } }),
+    ev({ type: 'content_block_stop', index: 1 }), ev({ type: 'message_stop' })].join('\n\n') + '\n\n'
+  const out = stripThinking(sse, true)
+  const msg = sseToMessage(stripThinking(sse, true))
+  ok('a stream reassembled for a client that did not ask for one', msg.type === 'message' && msg.content.length === 1 && msg.content[0].text === 'ok', msg)
+  ok('small tasks are sent with thinking off', sc.thinking?.type === 'disabled')
+  ok('thinking blocks removed from a local stream, text re-indexed to 0', !out.includes('thinking') && out.includes('"index":0') && !out.includes('"index":1') && out.includes('text_delta'))
+
+  // end to end: a small task answered by the fake Ollama, scoped; a coding turn on the remote
+  const seen = []
+  const ollama = http.createServer((q, r) => { let b = ''; q.on('data', (x) => b += x); q.on('end', () => {
+    if (q.url.startsWith('/api/')) return fakeOllamaApi(q.url, r, { pulled: ['qwen3:8b', 'qwen2.5-coder:1.5b'] })
+    if (q.url.startsWith('/v1/systemone')) { r.writeHead(503); return r.end() }
+    const body = JSON.parse(b); seen.push({ to: 'ollama', model: body.model, tools: body.tools, system: body.system })
+    r.writeHead(200, { 'content-type': 'application/json' })
+    r.end(JSON.stringify({ type: 'message', model: body.model, content: [{ type: 'thinking', thinking: 'let me see' }, { type: 'text', text: 'A mutex is a lock.' }], usage: { input_tokens: 90, output_tokens: 8 } }))
+  }) })
+  const remote = http.createServer((q, r) => { let b = ''; q.on('data', (x) => b += x); q.on('end', () => { seen.push({ to: 'remote', model: JSON.parse(b).model })
+    r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify({ type: 'message', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'done' }], usage: { input_tokens: 10, output_tokens: 2 } })) }) })
+  await new Promise((z) => ollama.listen(0, '127.0.0.1', z)); await new Promise((z) => remote.listen(0, '127.0.0.1', z))
+  const cfg = merge(config, { remote: { baseUrl: `http://127.0.0.1:${remote.address().port}` }, local: { baseUrl: `http://127.0.0.1:${ollama.address().port}` },
+                              classifier: { jev: { endpoint: `http://127.0.0.1:${ollama.address().port}/v1/systemone` } } })
+  const u = createUlt({ config: cfg, runDir: path.join(tmp, 'small'), env: { CLAUDE_CODE_OAUTH_TOKEN: 't' } })
+  const a = await u.listen(0, '127.0.0.1')
+  const send = (body) => fetch(`http://127.0.0.1:${a.port}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((x) => x.json())
+  const j1 = await send(req('explain what a mutex is'))
+  ok('small task answered by the local model, without tools or the 20K prefix', j1.content.length === 1 && j1.content[0].text === 'A mutex is a lock.' && seen.at(-1).to === 'ollama' && seen.at(-1).model === 'qwen3:8b' && !seen.at(-1).tools, seen.at(-1))
+  await send(req('add idempotency keys to the webhook handler'))
+  ok('a coding turn goes to the frontier model', seen.at(-1).to === 'remote' && seen.at(-1).model === 'claude-opus-5-5', seen.at(-1))
+  await u.close(); ollama.close(); remote.close()
+  const e = readAudit(path.join(tmp, 'small', 'audit.jsonl'))[0]
+  ok('the audit says scoped, how big the scoped request was, and that it ran locally', e.scoped === true && e.scoped_tokens > 0 && e.scoped_tokens < 1000 && e.decision === 'local', { scoped: e.scoped, tokens: e.scoped_tokens })
 }
 
 if (process.env.ULT_TEST_OLLAMA === '1') {

@@ -21,6 +21,7 @@ import { insights } from './lib/insights.mjs'
 import { behaviourPayload } from './lib/behaviour.mjs'
 import { overviewPayload } from './lib/overview.mjs'
 import { modelsCatalog } from './lib/models.mjs'
+import { auditFiles, scoreModels } from './lib/model-scores.mjs'
 import { listClaudeRuns } from './lib/claims.mjs'
 import { outRoot } from './lib/local-run.mjs'
 import { handleOtlp, startCollector, OTLP_PORT } from './lib/otel.mjs'
@@ -203,7 +204,11 @@ function serve(port) {
       return
     }
     // Optimize → Models: Anthropic, the local Ollama (live), the Hugging Face cache
-    if (U.pathname === '/api/models') { modelsCatalog({ fresh: U.searchParams.has('fresh') }).then(json); return }
+    if (U.pathname === '/api/models') {
+      // the catalog, and each model's routing record from every router audit (lib/model-scores.mjs)
+      modelsCatalog({ fresh: U.searchParams.has('fresh') }).then((cat) => json({ ...cat, scores: scoreModels(auditFiles(STATE)) }))
+      return
+    }
     // opt claude -p runs, with their claims audits
     if (U.pathname === '/api/claude-runs') return json({ runs: listClaudeRuns(outRoot(), 30) })
     if (U.pathname === '/api/claude-run') {
