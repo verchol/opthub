@@ -1,0 +1,211 @@
+# Kong AI Gateway — declarative config, DB-less.
+#
+# Every optimization lever this harness can pull at the gateway is in this one
+# file. The client is unchanged: Claude Code is pointed at
+# ANTHROPIC_BASE_URL=http://127.0.0.1:8000 and speaks its normal Anthropic
+# protocol; `llm_format: anthropic` on ai-proxy-advanced is what makes that work
+# against a Bedrock upstream.
+#
+# The parameter surface, with ranges and what each one trades off, is in
+# optimization-params.yaml next to this file. That file is the spec; this file
+# is one point in it.
+#
+# Validate before booting:   deck file validate -s kong.yaml
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: llm
+    url: http://localhost:32000          # never reached: ai-proxy-advanced terminates the request
+    retries: 0
+    connect_timeout: 60000
+    read_timeout: 600000                 # agent turns are long; the default 60s cuts them off
+    write_timeout: 600000
+    routes:
+      - name: anthropic-messages
+        paths:
+          - /v1/messages                 # what Claude Code calls
+          - /v1/chat/completions         # what everything else calls
+        strip_path: false
+        methods: [POST]
+
+plugins:
+  # ---------------------------------------------------------------- routing
+  # The model lever. Targets are ordered by priority; the balancer decides
+  # which one serves a given request, and failover_criteria decides when to
+  # give up on it. Swapping the first target's model is the whole of the
+  # "route to a cheaper model" experiment — no client change.
+  - name: ai-proxy-advanced
+    service: llm
+    config:
+      llm_format: anthropic
+      genai_category: text/generation
+      model_name_header: true
+      response_streaming: allow
+      max_request_body_size: 33554432    # agent requests carry whole files; 1MB default truncates
+      balancer:
+        algorithm: priority              # lowest-usage / lowest-latency / semantic are the alternatives
+        tokens_count_strategy: cost
+        latency_strategy: tpot
+        connect_timeout: 60000
+        read_timeout: 600000
+        write_timeout: 600000
+        retries: 2
+        max_fails: 3
+        fail_timeout: 30000
+        failover_criteria:
+          - error
+          - timeout
+          - "429"
+          - "503"
+      targets:
+        - route_type: llm/v1/chat
+          weight: 100
+          logging:
+            log_statistics: true         # token counts land in the Kong log; this is the meter
+            log_payloads: false          # payloads are the session's source code — off by default
+          model:
+            provider: bedrock
+            name: eu.anthropic.claude-sonnet-4-6
+            options:
+              bedrock:
+                aws_region: eu-north-1
+        - route_type: llm/v1/chat
+          weight: 1                      # only reached on failover from the target above
+          logging:
+            log_statistics: true
+            log_payloads: false
+          model:
+            provider: bedrock
+            name: qwen.qwen3-coder-480b-a35b-v1:0
+            options:
+              bedrock:
+                aws_region: eu-north-1
+
+  # ------------------------------------------------------------------ cache
+  # Off by default. A cache in front of an interactive coding agent whose
+  # prompt-cache hit rate is already 96.8% has almost nothing to hit, and a
+  # loose threshold returns yesterday's answer to today's question. Turn it on
+  # only after measuring the duplicate rate.
+  - name: ai-semantic-cache
+    service: llm
+    enabled: false
+    config:
+      llm_format: anthropic
+      cache_ttl: 300
+      cache_control: false
+      exact_caching: false               # true adds an exact-match pass before the vector search
+      stop_on_failure: false             # a broken cache must not take the gateway down with it
+      message_countback: 1
+      ignore_system_prompts: false
+      ignore_assistant_prompts: false
+      ignore_tool_prompts: false
+      embeddings:
+        model:
+          provider: bedrock
+          name: amazon.titan-embed-text-v2:0
+          options:
+            bedrock:
+              aws_region: eu-north-1
+      vectordb:
+        strategy: redis
+        dimensions: 1024
+        distance_metric: cosine
+        threshold: 0.10                  # the single most dangerous number in this file
+        redis:
+          host: 127.0.0.1
+          port: 6379
+          database: 0
+
+  # ------------------------------------------------------- prompt compression
+  # Off by default: it needs the compressor sidecar on :8080, and it rewrites
+  # the user's words. stop_on_error: true means a dead compressor fails the
+  # request rather than silently sending the uncompressed prompt, so a run
+  # cannot half-apply the lever and still report a delta.
+  - name: ai-prompt-compressor
+    service: llm
+    enabled: false
+    config:
+      compressor_url: http://127.0.0.1:8080
+      compressor_type: rate              # or target_token, where value is an absolute budget
+      timeout: 10000
+      keepalive_timeout: 60000
+      stop_on_error: true
+      log_text_data: false
+      message_type:
+        - user
+      compression_ranges:
+        - min_tokens: 500                # below this, compression costs more than it saves
+          max_tokens: 4000
+          value: 0.7
+        - min_tokens: 4001
+          max_tokens: 100000
+          value: 0.5
+
+  # ------------------------------------------------------------- rate limits
+  # A ceiling, not a saving. Set above the p99 session or this is an
+  # availability change wearing an optimizer's clothes: a 429 mid-task reads to
+  # the agent as a transient failure and it retries, which costs more.
+  - name: ai-rate-limiting-advanced
+    service: llm
+    enabled: false
+    config:
+      llm_providers:
+        - name: bedrock
+          limit:
+            - 2000000
+          window_size:
+            - 3600
+      strategy: local                    # redis when more than one gateway shares the budget
+      tokens_count_strategy: total_tokens
+      window_type: sliding
+      hide_client_headers: false
+      disable_penalty: false
+      error_code: 429
+      error_message: "AI token rate limit exceeded for provider(s): "
+
+  # ------------------------------------------------------------- measurement
+  # The verdict, taken continuously instead of once at the end of a run.
+  # sampling_rate is the cost dial: the judge is itself a model call, so
+  # judging every response doubles the request count.
+  - name: ai-llm-as-judge
+    service: llm
+    enabled: false
+    config:
+      sampling_rate: 0.1
+      message_countback: 1
+      ignore_system_prompts: true
+      ignore_assistant_prompts: true
+      ignore_tool_prompts: true
+      http_timeout: 60000
+      https_verify: true
+      llm:
+        route_type: llm/v1/chat
+        logging:
+          log_statistics: true
+          log_payloads: false
+        model:
+          provider: bedrock
+          name: eu.anthropic.claude-sonnet-4-6
+          options:
+            bedrock:
+              aws_region: eu-north-1
+
+  # ----------------------------------------------------------------- safety
+  # Not an optimization. It is the reason a gateway is allowed in the request
+  # path of a session that has the user's source tree in its context.
+  - name: ai-sanitizer
+    service: llm
+    enabled: false
+    config:
+      redact_type: placeholder
+      recover_redacted: false
+
+  # ---------------------------------------------------------------- metering
+  # Token counts and latency per request, as JSON lines. This is what makes any
+  # of the levers above measurable rather than plausible.
+  - name: file-log
+    service: llm
+    config:
+      path: /home/user/kong-ai.log
+      reopen: true

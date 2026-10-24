@@ -1,0 +1,195 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/archivo";
+
+@custom-variant dark (&:is(.dark *, .black *));
+
+@theme inline {
+    --font-heading: 'Archivo Variable', var(--font-sans);
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+    --color-ok: var(--ok);
+    --color-warn: var(--warn);
+    --color-bad: var(--bad);
+    --color-rail: var(--rail);
+    --color-violet: var(--violet);
+    --color-gold: var(--gold);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* The hub's palette (lib/hub-page.mjs before the React port) on shadcn's tokens:
+   teal primary, warn and bad for spend, three themes — light, dark, black. */
+:root {
+    --background: #F3F5F5;
+    --foreground: #12181A;
+    --card: #FFFFFF;
+    --card-foreground: #12181A;
+    --popover: #FFFFFF;
+    --popover-foreground: #12181A;
+    --primary: #0E6E65;
+    --primary-foreground: #FFFFFF;
+    --secondary: #ECEFEF;
+    --secondary-foreground: #12181A;
+    --muted: #ECEFEF;
+    --muted-foreground: #5A6B6E;
+    --accent: color-mix(in srgb, #0E6E65 9%, transparent);
+    --accent-foreground: #12181A;
+    --destructive: #B3402B;
+    --border: #D7DEDE;
+    --input: #D7DEDE;
+    --ring: #0E6E65;
+    --ok: #0E6E65;
+    --warn: #A8611F;
+    --bad: #B3402B;
+    --violet: #7A5AF8;
+    --gold: #B8860B;
+    --rail: #ECEFEF;
+    --chart-1: #2A9D8F;
+    --chart-2: #E76F51;
+    --chart-3: #457B9D;
+    --chart-4: #E9B949;
+    --chart-5: #8E5EA2;
+    --radius: 0.5rem;
+    --sidebar: #ECEFEF;
+    --sidebar-foreground: #12181A;
+    --sidebar-primary: #0E6E65;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #FFFFFF;
+    --sidebar-accent-foreground: #12181A;
+    --sidebar-border: #D7DEDE;
+    --sidebar-ring: #0E6E65;
+}
+
+.dark {
+    --background: #0D1214;
+    --foreground: #E3EAE9;
+    --card: #151B1E;
+    --card-foreground: #E3EAE9;
+    --popover: #151B1E;
+    --popover-foreground: #E3EAE9;
+    --primary: #46BFAF;
+    --primary-foreground: #0D1214;
+    --secondary: #1B2326;
+    --secondary-foreground: #E3EAE9;
+    --muted: #1B2326;
+    --muted-foreground: #8B9C9E;
+    --accent: color-mix(in srgb, #46BFAF 12%, transparent);
+    --accent-foreground: #E3EAE9;
+    --destructive: #E58B72;
+    --border: #232D30;
+    --input: #2A3538;
+    --ring: #46BFAF;
+    --ok: #46BFAF;
+    --warn: #E2A462;
+    --bad: #E58B72;
+    --violet: #A08BFA;
+    --gold: #E8C56B;
+    --rail: #101618;
+    --sidebar: #101618;
+    --sidebar-foreground: #E3EAE9;
+    --sidebar-primary: #46BFAF;
+    --sidebar-primary-foreground: #0D1214;
+    --sidebar-accent: #151B1E;
+    --sidebar-accent-foreground: #E3EAE9;
+    --sidebar-border: #232D30;
+    --sidebar-ring: #46BFAF;
+}
+
+.black {
+    --background: #000000;
+    --foreground: #F2F2F2;
+    --card: #0A0A0A;
+    --card-foreground: #F2F2F2;
+    --popover: #0A0A0A;
+    --popover-foreground: #F2F2F2;
+    --primary: #3DD6C4;
+    --primary-foreground: #000000;
+    --secondary: #141414;
+    --secondary-foreground: #F2F2F2;
+    --muted: #141414;
+    --muted-foreground: #7C7C7C;
+    --accent: color-mix(in srgb, #3DD6C4 12%, transparent);
+    --accent-foreground: #F2F2F2;
+    --destructive: #E58B72;
+    --border: #1C1C1C;
+    --input: #262626;
+    --ring: #3DD6C4;
+    --ok: #3DD6C4;
+    --warn: #F0A868;
+    --bad: #E58B72;
+    --violet: #A08BFA;
+    --gold: #E8C56B;
+    --rail: #050505;
+    --sidebar: #050505;
+    --sidebar-foreground: #F2F2F2;
+    --sidebar-primary: #3DD6C4;
+    --sidebar-primary-foreground: #000000;
+    --sidebar-accent: #0A0A0A;
+    --sidebar-accent-foreground: #F2F2F2;
+    --sidebar-border: #1C1C1C;
+    --sidebar-ring: #3DD6C4;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  button:not(:disabled), [role="button"]:not(:disabled) {
+    cursor: pointer;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+@layer components {
+  /* numbers line up in every table */
+  .num { @apply font-mono tabular-nums text-right; }
+  .eyebrow { @apply font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground; }
+}
+
+@keyframes hub-pulse { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
+.animate-hub-pulse { animation: hub-pulse 1.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .animate-hub-pulse { animation: none; } }

@@ -1,0 +1,17 @@
+{
+  "kind": "document",
+  "file": "PITCH.md",
+  "module": null,
+  "title": "an investor pitch built from the evidence memo",
+  "judge": {
+    "brief": "Create a winning pitch with facts to convince an investor to invest. The author was given ONE source document — an internal evidence memo — and had to build the pitch from what is actually in it.",
+    "rubric": [
+      ["grounding", "Are the claims traceable to the evidence memo? Invented numbers, invented customers or invented market sizes are the worst failure here and must be punished hard."],
+      ["selection", "Did it find the genuinely strongest facts in the source, or does it lead with generic AI-market boilerplate the memo does not support?"],
+      ["specificity", "Named customers, real figures, concrete mechanisms — versus adjectives and abstraction."],
+      ["honesty", "Does it distinguish what is proven from what is projected, and acknowledge risk, rather than presenting everything as settled?"],
+      ["narrative", "Is there an argument that builds — problem, why now, why this team, what the money buys — or is it a list of facts?"],
+      ["investor_readiness", "Would a partner read this and take the meeting? Is the ask clear and is the use of funds stated?"]
+    ]
+  }
+}

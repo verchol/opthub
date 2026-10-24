@@ -1,0 +1,16 @@
+# Claude on Bedrock, fronted so Claude Code can reach it via ANTHROPIC_BASE_URL.
+# Credentials are named explicitly and client headers are NOT forwarded: LiteLLM
+# must sign with SigV4 itself, or Bedrock sees the client's bearer token and
+# rejects it as a malformed AWS credential.
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0
+      aws_region_name: os.environ/AWS_REGION
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: sk-local
+  forward_client_headers_to_llm_api: false

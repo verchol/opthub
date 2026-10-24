@@ -962,7 +962,7 @@
    "evidence": "guess",
    "risk": "low",
    "latency": "slower",
-   "opthub": "template/e2b.Dockerfile is a bigger box for sidecars",
+   "opthub": "sandbox/e2b/harness/e2b.Dockerfile is a bigger box for sidecars",
    "caveat": "An undersized box turns a CPU wait into a longer, costlier model session.",
    "kind": "saving"
   },
@@ -984,7 +984,7 @@
    "evidence": "published",
    "risk": "medium",
    "latency": "faster",
-   "opthub": "template/openmodel serves Ollama",
+   "opthub": "sandbox/e2b/openmodel serves Ollama",
    "caveat": "Only for self-hosted spend. Lower precision can cost quality on hard tasks.",
    "kind": "saving"
   },

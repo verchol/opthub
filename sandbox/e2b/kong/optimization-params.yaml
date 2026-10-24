@@ -1,0 +1,366 @@
+# ---------------------------------------------------------------------------
+# The optimization parameter surface, as Kong AI Gateway defines it.
+#
+# kong.yaml is one point in this space. This file is the space: every knob the
+# gateway exposes that changes what a request costs, how fast it comes back, or
+# how good it is — with its type, its default, its range, and what it trades
+# against. Nothing here is aspirational; each entry names the plugin that owns
+# it.
+#
+# Read it as the spec that the runnable experiments in
+# ../../config/optimizations.json are drawn from. An entry with `experiment:`
+# already has a runnable arm there; one without is a lever this harness has not
+# tried yet.
+#
+# Sources: developer.konghq.com plugin references for ai-proxy-advanced,
+# ai-semantic-cache, ai-prompt-compressor, ai-rate-limiting-advanced,
+# ai-llm-as-judge, ai-sanitizer (read 2026-09-09).
+# ---------------------------------------------------------------------------
+version: 0.1
+gateway: kong-gateway 3.11
+llm_format: anthropic          # what lets an unmodified Claude Code speak to this gateway
+
+groups:
+
+  # =========================================================================
+  routing:
+    plugin: ai-proxy-advanced
+    what: Which model answers, and what happens when it will not.
+    biggest_lever: true
+    params:
+      - key: balancer.algorithm
+        type: enum
+        default: round-robin
+        values: [round-robin, consistent-hashing, least-connections, lowest-latency, lowest-usage, priority, semantic]
+        effect: >
+          priority pins traffic to the first healthy target, which is what you want when the
+          experiment is "does the cheap model hold up". lowest-usage with
+          tokens_count_strategy: cost is the one that actually minimises spend across a mixed
+          fleet. semantic routes by what the prompt is about and needs embeddings + vectordb.
+        trade: >
+          Anything other than priority makes a run non-reproducible: two identical requests can
+          land on different models, so a cost delta stops being attributable.
+        experiment: route-cheaper-frontier
+
+      - key: balancer.tokens_count_strategy
+        type: enum
+        default: total-tokens
+        values: [total-tokens, prompt-tokens, completion-tokens, cost, llm-accuracy]
+        effect: What "usage" means to the lowest-usage balancer. `cost` prices targets against each other.
+        trade: llm-accuracy needs ai-llm-as-judge running, so it costs a second model call per sampled request.
+
+      - key: balancer.latency_strategy
+        type: enum
+        default: tpot
+        values: [tpot, e2e]
+        effect: tpot is time-per-output-token, e2e is the whole request.
+        trade: >
+          For an agent, e2e is the honest one and tpot flatters long answers. For a chat UI the
+          reverse. Picking the wrong one optimises for a latency the user never feels.
+
+      - key: balancer.retries
+        type: integer
+        default: 5
+        range: [0, 32767]
+        effect: Attempts before the request fails.
+        trade: Every retry is billed. Five retries against a rate-limited target is five times the cost of the failure.
+
+      - key: balancer.max_fails / balancer.fail_timeout
+        type: integer / integer(ms)
+        default: 0 / 10000
+        effect: Circuit breaker. 0 disables it, which is the default and is almost never right.
+        trade: A tight breaker sheds a target on a transient blip and sends everything to the expensive fallback.
+
+      - key: balancer.failover_criteria
+        type: array
+        default: [error, timeout]
+        values: [error, timeout, HTTP status codes]
+        effect: What counts as "this target failed". Add 429 and 503 or a rate-limited target keeps taking traffic.
+        trade: Failing over on 429 moves the cost to the fallback target instead of surfacing the limit.
+
+      - key: targets[].model.provider / .name
+        type: string
+        values_provider: [openai, azure, anthropic, bedrock, gemini, cohere, huggingface, mistral, ollama, llama2, cerebras, deepseek, dashscope, databricks, vllm, xai]
+        effect: The model itself. The single largest price lever available anywhere in this file.
+        trade: Accuracy. This is the lever the gate exists for.
+        experiment: [route-cheaper-frontier, route-open-weights, route-open-weights-small]
+
+      - key: targets[].weight
+        type: integer
+        default: 100
+        range: [1, 65535]
+        effect: Traffic share under a weighted algorithm — the mechanism for a canary.
+        trade: A 5% canary needs ~20x the traffic to reach the same confidence as a 50/50 split.
+
+      - key: targets[].model.model_alias
+        type: string
+        effect: Maps the model name the client asked for onto this target, so the client can keep saying "opus".
+        trade: The response no longer tells the truth about what ran unless model_name_header is on.
+
+      - key: targets[].logging.log_statistics
+        type: boolean
+        default: false
+        effect: Token counts per request in the Kong log. Without this there is no meter and no experiment.
+        trade: none worth the words. Turn it on.
+
+      - key: targets[].logging.log_payloads
+        type: boolean
+        default: false
+        effect: Logs the prompt and completion bodies.
+        trade: >
+          For a coding agent the payload is the user's source tree. Leave off unless the log has
+          the same access controls as the repo.
+
+      - key: max_request_body_size
+        type: integer(bytes)
+        default: 1048576
+        effect: Bodies above this are not introspected, so plugins that read the prompt silently stop applying.
+        trade: >
+          An agent request carrying whole files exceeds 1MB routinely. Left at the default, the
+          compressor and the cache quietly do nothing on exactly the requests worth optimising.
+
+      - key: response_streaming
+        type: enum
+        default: allow
+        values: [allow, deny, always]
+        effect: deny forces buffering, which is what cache and judge plugins need to see a whole response.
+        trade: Buffering removes streaming, so time-to-first-token becomes time-to-last-token.
+
+      - key: acls.allow / acls.deny
+        type: array of rules
+        effect: Per consumer/group/header/ip/model/path/provider allow and deny; deny wins.
+        trade: Governance, not cost. Useful to stop one team routing to the expensive target.
+
+  # =========================================================================
+  caching:
+    plugin: ai-semantic-cache
+    what: Serve a stored answer when a near-identical question arrives.
+    detector_first: >
+      Measure the duplicate rate before enabling. On this machine the prompt-cache hit rate is
+      already 96.8%, so there is very little left for a semantic cache to catch.
+    params:
+      - key: vectordb.threshold
+        type: float
+        range: [0.0, 1.0]
+        effect: Similarity distance under which a stored answer is served instead of the model's.
+        trade: >
+          The most dangerous number in the config. Loose returns a stale answer to a question that
+          only looks the same, and the failure is silent — the client cannot tell a cache hit from
+          a fresh answer.
+        experiment: semantic-cache
+
+      - key: cache_ttl
+        type: integer(seconds)
+        default: 300
+        effect: How long an entry stays servable.
+        trade: Long TTL raises the hit rate and the staleness together. They are the same dial.
+
+      - key: exact_caching
+        type: boolean
+        default: false
+        effect: Exact-match pass before the vector search — cheaper and has no false positives.
+        trade: Grows the store. On agent traffic, exact repeats are rare, so it mostly buys nothing.
+
+      - key: message_countback
+        type: integer
+        default: 1
+        range: [1, 1000]
+        effect: How many messages of history are vectorised as the cache key.
+        trade: >
+          1 keys on the last message alone, which for a multi-turn agent collides across completely
+          different conversations. Raise it for agents; it makes the key more specific and the hit
+          rate lower, which is the correct direction.
+
+      - key: ignore_system_prompts / ignore_assistant_prompts / ignore_tool_prompts
+        type: boolean
+        default: false
+        effect: Excludes those roles from the cache key.
+        trade: >
+          Ignoring system prompts means two sessions with different instructions share cache
+          entries. For a harness that varies the system prompt as a lever, this destroys the
+          experiment.
+
+      - key: stop_on_failure
+        type: boolean
+        default: false
+        effect: true fails the request when the cache errors.
+        trade: false is right in production and wrong in an experiment — a silently bypassed cache reports as a null result.
+
+      - key: vectordb.strategy
+        type: enum
+        values: [redis, pgvector]
+        effect: Where vectors live.
+        trade: redis is in-memory and dies with the sandbox; pgvector survives and can be inspected after the run.
+
+      - key: embeddings.model.provider / .name
+        type: string
+        effect: What computes the key. Dimensions must match vectordb.dimensions or every lookup misses.
+        trade: The embedding call is billed on every request, hit or miss. On a low hit rate the cache is a net cost.
+
+  # =========================================================================
+  prompt_compression:
+    plugin: ai-prompt-compressor
+    what: Drop padding and redundancy from the prompt before it is billed.
+    requires: an external compressor service on compressor_url
+    params:
+      - key: compressor_type
+        type: enum
+        default: rate
+        values: [rate, target_token]
+        effect: rate keeps a fraction of the prompt; target_token compresses to an absolute budget.
+        trade: target_token gives a predictable bill and an unpredictable amount of lost meaning.
+
+      - key: compression_ranges[].value
+        type: float | integer
+        effect: The fraction kept (rate) or the token budget (target_token) for that size band.
+        trade: >
+          Vendor claim is ~80% of semantics retained. For a spec-driven coding task, the 20% that
+          goes is disproportionately the constraints, because constraints are the terse part.
+        experiment: terse-context
+
+      - key: compression_ranges[].min_tokens
+        type: integer
+        effect: Floor below which nothing is compressed.
+        trade: Set too low and the compressor round-trip costs more latency than the tokens it saved.
+
+      - key: message_type
+        type: array
+        default: [user]
+        values: [user, system, assistant]
+        effect: Which roles get compressed.
+        trade: >
+          Compressing system messages invalidates the upstream prompt cache on every request, which
+          can cost far more than the compression saves.
+
+      - key: stop_on_error
+        type: boolean
+        default: true
+        effect: Fail the request if the compressor is unreachable.
+        trade: false means the lever silently stops applying and the run still reports a delta.
+
+      - key: log_text_data
+        type: boolean
+        default: false
+        effect: Logs the before/after text, which is the only way to audit what was removed.
+        trade: Same as log_payloads — it is the user's source.
+
+  # =========================================================================
+  governance:
+    plugin: ai-rate-limiting-advanced
+    what: A ceiling on spend, enforced where the traffic is rather than in each client.
+    not_a_saving: It changes the worst case, not the mean.
+    params:
+      - key: llm_providers[].limit / .window_size
+        type: array(integer) / array(seconds)
+        effect: Tokens (or cost) per window, per provider. Multiple pairs make a burst + sustained limit.
+        trade: >
+          Below the p99 session this is an availability change: the agent reads 429 as transient,
+          retries, and spends more than it saved.
+        experiment: token-rate-limit
+
+      - key: tokens_count_strategy
+        type: enum
+        default: total_tokens
+        values: [total_tokens, prompt_tokens, completion_tokens, cost]
+        effect: What is counted against the limit. `cost` is the only one that is currency-comparable across models.
+        trade: total_tokens under-prices output, which is where the money actually is.
+
+      - key: window_type
+        type: enum
+        values: [fixed, sliding]
+        effect: sliding stops the boundary burst at the top of the hour.
+        trade: sliding costs more state.
+
+      - key: strategy
+        type: enum
+        default: local
+        values: [local, redis, cluster]
+        effect: Where counters live. local is per-node and under-counts across replicas.
+        trade: redis adds a network hop to every request.
+
+      - key: disable_penalty
+        type: boolean
+        default: false
+        effect: Whether denied (429) requests count against the limit.
+        trade: false lets a retry storm hold the limit down indefinitely.
+
+      - key: sync_rate
+        type: number(seconds)
+        effect: 0 syncs synchronously, -1 never, >0 every n seconds.
+        trade: Anything but 0 means the limit is approximate, and bursts leak through.
+
+  # =========================================================================
+  measurement:
+    plugin: ai-llm-as-judge
+    what: A second model scores responses 1-100. This is the verdict mechanism, not a lever.
+    params:
+      - key: sampling_rate
+        type: float
+        default: 1
+        range: [0.0, 1.0]
+        effect: Fraction of responses judged.
+        trade: >
+          The cost dial. At 1 every response costs a second model call, so judging can cost more
+          than the saving it is verifying. Set it so it does not.
+        experiment: gateway-judge
+
+      - key: prompt
+        type: string
+        effect: The rubric. Default scores correctness.
+        trade: A rubric that does not name the task's own acceptance criteria scores fluency, not correctness.
+
+      - key: llm.model.provider / .name
+        type: string
+        effect: Which model judges.
+        trade: >
+          Judging a model with itself scores agreement, not quality. Judging a cheap arm with an
+          expensive judge is honest and is most of the judging bill.
+
+      - key: message_countback
+        type: integer
+        default: 1
+        effect: How much conversation the judge sees.
+        trade: 1 means the judge scores an answer without the question that shaped it.
+
+      - key: ignore_system_prompts / ignore_assistant_prompts / ignore_tool_prompts
+        type: boolean
+        default: true
+        effect: What is hidden from the judge.
+        trade: Hiding tool output from the judge on an agentic task hides most of what the agent did.
+
+  # =========================================================================
+  safety:
+    plugin: ai-sanitizer
+    what: Redact sensitive fields before they leave the machine.
+    params:
+      - key: redact_type
+        type: enum
+        values: [placeholder, ...]
+        effect: How a match is replaced.
+        trade: Redacting something the model needed produces a confidently wrong answer with no error.
+      - key: recover_redacted
+        type: boolean
+        default: false
+        effect: Put the original values back into the response.
+        trade: Recovery means the secret is held in gateway memory for the length of the request.
+
+  # =========================================================================
+  not_available_at_the_gateway:
+    what: >
+      Levers this harness measures that a gateway structurally cannot pull, listed so the split is
+      explicit rather than an omission.
+    items:
+      - key: context compaction
+        why: >
+          Conversation state belongs to the client. A gateway sees one request and cannot decide
+          what to drop from a history it does not hold.
+        experiment: context-compaction
+      - key: reasoning effort
+        why: >
+          Provider-specific and per-request. Kong can pin it in targets[].model.options, but it is
+          the client that knows whether this turn needs thinking.
+        experiment: effort-medium
+      - key: prompt caching TTL
+        why: >
+          Set by cache_control breakpoints inside the request body. A gateway that rewrites the
+          body to change them invalidates the very cache it is tuning.

@@ -1,7 +1,7 @@
 # Epic RO — runtime optimization (`opt claude optimize`)
 
 **Status:** draft v0.1 · **Date:** 2026-09-30 · **Owner:** oleg@canarian.io
-**Spec:** `SPEC.md` §16 points here. **Implementation:** `sandbox/e2b` — `optimize-live.mjs`,
+**Spec:** `SPEC.md` §16 points here. **Implementation:** `app/` — `optimize-live.mjs`,
 `ult.mjs`, `lib/ult/`, `config/ult.default.json`, `template/claude/commands/optimize.md`.
 **Thesis:** `docs/demo-thesis.md` Phase 2 · **Evidence:** `docs/evidence-catalog.md`
 
@@ -279,9 +279,12 @@ Layered, later wins: `config/ult.default.json` (ships) → `$OPT_HOME/ult.json` 
 
 The block above is abridged. The shipped defaults, including `policy.minConfidence`,
 `policy.localWithTools`, prices, cache multipliers and the per-model `models` adapter table, are
-`sandbox/e2b/config/ult.default.json`.
+`app/config/ult.default.json`.
 
 ## 7. What this does not do yet — and why
+
+Local routes have no capacity check yet: no fit check, no in-flight cap, no time-to-first-token
+budget, and `num_ctx` is not set. The proposal is [`local-inference-capacity.md`](local-inference-capacity.md).
 
 | not yet | why | when |
 |---|---|---|

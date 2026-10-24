@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# The opt CLI. Works through a symlink (ln -s "$PWD/opt" ~/.local/bin/opt): resolves to this checkout.
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+exec node "$here/app/opt.mjs" "$@"

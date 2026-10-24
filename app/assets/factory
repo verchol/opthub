@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Repo CLI. Batches every check into one process (code-mode: one tool call, not six).
+
+Nothing here encodes anything that is not already stated in SPEC.md.
+"""
+import ast, io, contextlib, importlib, os, subprocess, sys, traceback
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+os.chdir(ROOT)
+sys.path.insert(0, ROOT)
+
+
+def check_syntax():
+    if not os.path.exists("sheet.py"):
+        return False, "sheet.py does not exist"
+    try:
+        ast.parse(open("sheet.py").read())
+    except SyntaxError as e:
+        return False, f"SyntaxError line {e.lineno}: {e.msg}"
+    return True, "sheet.py parses"
+
+
+def check_import_purity():
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            import sheet
+            importlib.reload(sheet)
+    except Exception:
+        return False, "import raised:\n" + traceback.format_exc()[-800:]
+    if buf.getvalue():
+        return False, f"import printed to stdout: {buf.getvalue()[:200]!r}"
+    return True, "imports cleanly, no stdout"
+
+
+def check_api():
+    import sheet
+    missing = [n for n in ("Sheet", "CircularReference") if not hasattr(sheet, n)]
+    if missing:
+        return False, f"missing public names: {', '.join(missing)}"
+    if not issubclass(sheet.CircularReference, Exception):
+        return False, "CircularReference is not an Exception subclass"
+    for m in ("set", "get"):
+        if not callable(getattr(sheet.Sheet, m, None)):
+            return False, f"Sheet.{m} is missing or not callable"
+    return True, "public API present"
+
+
+def check_smoke():
+    """Assertions taken verbatim from statements in SPEC.md."""
+    import sheet
+    from sheet import Sheet, CircularReference
+    fails = []
+
+    def ck(label, fn, want):
+        try:
+            got = fn()
+        except Exception as e:
+            fails.append(f"{label}: raised {type(e).__name__}: {e}")
+            return
+        ok = (isinstance(got, float) and isinstance(want, float)
+              and abs(got - want) < 1e-9) or got == want
+        if not ok:
+            fails.append(f"{label}: got {got!r}, want {want!r}")
+
+    def raises(label, fn, exc):
+        try:
+            fn()
+        except exc:
+            return
+        except Exception as e:
+            fails.append(f"{label}: raised {type(e).__name__}, want {exc.__name__}")
+            return
+        fails.append(f"{label}: did not raise {exc.__name__}")
+
+    def s(**cells):
+        sh = Sheet()
+        for k, v in cells.items():
+            sh.set(k, v)
+        return sh
+
+    ck("unset cell is 0.0", lambda: Sheet().get("A1"), 0.0)
+    ck("whitespace cell is 0.0", lambda: s(A1="   ").get("A1"), 0.0)
+    ck("number literal", lambda: s(A1=" -3.5 ").get("A1"), -3.5)
+    ck("scientific literal", lambda: s(A1="1e3").get("A1"), 1000.0)
+    ck("text is stripped", lambda: s(A1="  hi  ").get("A1"), "hi")
+    ck("ref case-insensitive", lambda: s(a1="5").get("A1"), 5.0)
+    ck("precedence", lambda: s(A1="=2+3*4").get("A1"), 14.0)
+    ck("parens", lambda: s(A1="=(2+3)*4").get("A1"), 20.0)
+    ck("unary minus binds tighter", lambda: s(A1="=-2*3").get("A1"), -6.0)
+    ck("whitespace insignificant", lambda: s(A1="=  1 +   2 ").get("A1"), 3.0)
+    ck("ref to empty is 0", lambda: s(A1="=Z99+5").get("A1"), 5.0)
+    ck("bijective columns", lambda: s(AA1="7", AB1="=AA1+1").get("AB1"), 8.0)
+    ck("reversed corners", lambda: s(A1="1", A2="2", B1="3", B2="4",
+                                     D1="=SUM(B2:A1)").get("D1"), 10.0)
+    ck("mixed scalar and range", lambda: s(A1="1", A2="2", A3="3", B1="5",
+                                           C1="=SUM(A1:A3,10,B1*2)").get("C1"), 26.0)
+    ck("range skips empty and text", lambda: s(B1="10", B2="", B3="t",
+                                               C1="=SUM(B1:B3)").get("C1"), 10.0)
+    ck("empty range MIN is 0.0", lambda: s(C1="=MIN(X1:Y5)").get("C1"), 0.0)
+    ck("COUNT is a float", lambda: type(s(A1="1", C1="=COUNT(A1:A1)").get("C1")), float)
+    raises("text in arithmetic", lambda: s(A1="t", B1="=A1+1").get("B1"), TypeError)
+    raises("scalar text arg", lambda: s(A1="t", C1="=SUM(A1,1)").get("C1"), TypeError)
+    raises("div by zero", lambda: s(A1="=1/0").get("A1"), ZeroDivisionError)
+    raises("self reference", lambda: s(A1="=A1").get("A1"), CircularReference)
+    raises("indirect cycle", lambda: s(A1="=B1", B1="=A1").get("A1"), CircularReference)
+    raises("malformed formula", lambda: s(A1="=1+").get("A1"), ValueError)
+    raises("bad ref", lambda: Sheet().set("1A", "1"), ValueError)
+
+    def recompute():
+        sh = s(A1="1", B1="=A1*10")
+        sh.get("B1")
+        sh.set("A1", "3")
+        return sh.get("B1")
+    ck("no stale cache", recompute, 30.0)
+
+    if fails:
+        return False, f"{len(fails)} smoke assertion(s) failed:\n  - " + "\n  - ".join(fails)
+    return True, "25 spec smoke assertions pass"
+
+
+def check_tests():
+    if not os.path.isdir("tests"):
+        return False, "tests/ directory does not exist"
+    p = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+                       capture_output=True, text=True)
+    tail = (p.stderr or p.stdout).strip().splitlines()
+    if p.returncode != 0:
+        return False, "your tests failed:\n  " + "\n  ".join(tail[-25:])
+    return True, (tail[-1] if tail else "ok")
+
+
+CHECKS = [("syntax", check_syntax), ("import-purity", check_import_purity),
+          ("public-api", check_api), ("spec-smoke", check_smoke),
+          ("your-tests", check_tests)]
+
+
+def run(names):
+    results = []
+    for name, fn in CHECKS:
+        if names and name not in names:
+            continue
+        try:
+            ok, msg = fn()
+        except Exception:
+            ok, msg = False, "check crashed:\n" + traceback.format_exc()[-800:]
+        results.append((name, ok, msg))
+        if not ok and name in ("syntax", "import-purity"):
+            break
+    print("=== FACTORY SUMMARY ===")
+    for name, ok, msg in results:
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}: {msg}")
+    failed = [n for n, ok, _ in results if not ok]
+    print(f"result: {'CLEAN' if not failed else 'FAILING (' + ', '.join(failed) + ')'}")
+    print("=== END SUMMARY ===")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "verify"
+    sel = {"verify": None, "smoke": {"syntax", "import-purity", "public-api", "spec-smoke"},
+           "tests": {"syntax", "import-purity", "your-tests"}}
+    if cmd not in sel:
+        print(f"usage: ./factory [verify|smoke|tests]", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(run(sel[cmd]))

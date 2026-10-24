@@ -8,14 +8,17 @@ The project exists because the usual alternative is a spreadsheet of list prices
 
 ---
 
-## Two repositories
+## One repository
 
 | | what it is |
 |---|---|
-| **`demos/opthub`** *(this repo)* | the spec, the measurements, and the read-only analysis tools. Nothing here spends money. |
-| **`sandbox/e2b`** *(not yet published)* | the working implementation: the hub, the experiment loop, the sandbox templates, the report. |
+| `SPEC.md`, `docs/`, `tools/`, `experiments/` | the spec, the measurements, and the read-only Python analysis tools. Nothing here spends money except `tools/rerun.py --yes`. |
+| [`app/`](app/README.md) | the working implementation: the `opt` CLI, the Optimization Hub, the experiment loop, the report. |
+| [`sandbox/`](sandbox/README.md) | the sandbox providers arms run in, one directory each: `docker/` (local) and `e2b/` (cloud microVMs). |
 
-They are deliberately separate. This repo is where a claim gets written down and argued with; the other is where it gets executed. `SPEC.md` is versioned (currently **v0.4**) and `PROGRESS.md` is the dated log of what each measurement changed.
+The claim gets written down and argued with on the Python side, and executed in `app/` and `sandbox/`.
+Nothing points outside the checkout (`node sandbox/test.mjs` checks it). One `npm install` and one `.env`
+at the root serve all of it. `SPEC.md` is versioned (currently **v0.4**) and `PROGRESS.md` is the dated log of what each measurement changed.
 
 ---
 
@@ -29,7 +32,14 @@ python3 --version                       # 3.10+; tested on 3.12
 python3 tools/lenops.py view            # sessions run from this directory; empty until Claude Code has run here
 python3 tools/costmodel.py              # pinned ledgers in docs/data/, no transcripts needed
 cd experiments/session-triage && python3 src/run.py && cd -   # rules arm, no egress
+python3 examples/golden/demo.py --check  # whole pipeline on synthetic sessions, free (examples/README.md)
 ```
+
+**Secrets — one file.** Every credential any feature can use is listed in [`.env.example`](.env.example).
+`cp .env.example .env`, fill in only what you need, and `python3 tools/envfile.py check` shows what is set
+(masked) and what it enables. Values are literals, or `op://` references if you use 1Password. `tools/rerun.py`
+reads `.env` itself; for anything else, `python3 tools/envfile.py run -- <command>`. A variable exported in the
+shell wins over the file. `.env` is gitignored.
 
 Optional, per feature:
 
@@ -37,8 +47,8 @@ Optional, per feature:
 |---|---|
 | re-rendering `docs/demo-diagrams.md` | `brew install node && npm i -g @mermaid-js/mermaid-cli` (gives `mmdc`) |
 | J2 LangChain comparison arms | `python3 -m venv .venv && .venv/bin/pip install -r experiments/email-triage/requirements.txt` |
-| Jev arms (J2, J3) | `export JEV_API_KEY=…` (optional `JEV_ENDPOINT`, `JEV_MODEL`) |
-| `tools/rerun.py run/judge` (spends money) | Docker Desktop running; `claude setup-token`, then `export CLAUDE_CODE_OAUTH_TOKEN=…`. Do not export `ANTHROPIC_API_KEY` — it would move runs onto API billing. Images build on first use. |
+| Jev arms (J2, J3) | `JEV_API_KEY` in `.env` (optional `JEV_ENDPOINT`, `JEV_MODEL`); run with `python3 tools/envfile.py run -- …` |
+| `tools/rerun.py run/judge` (spends money) | Docker Desktop running; `claude setup-token`, then put it in `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. Do not export `ANTHROPIC_API_KEY` — it would move runs onto API billing. Images build on first use. |
 | `/lenops` slash command | nothing — it ships in `.claude/commands/` |
 | keeping session history | `"cleanupPeriodDays": 3650` in `~/.claude/settings.json` ([why](#where-sessions-live)) |
 
@@ -62,7 +72,7 @@ Where the project stands, newest first. Each line has a dated entry in [`PROGRES
 | 09-25 | **J2 — email triage with Jev** ([`experiments/email-triage/`](experiments/email-triage/)) and **J1 — judge calibration spec** ([`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)) | J2 runnable on synthetic data only; J1 spec only |
 | 09-22 | **Router prior art** ([`docs/router-comparison.md`](docs/router-comparison.md)) and the **pluggable judge** (`SPEC.md` §6.1.1) | done |
 
-**Blocked / open right now:** the implementation repo (`sandbox/e2b`) is still unpublished and has uncommitted ULT work · ULT needs a valid provider credential · LLM Light and ULT overlap and need one design · every comparison is still `n = 1` per arm.
+**Blocked / open right now:** ULT needs a valid provider credential · LLM Light and ULT overlap and need one design · every comparison is still `n = 1` per arm.
 
 ---
 
@@ -98,7 +108,7 @@ Pick a session and a lever. The loop ships that session's own working directory 
 - **The judge is pluggable** (`SPEC.md` §6.1.1). One pinned backend produces the score of record; optional *shadow* judges — TypeSafe's Jev Choice model for the pairwise half, a local open-weights model through Ollama, or a free-tier API — score the same pairs and are reported alongside, never instead. A shadow is promoted only after it agrees with the pinned judge often enough.
 - **Arms are compared against each other, never against the original session.** A replay reaches an answer in five turns where the real session took seven hundred; "cheaper than the original" would be measuring the replay's incompleteness.
 
-The written contract is `docs/report-spec.md` in the implementation repo: the eight blocks in order, and five rules a report may not break.
+The written contract is [`app/docs/report-spec.md`](app/docs/report-spec.md): the eight blocks in order, and five rules a report may not break.
 
 ### The lever catalog
 
@@ -194,7 +204,7 @@ The pinned ledgers are `docs/data/e1-sessions.csv` (215 sessions) and `docs/data
 
 ### Now — close the loop on what exists
 
-- [ ] **Publish the implementation repo** (`sandbox/e2b`) so the walkthroughs point at code that can be run. It also holds the uncommitted ULT work (`optimize-live.mjs`, `ult.mjs`, `lib/ult/`, 69 checks in `npm test`).
+- [x] **Publish the implementation** — merged into this repo as `app/` and `sandbox/`, so the walkthroughs point at code that can be run.
 - [ ] **Unblock ULT** — renew the provider credential, then run `opt claude optimize` end to end; routing needs a per-model adapter (four `400`s from Haiku before the first routed request worked).
 - [ ] **Converge LLM Light and ULT** into one router (`docs/runtime-optimization.md` §10), and run it against a real upstream.
 - [ ] **Gold labels for J3** — twenty interactive sessions labelled by their owner are enough to score `jev-C1`.
@@ -264,7 +274,7 @@ One JSONL file per session, one line per record. The directory name is the worki
 { "cleanupPeriodDays": 3650 }
 ```
 
-The harness's own records — `results/`, `exports/`, `replays/` in the implementation repo — do not expire. The pinned CSVs in `docs/data/` exist for the same reason.
+The harness's own records — `app/results/`, `app/exports/`, `app/replays/` (gitignored) — do not expire. The pinned CSVs in `docs/data/` exist for the same reason.
 
 ---
 
@@ -291,7 +301,7 @@ and the two version-pinning traps worth knowing before you share one.
 - [`docs/anatomy.html`](docs/anatomy.html) — **Anatomy of an experiment.** How the five
   parts of an experiment definition (prompt, strategy, baseline session, operational limits, verifier)
   resolve into arms that are identical except one parameter, and what the verifier is allowed to see.
-  The hub serves it at `/docs/anatomy.html` through a symlink in the implementation repo.
+  The hub serves it at `/docs/anatomy.html` through a symlink in `app/docs/`.
 
 - [`docs/atlas/`](docs/atlas/index.html) — **Optimization Atlas.** Every known way to cut an agent's
   cost, with the parameters it changes and its best/worst case on a workload you set.

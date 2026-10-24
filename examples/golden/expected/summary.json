@@ -1,0 +1,264 @@
+{
+  "simulated": true,
+  "best": [
+    "--model",
+    "claude-sonnet-5",
+    "--effort",
+    "medium"
+  ],
+  "sessions": [
+    {
+      "key": "fix-rounding",
+      "sid": "2ec4f5ed-cda7-52b6-b1ee-2441513113bc",
+      "prompts": [
+        "invoice.total() is a cent off for some carts \u2014 tests/test_invoice.py shows it. Fix it.",
+        "Run the tests and confirm."
+      ],
+      "files": [
+        "invoice.py"
+      ],
+      "profile": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "reqs": 9,
+        "ctx_p50": 31229,
+        "think_share": 0.6192326372025255,
+        "files_edited": 1
+      },
+      "dynamic": [
+        "--model",
+        "claude-haiku-4-5-20251001",
+        "--effort",
+        "low"
+      ],
+      "why": [
+        "model -> claude-haiku-4-5-20251001: 1 file(s) edited in 9 requests \u2014 a small, local change",
+        "effort -> low: thinking is 62% of output tokens"
+      ],
+      "arms": [
+        {
+          "name": "baseline",
+          "flags": [
+            "--model",
+            "claude-opus-5-5",
+            "--effort",
+            "high"
+          ],
+          "n": 3,
+          "cost": 0.4202,
+          "quality": 51,
+          "done": 1.0,
+          "wall": 240.2,
+          "reqs": 5,
+          "out_tok": 3621,
+          "verdict": null
+        },
+        {
+          "name": "cost",
+          "flags": [
+            "--model",
+            "claude-sonnet-5",
+            "--effort",
+            "medium"
+          ],
+          "n": 3,
+          "cost": 0.2029,
+          "quality": 51,
+          "done": 1.0,
+          "wall": 187.9,
+          "reqs": 5,
+          "out_tok": 2671,
+          "verdict": "cost wins on its goal (cost lower, quality and done no worse)"
+        },
+        {
+          "name": "dynamic",
+          "flags": [
+            "--model",
+            "claude-haiku-4-5-20251001",
+            "--effort",
+            "low"
+          ],
+          "n": 3,
+          "cost": 0.1037,
+          "quality": 51,
+          "done": 1.0,
+          "wall": 155.2,
+          "reqs": 6,
+          "out_tok": 2501,
+          "verdict": "dynamic wins on its goal (cost lower, quality and done no worse)"
+        }
+      ]
+    },
+    {
+      "key": "csv-export",
+      "sid": "c19db0a3-ce45-5b6e-b1fa-72b8d183aa75",
+      "prompts": [
+        "Add a CSV export to the monthly report: report.to_csv(rows) and a --csv flag on cli.py.",
+        "Add a test that the CSV round-trips through the csv module.",
+        "Document the flag in README.md."
+      ],
+      "files": [
+        "report.py",
+        "cli.py",
+        "tests/test_report.py",
+        "README.md"
+      ],
+      "profile": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "reqs": 24,
+        "ctx_p50": 85117,
+        "think_share": 0.33944711265741406,
+        "files_edited": 4
+      },
+      "dynamic": [
+        "--model",
+        "claude-sonnet-5",
+        "--effort",
+        "high"
+      ],
+      "why": [
+        "model -> claude-sonnet-5: 4 files, median context 85,117 \u2014 mid-sized work",
+        "effort kept (high): thinking is 34% of output tokens"
+      ],
+      "arms": [
+        {
+          "name": "baseline",
+          "flags": [
+            "--model",
+            "claude-opus-5-5",
+            "--effort",
+            "high"
+          ],
+          "n": 3,
+          "cost": 1.6396,
+          "quality": 49,
+          "done": 1.0,
+          "wall": 476.1,
+          "reqs": 13,
+          "out_tok": 14389,
+          "verdict": null
+        },
+        {
+          "name": "cost",
+          "flags": [
+            "--model",
+            "claude-sonnet-5",
+            "--effort",
+            "medium"
+          ],
+          "n": 3,
+          "cost": 0.8304,
+          "quality": 49,
+          "done": 1.0,
+          "wall": 405.8,
+          "reqs": 14,
+          "out_tok": 13656,
+          "verdict": "cost wins on its goal (cost lower, quality and done no worse)"
+        },
+        {
+          "name": "dynamic",
+          "flags": [
+            "--model",
+            "claude-sonnet-5",
+            "--effort",
+            "high"
+          ],
+          "n": 3,
+          "cost": 0.8487,
+          "quality": 49,
+          "done": 1.0,
+          "wall": 378.1,
+          "reqs": 14,
+          "out_tok": 16129,
+          "verdict": "dynamic wins on its goal (cost lower, quality and done no worse)"
+        }
+      ]
+    },
+    {
+      "key": "slow-report",
+      "sid": "b562a247-cf3b-547a-98a6-5771b9cd31a1",
+      "prompts": [
+        "`python3 cli.py 200000` takes far too long. Find out why.",
+        "Make report.monthly() linear without changing its output. Prove the output is identical.",
+        "Add a test that guards against the quadratic version coming back."
+      ],
+      "files": [
+        "report.py",
+        "ledger.py",
+        "tests/test_report.py"
+      ],
+      "profile": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "reqs": 44,
+        "ctx_p50": 230329,
+        "think_share": 0.5597030285210233,
+        "files_edited": 3
+      },
+      "dynamic": [
+        "--model",
+        "claude-opus-5-5",
+        "--effort",
+        "medium"
+      ],
+      "why": [
+        "model kept (claude-opus-5-5): median context 230,329 >= 150,000 \u2014 long-context work is where a downgrade is riskiest; try context-lifecycle instead",
+        "effort -> medium: thinking is 56% of output tokens"
+      ],
+      "arms": [
+        {
+          "name": "baseline",
+          "flags": [
+            "--model",
+            "claude-opus-5-5",
+            "--effort",
+            "high"
+          ],
+          "n": 3,
+          "cost": 5.1648,
+          "quality": 48,
+          "done": 1.0,
+          "wall": 474.7,
+          "reqs": 22,
+          "out_tok": 33333,
+          "verdict": null
+        },
+        {
+          "name": "cost",
+          "flags": [
+            "--model",
+            "claude-sonnet-5",
+            "--effort",
+            "medium"
+          ],
+          "n": 3,
+          "cost": 2.6912,
+          "quality": 44,
+          "done": 0.667,
+          "wall": 378.0,
+          "reqs": 25,
+          "out_tok": 29514,
+          "verdict": "cost does not clear its goal (cost lower, quality and done no worse)"
+        },
+        {
+          "name": "dynamic",
+          "flags": [
+            "--model",
+            "claude-opus-5-5",
+            "--effort",
+            "medium"
+          ],
+          "n": 3,
+          "cost": 5.0049,
+          "quality": 48,
+          "done": 1.0,
+          "wall": 520.8,
+          "reqs": 22,
+          "out_tok": 25796,
+          "verdict": "dynamic wins on its goal (cost lower, quality and done no worse)"
+        }
+      ]
+    }
+  ]
+}

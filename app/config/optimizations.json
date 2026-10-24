@@ -1,0 +1,403 @@
+{
+  "version": "0.2",
+  "updated": "2026-09-09",
+  "about": {
+    "what": "The catalog of optimization levers. Every entry is an experiment that can be run against one real session from the Sessions tab.",
+    "why-kong": "The parameter surface is taken from Kong AI Gateway's AI plugins, because Kong has already enumerated what an LLM gateway can tune. Levers Kong exposes but this harness cannot reach from the client side are still listed here, marked runnable:false, with the gateway config that would enable them. They become runnable inside the kong sandbox template (sandbox/e2b/kong/).",
+    "arm-vocabulary": {
+      "model": "one of the ids in optimize.mjs MODELS (opus45, sonnet46, qwen480, qwen30), or 'baseline' to keep the session's own tier",
+      "compaction": "true adds --autocompact <autocompactTokens>. Claude Code accepts 'auto' or 100k-1M; anything smaller is rejected and the run dies before the first turn",
+      "effort": "low | medium | high | xhigh | max, passed as --effort",
+      "budgetUsd": "per-arm --max-budget-usd ceiling",
+      "flags": "extra Claude Code CLI flags, appended verbatim",
+      "appendPrompt": "text appended to the session's own request, under a heading",
+      "litellm": "the proxy Claude Code talks to: routes {alias: model id} next to the '*' upstream, cacheInject (cache_control_injection_points), responseCache {ttl}, budgetUsd + budgetDuration (proxy max_budget). See lib/arm-config.mjs",
+      "claude": "Claude Code itself: subagentModel, backgroundModel, thinkingTokens, maxOutputTokens, env {K: V}, settings (written to .claude/settings.json), maxTurns, fallbackModel, appendSystemPrompt. See lib/arm-config.mjs"
+    },
+    "autocompactTokens": "100k"
+  },
+
+  "experiments": [
+    {
+      "id": "baseline",
+      "title": "Baseline",
+      "family": "control",
+      "runnable": true,
+      "control": true,
+      "summary": "The session's own model, no levers. Every experiment is measured against this arm, re-run in the sandbox so the comparison is like-for-like.",
+      "arm": { "model": "baseline", "compaction": false },
+      "kong": null,
+      "hypothesis": "n/a — this is the control.",
+      "risk": "The sandbox is not the original machine. The baseline arm re-establishes the cost of the task here, so a delta is a delta of two sandbox runs, not sandbox-vs-laptop.",
+      "gate": "n/a"
+    },
+
+    {
+      "id": "route-cheaper-frontier",
+      "title": "Route to a cheaper frontier model",
+      "family": "model-routing",
+      "runnable": true,
+      "summary": "Send the whole task to Sonnet instead of Opus. The single biggest price lever and the one most likely to fail an accuracy gate.",
+      "arm": { "model": "sonnet46", "compaction": false },
+      "kong": {
+        "plugin": "ai-proxy-advanced",
+        "params": {
+          "balancer.algorithm": "priority",
+          "targets[].model.provider": "bedrock",
+          "targets[].model.name": "eu.anthropic.claude-sonnet-4-6",
+          "targets[].weight": 100,
+          "llm_format": "anthropic"
+        },
+        "note": "Kong does this at the gateway with no client change: the same /v1/messages call lands on a different model."
+      },
+      "hypothesis": "Input price drops ~40%; output ~40%. Turn count may rise, which can eat the win.",
+      "risk": "Accuracy. This is the lever the gate exists for.",
+      "gate": "judge score must not drop more than 1 point out of 10 against baseline"
+    },
+    {
+      "id": "route-open-weights",
+      "title": "Route to open weights (Qwen3-Coder-480B)",
+      "family": "model-routing",
+      "runnable": true,
+      "summary": "Serverless Qwen3-Coder-480B on Bedrock, fronted by LiteLLM so Claude Code can speak to it unchanged.",
+      "arm": { "model": "qwen480", "compaction": false },
+      "kong": {
+        "plugin": "ai-proxy-advanced",
+        "params": {
+          "balancer.algorithm": "lowest-usage",
+          "balancer.tokens_count_strategy": "cost",
+          "targets[].model.provider": "bedrock",
+          "targets[].model.name": "qwen.qwen3-coder-480b-a35b-v1:0"
+        }
+      },
+      "hypothesis": "~14x cheaper per input token than Opus. Holds on mechanical code tasks, degrades on reasoning.",
+      "risk": "Tool-calling reliability and long-context adherence, not raw code quality.",
+      "gate": "judge score >= baseline - 2, and the arm must actually produce the requested files"
+    },
+    {
+      "id": "route-open-weights-small",
+      "title": "Route to small open weights (Qwen3-Coder-30B)",
+      "family": "model-routing",
+      "runnable": true,
+      "summary": "The cheapest thing on the shelf. Included to find where the floor is, not because it is expected to pass.",
+      "arm": { "model": "qwen30", "compaction": false, "budgetUsd": 2 },
+      "kong": {
+        "plugin": "ai-proxy-advanced",
+        "params": {
+          "balancer.algorithm": "priority",
+          "targets[].model.name": "qwen.qwen3-coder-30b-a3b-v1:0"
+        }
+      },
+      "hypothesis": "~70x cheaper per input token. Expected to loop or stop short on anything multi-file.",
+      "risk": "Runs long and burns the budget without finishing, which reads as 'cheap' unless the artifact check is enforced.",
+      "gate": "artifacts must be non-empty before cost is even compared"
+    },
+
+    {
+      "id": "context-compaction",
+      "title": "Auto-compact the context window",
+      "family": "context-lifecycle",
+      "runnable": true,
+      "summary": "Same model, but the harness compacts the conversation once it passes the window size instead of carrying every turn forward.",
+      "arm": { "model": "baseline", "compaction": true },
+      "kong": null,
+      "kongNote": "No gateway equivalent. Compaction is conversation state the client owns; a gateway sees only the request it is handed.",
+      "hypothesis": "Cuts cache-write and input tokens on long sessions. On short ones it is a no-op that costs one summarisation.",
+      "risk": "Compaction drops detail. On a task whose spec is early in the transcript this loses the spec.",
+      "gate": "artifacts must still satisfy the original request; cost win must exceed the summarisation cost"
+    },
+    {
+      "id": "compaction-plus-cheap-model",
+      "title": "Cheap model + compaction",
+      "family": "context-lifecycle",
+      "runnable": true,
+      "summary": "The two cheapest levers stacked, to see whether they compound or cancel.",
+      "arm": { "model": "qwen480", "compaction": true },
+      "kong": null,
+      "hypothesis": "Compaction matters more on a weak model, which takes more turns to get there.",
+      "risk": "Two variables at once — a loss cannot be attributed. Run the single-lever arms first.",
+      "gate": "only interpretable if route-open-weights and context-compaction have both been run on this session"
+    },
+
+    {
+      "id": "effort-medium",
+      "title": "Lower the reasoning effort",
+      "family": "effort-tuning",
+      "runnable": true,
+      "summary": "Same model, --effort medium. Within-model, so it changes nothing about capability except how much the model thinks before answering.",
+      "arm": { "model": "baseline", "compaction": false, "effort": "medium" },
+      "kong": null,
+      "kongNote": "Kong can inject provider options per target (targets[].model.options), which is where an effort or reasoning parameter would be pinned gateway-side.",
+      "hypothesis": "Thinking is ~27% of output spend locally; output is ~19% of the bill. Ceiling is small but the risk is the smallest of any lever.",
+      "risk": "Under-thinking shows up as more turns, not worse answers, so cost can go up.",
+      "gate": "cost must fall and turns must not rise more than 25%"
+    },
+    {
+      "id": "effort-low",
+      "title": "Minimum reasoning effort",
+      "family": "effort-tuning",
+      "runnable": true,
+      "summary": "--effort low. The floor of the within-model lever.",
+      "arm": { "model": "baseline", "compaction": false, "effort": "low" },
+      "kong": null,
+      "hypothesis": "Wins on mechanical edits, loses on anything that needs a plan.",
+      "risk": "Silently converts a reasoning task into a guessing task.",
+      "gate": "judge score must not drop at all"
+    },
+
+    {
+      "id": "terse-context",
+      "title": "Compress the prompt",
+      "family": "prompt-compression",
+      "runnable": true,
+      "approximation": true,
+      "summary": "Client-side approximation of Kong's ai-prompt-compressor: the request is kept, but the agent is told to work from the spec directly and not restate it.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "appendPrompt": "Work from the files already in the workspace. Do not restate the specification, do not echo file contents back, and do not summarise your plan before acting unless the task cannot be started without one."
+      },
+      "kong": {
+        "plugin": "ai-prompt-compressor",
+        "params": {
+          "compressor_type": "rate",
+          "compression_ranges": [
+            { "min_tokens": 500, "max_tokens": 4000, "value": 0.7 },
+            { "min_tokens": 4001, "max_tokens": 100000, "value": 0.5 }
+          ],
+          "compressor_url": "http://127.0.0.1:8080",
+          "message_type": ["user"],
+          "stop_on_error": true,
+          "timeout": 10000
+        },
+        "note": "The real plugin runs an external compressor service and drops padding while keeping ~80% of the semantics. This arm cannot do that from the client, so it is labelled an approximation and its result is not evidence for the plugin."
+      },
+      "hypothesis": "Input tokens fall on verbose requests. Does nothing on a short one.",
+      "risk": "Suppressing the plan can cost more turns than the tokens it saves.",
+      "gate": "input tokens must fall and turns must not rise"
+    },
+
+    {
+      "id": "semantic-cache",
+      "title": "Semantic cache in front of the model",
+      "family": "caching",
+      "runnable": false,
+      "requires": "sandbox/e2b/kong",
+      "summary": "Kong embeds each incoming prompt, looks it up in a vector store, and serves a stored response when a near-duplicate is found. Not reachable from the client: it is a gateway that has to sit in the request path.",
+      "arm": null,
+      "kong": {
+        "plugin": "ai-semantic-cache",
+        "params": {
+          "cache_ttl": 300,
+          "cache_control": false,
+          "exact_caching": false,
+          "stop_on_failure": false,
+          "message_countback": 1,
+          "llm_format": "anthropic",
+          "ignore_system_prompts": false,
+          "ignore_assistant_prompts": false,
+          "ignore_tool_prompts": false,
+          "embeddings.model.provider": "bedrock",
+          "embeddings.model.name": "amazon.titan-embed-text-v2:0",
+          "vectordb.strategy": "redis",
+          "vectordb.dimensions": 1024,
+          "vectordb.distance_metric": "cosine",
+          "vectordb.threshold": 0.1
+        }
+      },
+      "hypothesis": "Near-zero on a single interactive session — the local measured prompt-cache hit rate is already 96.8%. Pays only on repeated, similar, cross-session traffic.",
+      "risk": "A loose threshold returns a stale answer to a question that only looks the same. This is the lever most likely to be wrong silently.",
+      "gate": "measure the duplicate rate first. A cache with nothing to hit is a detector, not an optimizer."
+    },
+    {
+      "id": "token-rate-limit",
+      "title": "Cap spend at the gateway",
+      "family": "governance",
+      "runnable": false,
+      "requires": "sandbox/e2b/kong",
+      "summary": "Token- and cost-based rate limiting per provider, enforced by the gateway rather than by --max-budget-usd on one client.",
+      "arm": null,
+      "kong": {
+        "plugin": "ai-rate-limiting-advanced",
+        "params": {
+          "llm_providers": [{ "name": "bedrock", "limit": [200000], "window_size": [3600] }],
+          "strategy": "local",
+          "tokens_count_strategy": "total_tokens",
+          "window_type": "sliding",
+          "hide_client_headers": false,
+          "error_code": 429,
+          "disable_penalty": false
+        }
+      },
+      "hypothesis": "Not a cost reduction — a cost ceiling. Changes the worst case, not the mean.",
+      "risk": "A 429 mid-task looks to the agent like a transient failure and it retries, which can cost more than it saved.",
+      "gate": "the limit must be above the p99 session, or it is a availability change dressed as an optimization"
+    },
+    {
+      "id": "gateway-judge",
+      "title": "Score every response at the gateway",
+      "family": "measurement",
+      "runnable": false,
+      "requires": "sandbox/e2b/kong",
+      "summary": "Kong samples responses and has a second model score them 1-100. This is the verdict mechanism, not a lever: it is how any of the levers above get gated.",
+      "arm": null,
+      "kong": {
+        "plugin": "ai-llm-as-judge",
+        "params": {
+          "sampling_rate": 1,
+          "message_countback": 1,
+          "ignore_system_prompts": true,
+          "ignore_assistant_prompts": true,
+          "ignore_tool_prompts": true,
+          "http_timeout": 60000,
+          "https_verify": true,
+          "llm.route_type": "llm/v1/chat",
+          "llm.model.provider": "bedrock",
+          "llm.model.name": "eu.anthropic.claude-sonnet-4-6"
+        }
+      },
+      "hypothesis": "Continuous scoring turns 'did the cheap model hold up' from an argument into a number.",
+      "risk": "Sampling every request doubles the request count. The judge is itself a model call and is itself a cost.",
+      "gate": "sampling_rate must be set so judging costs less than the saving it is verifying"
+    },
+    {
+      "id": "sanitize",
+      "title": "Strip secrets before they leave",
+      "family": "safety",
+      "runnable": false,
+      "requires": "sandbox/e2b/kong",
+      "summary": "Redaction of sensitive fields in request and response bodies at the gateway. Not an optimization; listed because it is the reason a gateway is acceptable in the request path at all.",
+      "arm": null,
+      "kong": {
+        "plugin": "ai-sanitizer",
+        "params": { "recover_redacted": false, "redact_type": "placeholder" }
+      },
+      "hypothesis": "n/a",
+      "risk": "Redacting something the model needed produces a confidently wrong answer.",
+      "gate": "n/a"
+    },
+    {
+      "id": "litellm-route-side-calls",
+      "title": "Route subagents and background calls to Sonnet",
+      "family": "model-routing",
+      "tag": "side calls → sonnet",
+      "summary": "The main loop stays on the session's own model. Task subagents and Claude Code's small-fast calls (titles, summaries) go to Sonnet through a LiteLLM route. Without a route every one of those calls lands on the '*' upstream, so an Opus baseline pays Opus prices for session titles.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "litellm": {
+          "routes": {
+            "route-sonnet": "sonnet46"
+          }
+        },
+        "claude": {
+          "subagentModel": "route-sonnet",
+          "backgroundModel": "route-sonnet"
+        }
+      },
+      "kong": null,
+      "hypothesis": "Saves the share of spend that is subagent and side calls, with the coding loop untouched. The per-request split is what a whole-task model swap cannot do.",
+      "risk": "A subagent that does real reasoning (review, search over a large repo) may do it worse on Sonnet.",
+      "gate": "judge score must not drop more than 1 point out of 10 against baseline"
+    },
+    {
+      "id": "litellm-cache-inject",
+      "title": "Force prompt caching at the proxy",
+      "family": "caching",
+      "tag": "cache inject",
+      "summary": "LiteLLM adds cache_control to the system prompt on every request, whether or not the client asked for it. Claude Code already caches, so on this workload it is expected to change little; it is here to prove that rather than assume it.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "litellm": {
+          "cacheInject": true
+        }
+      },
+      "kong": null,
+      "hypothesis": "No saving where the client already caches (measured hit rate 96.8%). A saving only for clients that do not.",
+      "risk": "None to quality. A detector, not a lever, if it moves nothing.",
+      "gate": "n/a — cost only"
+    },
+    {
+      "id": "litellm-response-cache",
+      "title": "Exact-match response cache at the proxy",
+      "family": "caching",
+      "tag": "response cache",
+      "summary": "LiteLLM answers a byte-identical request from its own cache for 10 minutes. Agent turns rarely repeat exactly, so this measures how often they do.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "litellm": {
+          "responseCache": {
+            "ttl": 600
+          }
+        }
+      },
+      "kong": null,
+      "hypothesis": "Near zero on a single coding task; it matters for retries and for repeated runs of the same task.",
+      "risk": "A cached answer to a request whose files changed underneath it. Exact match makes that unlikely, not impossible.",
+      "gate": "judge score must not drop"
+    },
+    {
+      "id": "litellm-proxy-budget",
+      "title": "Hard spend cap at the proxy",
+      "family": "governance",
+      "tag": "proxy budget",
+      "summary": "LiteLLM refuses requests once its own spend count passes $1.50. Unlike --max-budget-usd, which Claude Code prices at Anthropic list rates, this is counted where the requests are served.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "litellm": {
+          "budgetUsd": 1.5,
+          "budgetDuration": "1d"
+        }
+      },
+      "kong": {
+        "plugin": "ai-rate-limiting-advanced",
+        "params": {
+          "strategy": "cost"
+        },
+        "note": "Kong's cost-based limit is the gateway equivalent."
+      },
+      "hypothesis": "A guard, not a saving: it bounds the worst case. Reported so the cost of stopping early is visible.",
+      "risk": "The task stops unfinished. The judge sees whatever was done by then.",
+      "gate": "n/a — governance"
+    },
+    {
+      "id": "claude-thinking-cap",
+      "title": "Cap thinking tokens (Claude Code)",
+      "family": "effort",
+      "tag": "thinking cap",
+      "summary": "MAX_THINKING_TOKENS=8000 for Claude Code. Thinking is output, billed at the output rate.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "claude": {
+          "thinkingTokens": 8000
+        }
+      },
+      "kong": null,
+      "hypothesis": "Saves the thinking share of output cost (2.4% of spend on the E1 ledger), more on hard tasks.",
+      "risk": "Hard reasoning gets shallower exactly where it was needed.",
+      "gate": "judge score must not drop more than 1 point out of 10 against baseline"
+    },
+    {
+      "id": "claude-max-turns",
+      "title": "Cap agent turns (Claude Code)",
+      "family": "governance",
+      "tag": "turn cap",
+      "summary": "--max-turns 40. Long agent loops are where context, and therefore cost, grows; a turn cap bounds it.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "claude": {
+          "maxTurns": 40
+        }
+      },
+      "kong": null,
+      "hypothesis": "No saving on tasks that finish under 40 turns; a bounded cost on the ones that loop.",
+      "risk": "An unfinished task. The judge scores what exists.",
+      "gate": "judge score must not drop more than 1 point out of 10 against baseline"
+    }
+  ]
+}

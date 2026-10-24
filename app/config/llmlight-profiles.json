@@ -1,0 +1,104 @@
+{
+  "version": "0.1",
+  "updated": "2026-09-30",
+  "about": {
+    "what": "LLM Light profiles. A profile is one named bundle of classifier, routing, cache, budget, audit and Claude Code settings. lib/llmlight.mjs renders it into a LiteLLM config, the routing hook (assets/llmlight_router.py) and Claude Code settings, for a laptop (Anthropic API) or a sandbox (Bedrock).",
+    "tiers": "Rules route to a tier, never to a model name. The target maps tiers to models: local = claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5 on the Anthropic API; sandbox = optimize.mjs MODELS (opus45 / sonnet46; small falls back to sonnet46 until a Haiku id is enabled on Bedrock).",
+    "classifier": "source 'rules' decides per request from the call kind alone. 'session-classes' also bakes the project's classes from Hub → Triage (Jev's answers) into the profile when it is applied, so a request never waits on a classifier call. unclear: what the main loop does when Jev said unclear.",
+    "rule-vocabulary": "when: {call: main|subagent|background, capability|urgency|latency|deferral|context: <class or [classes]>, minMessages: n, maxTools: n}; to: frontier|mid|small. First match wins; neverDowngrade keywords in the request pin it to frontier.",
+    "audit": "log: off | decisions | full. Lines hold numbers and names only, never prompt or response text. judgeSampleRate is the share of routed turns queued for a blind re-grade."
+  },
+  "profiles": [
+    {
+      "id": "laptop-guarded",
+      "title": "Laptop · guarded",
+      "for": "interactive development — a person is waiting on every reply",
+      "summary": "The coding loop stays on the frontier model. Only the calls nobody reads closely move: Claude Code's background calls (titles, summaries) go small, subagents go mid. The safest place to start.",
+      "classifier": { "source": "rules", "unclear": "keep-frontier" },
+      "routing": {
+        "default": "frontier",
+        "rules": [
+          { "when": { "call": "background" }, "to": "small", "why": "background call: titles and summaries" },
+          { "when": { "call": "subagent" }, "to": "mid", "why": "subagent: search and read work" }
+        ],
+        "neverDowngrade": ["security", "auth", "password", "payment", "migration", "production"],
+        "fallbacks": { "small": ["mid"], "mid": ["frontier"] }
+      },
+      "cache": { "inject": true, "responseTtl": 0 },
+      "budget": { "perDayUsd": 50, "perRunUsd": null, "maxTurns": null, "thinkingTokens": null },
+      "audit": { "log": "decisions", "judgeSampleRate": 0.02 },
+      "claude": { "env": {}, "settings": {} }
+    },
+    {
+      "id": "laptop-balanced",
+      "title": "Laptop · follows Triage",
+      "for": "interactive development on projects Triage has already classified",
+      "summary": "Like guarded, but the main loop follows the project's classes: where Jev said the work needs a mid model, the main loop runs mid. Where Jev said unclear, it stays on the frontier until a sandbox re-run answers.",
+      "classifier": { "source": "session-classes", "model": "jev-1.13.0", "evidence": "C1", "unclear": "keep-frontier" },
+      "routing": {
+        "default": "frontier",
+        "rules": [
+          { "when": { "call": "background" }, "to": "small", "why": "background call" },
+          { "when": { "call": "subagent" }, "to": "mid", "why": "subagent" },
+          { "when": { "call": "main", "capability": "small" }, "to": "small", "why": "Triage: project work fits a small model" },
+          { "when": { "call": "main", "capability": "mid" }, "to": "mid", "why": "Triage: project work fits a mid model" }
+        ],
+        "neverDowngrade": ["security", "auth", "password", "payment", "migration", "production"],
+        "fallbacks": { "small": ["mid"], "mid": ["frontier"] }
+      },
+      "cache": { "inject": true, "responseTtl": 0 },
+      "budget": { "perDayUsd": 30, "perRunUsd": null, "maxTurns": null, "thinkingTokens": null },
+      "audit": { "log": "decisions", "judgeSampleRate": 0.05 },
+      "claude": { "env": {}, "settings": {} }
+    },
+    {
+      "id": "sandbox-lean",
+      "title": "Sandbox · lean",
+      "for": "unattended agents — nobody is waiting, so latency is free",
+      "summary": "Everything starts on the mid model and falls back to the frontier on error. Thinking and turns are capped, the run has a hard spend ceiling at the proxy, and one routed turn in ten is queued for a blind re-grade.",
+      "classifier": { "source": "session-classes", "model": "jev-1.13.0", "evidence": "C1", "unclear": "rerun-on-mid" },
+      "routing": {
+        "default": "mid",
+        "rules": [
+          { "when": { "call": "background" }, "to": "small", "why": "background call" },
+          { "when": { "call": "main", "capability": "frontier" }, "to": "frontier", "why": "Triage: project needs the frontier model" }
+        ],
+        "neverDowngrade": ["security", "auth", "migration"],
+        "fallbacks": { "small": ["mid"], "mid": ["frontier"] }
+      },
+      "cache": { "inject": true, "responseTtl": 600 },
+      "budget": { "perDayUsd": null, "perRunUsd": 5, "maxTurns": 60, "thinkingTokens": 8000 },
+      "audit": { "log": "full", "judgeSampleRate": 0.1 },
+      "claude": { "env": {}, "settings": {} }
+    },
+    {
+      "id": "ci-strict",
+      "title": "CI · strict",
+      "for": "CI jobs — fixed, repeatable, cheap",
+      "summary": "Mid model throughout with no escalation, a $2 hard ceiling per run and 30 turns. A job that needs more fails loudly instead of spending quietly.",
+      "classifier": { "source": "rules", "unclear": "keep-default" },
+      "routing": {
+        "default": "mid",
+        "rules": [ { "when": { "call": "background" }, "to": "small", "why": "background call" } ],
+        "neverDowngrade": [],
+        "fallbacks": { "small": ["mid"] }
+      },
+      "cache": { "inject": true, "responseTtl": 0 },
+      "budget": { "perDayUsd": null, "perRunUsd": 2, "maxTurns": 30, "thinkingTokens": 4000 },
+      "audit": { "log": "full", "judgeSampleRate": 0 },
+      "claude": { "env": {}, "settings": {} }
+    },
+    {
+      "id": "frontier-governed",
+      "title": "Frontier · governed",
+      "for": "security reviews, compliance work, anything that must not be downgraded",
+      "summary": "No routing at all: every call runs on the frontier model. The profile adds only a daily budget and a full audit trail, so the cost of doing it the expensive way is visible.",
+      "classifier": { "source": "rules", "unclear": "keep-frontier" },
+      "routing": { "default": "frontier", "rules": [], "neverDowngrade": [], "fallbacks": {} },
+      "cache": { "inject": true, "responseTtl": 0 },
+      "budget": { "perDayUsd": 100, "perRunUsd": null, "maxTurns": null, "thinkingTokens": null },
+      "audit": { "log": "full", "judgeSampleRate": 0 },
+      "claude": { "env": {}, "settings": {} }
+    }
+  ]
+}

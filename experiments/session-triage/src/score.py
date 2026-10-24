@@ -4,6 +4,7 @@
     python3 src/score.py --days 30                       # rules only when JEV_API_KEY is unset
     JEV_API_KEY=... python3 src/score.py --days 30       # + Jev, one paid call per session (C1 only)
     python3 src/score.py --days 30 --out /tmp/triage.json --dir /tmp/run   # anywhere but the live files
+    python3 src/score.py --days 30 --mode interactive --limit 10  # you label the top 10 between steps 4 and 5
 
 One pass, in order, over the live transcripts on this machine:
 
@@ -30,7 +31,7 @@ from datetime import datetime
 HERE = pathlib.Path(__file__).resolve().parent
 EXP = HERE.parent
 REPO = EXP.parents[1]
-FILES = ("ledger.csv", "features.jsonl", "tasks.jsonl", "results.json", "RESULTS.md")
+FILES = ("ledger.csv", "features.jsonl", "tasks.jsonl", "results.json", "RESULTS.md", "gold.jsonl")
 
 
 def archive(d: pathlib.Path):
@@ -63,6 +64,9 @@ def main():
     ap.add_argument("--days", type=int, default=30)
     ap.add_argument("--dir", default=str(EXP / "data" / "private"))
     ap.add_argument("--out", default=None, help="triage.json for the hub (default: export_hub.py's)")
+    ap.add_argument("--mode", choices=("auto", "interactive"), default="auto",
+                    help="interactive: label sessions yourself at step 4 (needs a terminal; the hub uses auto)")
+    ap.add_argument("--limit", type=int, default=20, help="interactive: sessions to ask about")
     a = ap.parse_args()
     d = pathlib.Path(a.dir)
     d.mkdir(parents=True, exist_ok=True)
@@ -74,8 +78,10 @@ def main():
     step(3, "task titles (local only)", [HERE / "tasks.py", "--days", a.days, "--out", d / "tasks.jsonl"])
     step(4, "classify: rules" + (" + Jev" if jev else ""),
          [HERE / "run.py", "--ledger", d / "ledger.csv", "--features", d / "features.jsonl",
-          "--arms", "rules,jev" if jev else "rules", "--ctx", "C1", "--out-dir", d])
+          "--arms", "rules,jev" if jev else "rules", "--ctx", "C1", "--out-dir", d,
+          "--mode", a.mode, "--limit", a.limit, "--gold", d / "gold.jsonl"])
     step(5, "score methods, write triage.json", [HERE / "export_hub.py", "--dir", d, *(["--out", a.out] if a.out else [])])
+    print(f"\nnext: python3 src/recommend.py --dir {d}   # settings + apply.sh from this run", flush=True)
     print("\nscoring done", flush=True)
 
 

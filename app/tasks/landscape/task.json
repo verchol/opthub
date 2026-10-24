@@ -1,0 +1,18 @@
+{
+  "kind": "document",
+  "file": "LANDSCAPE.md",
+  "module": null,
+  "title": "a competitive landscape of AI optimization tools",
+  "flags": "--disallowed-tools WebSearch WebFetch",
+  "judge": {
+    "brief": "Build the competitive landscape of AI optimization tools. Both authors worked from their own knowledge with web access disabled, so the test is what they actually know and how honestly they handle the edges of that knowledge. The reader is deciding what to build and what to buy.",
+    "rubric": [
+      ["coverage", "Does it name the real players across the actual segments — gateways/proxies, observability, caching, routing, prompt compression, FinOps, inference providers — or only the two or three obvious ones?"],
+      ["accuracy", "Are the named products real, and are their capabilities described correctly? An invented company or a fabricated feature is the worst failure here and must be punished hard."],
+      ["structure", "Is there a coherent segmentation with comparison dimensions that actually discriminate between players, rather than an undifferentiated list?"],
+      ["differentiation", "Does it explain how players genuinely differ and where they overlap, including who is free or bundled and therefore sets the price floor?"],
+      ["epistemics", "Does it state its knowledge cutoff, flag what it is unsure about, and separate what it knows from what it is inferring? Confident wrongness is heavily penalised."],
+      ["usefulness", "Could a founder or buyer act on this — find the white space, understand the threat from incumbents, decide what to build?"]
+    ]
+  }
+}

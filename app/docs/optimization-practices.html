@@ -1,0 +1,155 @@
+<title>The Optimization Playbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{--bg:#F4F2ED;--card:#FFF;--ink:#141210;--mut:#5C574E;--rule:#DAD5CB;--rs:#BCB4A5;
+ --safe:#0E6E65;--trade:#A8611F;--ac:#0E6E65;
+ --d:'Archivo',system-ui,sans-serif;--m:'JetBrains Mono',ui-monospace,monospace;--b:'Source Serif 4',Georgia,serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0F0E0C;--card:#181613;--ink:#EAE6DE;--mut:#9A9384;--rule:#2A2620;--rs:#443E34;--safe:#46BFAF;--trade:#E2A462;--ac:#46BFAF}}
+:root[data-theme=dark]{--bg:#0F0E0C;--card:#181613;--ink:#EAE6DE;--mut:#9A9384;--rule:#2A2620;--rs:#443E34;--safe:#46BFAF;--trade:#E2A462;--ac:#46BFAF}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--b);font-size:16.5px;line-height:1.62}
+.wrap{max-width:920px;margin:0 auto;padding:52px 24px 96px}
+.eyebrow{font-family:var(--m);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+h1{font-family:var(--d);font-weight:800;font-size:clamp(32px,6vw,52px);line-height:1.02;letter-spacing:-.03em;margin:10px 0 0;text-wrap:balance}
+.lede{font-size:19px;color:var(--mut);max-width:64ch;margin:16px 0 0}
+.lede b{color:var(--ink)}
+h2{font-family:var(--d);font-weight:700;font-size:24px;letter-spacing:-.02em;margin:52px 0 6px;text-wrap:balance}
+.layer{font-family:var(--m);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ac)}
+h3{font-family:var(--d);font-weight:600;font-size:17px;margin:26px 0 0}
+p{margin:8px 0 0;max-width:70ch}
+.prov{font-family:var(--m);font-size:11px;color:var(--mut);margin-top:4px}
+a{color:var(--ac)}
+.risk{display:inline-block;font-family:var(--m);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:.03em;vertical-align:middle}
+.risk.safe{color:var(--safe);border:1px solid var(--safe)} .risk.trade{color:var(--trade);border:1px solid var(--trade)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0}
+th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--rule);vertical-align:top}
+thead th{font-family:var(--m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+td .k{font-family:var(--m);font-size:12px}
+.win{font-family:var(--m);font-weight:700;color:var(--ac)}
+.tocwrap{background:var(--card);border:1px solid var(--rule);padding:20px 24px;margin-top:28px}
+.toc{columns:2;column-gap:32px;font-size:14px}
+.toc a{display:block;color:var(--ink);text-decoration:none;padding:3px 0;break-inside:avoid}
+.toc a:hover{color:var(--ac)}
+.toc .l{font-family:var(--m);font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.1em;margin:10px 0 2px}
+.note{background:var(--card);border-left:2px solid var(--ac);padding:12px 18px;margin:16px 0;font-size:15px;color:var(--mut)}
+.note b{color:var(--ink)}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;font-size:13.5px;color:var(--mut)}
+footer{font-family:var(--m);font-size:11.5px;color:var(--mut);border-top:1px solid var(--rule);margin-top:56px;padding-top:18px;line-height:1.7}
+.hp{font-family:var(--m);font-size:12px;background:var(--card);border:1px solid var(--rule);padding:2px 6px}
+</style>
+<div class="wrap">
+<div class="eyebrow">A practitioner's reference · configurable dimensions for agent optimization</div>
+<h1>The Optimization Playbook</h1>
+<p class="lede">Every lever you can pull to cut the cost, latency and token consumption of running LLM agents in production — organised by the layer it lives in, each with its <b>knob</b>, its <b>likely win</b>, and, stated honestly, its <b>accuracy risk</b>. Written to be run as experiments: every row here is something you can configure and measure, not admire.</p>
+
+<div class="legend">
+  <span><span class="risk safe">LOSSLESS</span> output is unchanged — free to turn on</span>
+  <span><span class="risk trade">TRADES QUALITY</span> can degrade output; must be measured per workload</span>
+</div>
+
+<div class="tocwrap"><div class="toc">
+  <div class="l">Model layer</div>
+  <a href="#routing">Model routing & tiering</a>
+  <a href="#quant">Quantization</a>
+  <a href="#distill">Distillation & fine-tuning</a>
+  <div class="l">Serving layer</div>
+  <a href="#engine">Serving engine (vLLM/SGLang)</a>
+  <a href="#batch">Continuous batching</a>
+  <a href="#spec">Speculative decoding</a>
+  <a href="#prefix">Prefix / KV caching</a>
+  <div class="l">Context layer</div>
+  <a href="#promptcache">Prompt caching</a>
+  <a href="#compact">Context compaction</a>
+  <a href="#tools">Tool-schema shaping</a>
+  <a href="#effort">Reasoning effort</a>
+  <div class="l">Orchestration layer</div>
+  <a href="#turns">Turn & request reduction</a>
+  <a href="#subagent">Subagent downgrade</a>
+  <a href="#codemode">Code-mode batching</a>
+  <div class="l">Measurement</div>
+  <a href="#measure">Denominating cost by outcome</a>
+</div></div>
+
+<div class="note"><b>How to read the win column.</b> Figures are drawn from the cited sources and reflect their workloads, not a promise about yours — which is exactly why each is framed as an experiment. The one rule that survives every workload: <b>an optimization that trades quality is only cheaper if the quality it costs you was quality you didn't need.</b> Measure it, don't assume it.</p></div>
+
+<h2 id="routing"><span class="layer">Model layer</span><br>Model routing & tiering <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> which model serves which request. Route well-defined or low-stakes work to a smaller/cheaper model; reserve the frontier model for hard reasoning and orchestration.</p>
+<p>The single largest lever in most production accounts. Uber built evaluation benchmarks from real production work, plotted cost-per-completed-task against quality, and deployed whatever sat on the Pareto frontier — refreshing the choice every few weeks as the frontier moved. We reproduced the shape of this directly: on a spec-following coding task an open-weights model reached ~85–94% of frontier correctness at 84–92% lower cost; on a knowledge-recall task the same model <b>fabricated facts</b> and collapsed to ~27%. Routing is powerful and workload-specific in equal measure.</p>
+<p class="prov">Sources: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber, Efficient Software Factory</a> · our own harness runs (regex 94%, landscape 27%)</p>
+
+<h2 id="quant"><span class="layer">Model layer</span><br>Quantization <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> the numeric precision the weights and activations are served at. Lower precision = less memory and higher throughput, at some accuracy cost.</p>
+<table><thead><tr><th>Format</th><th>Win</th><th>Accuracy</th><th>When</th></tr></thead><tbody>
+<tr><td class="k">FP8</td><td class="win">~2× memory</td><td>near-lossless on Hopper/Ada; absorbs wide activation ranges</td><td>the recommended first try on modern GPUs</td></tr>
+<tr><td class="k">INT8 (weight-only)</td><td class="win">~2× memory</td><td>negligible perplexity change — "very safe"</td><td>safe default fallback</td></tr>
+<tr><td class="k">INT8 SmoothQuant</td><td class="win">~2×+</td><td>small loss; needs activation smoothing</td><td>if FP8 unavailable</td></tr>
+<tr><td class="k">AWQ (4-bit)</td><td class="win">~4× memory</td><td>protects the ~1% salient channels; holds reasoning best at 4-bit</td><td>the 2026 production default for 4-bit GPU serving</td></tr>
+<tr><td class="k">GPTQ (4-bit)</td><td class="win">~4× memory</td><td>more loss than AWQ on reasoning</td><td>when AWQ kernels unavailable</td></tr>
+</tbody></table>
+<p>Standard advice: <b>FP8 first</b>, drop to INT8 SmoothQuant, go to AWQ/GPTQ at 4-bit only when you need more than FP8's 2× saving. Weight-only INT8 is the free lunch; 4-bit is where reasoning quality starts to move.</p>
+<p class="prov">Sources: <a href="https://vrlatech.com/llm-quantization-explained-int4-int8-fp8-awq-and-gptq-in-2026/">VRLA Tech</a> · <a href="https://appscale.blog/en/blog/llm-quantization-production-inference-int8-fp8-awq-gguf-2026">AppScale</a> · <a href="https://aws.amazon.com/blogs/machine-learning/accelerating-llm-inference-with-post-training-weight-and-activation-using-awq-and-gptq-on-amazon-sagemaker-ai/">AWS SageMaker</a></p>
+
+<h2 id="distill"><span class="layer">Model layer</span><br>Distillation & domain fine-tuning <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> replace a large general model with a small model adapted to your domain. <b>Spotify</b> is the cleanest published example: they took Llama variants at <span class="hp">1B–8B</span> and adapted them with supervised fine-tuning, RLHF and DPO across 10 Spotify-specific tasks — reaching <span class="win">4× user engagement</span> on explained recommendations and a <span class="win">14% task lift</span> over baseline Llama, with minimal MMLU degradation ("no catastrophic forgetting"). Smaller fine-tuned models matched larger general ones on domain tasks "while offering better latency and cost."</p>
+<p>The risk is narrowing: a model tuned for your 10 tasks may be worse everywhere else. Spotify guarded this by measuring MMLU throughout.</p>
+<p class="prov">Source: <a href="https://www.zenml.io/llmops-database/llm-powered-personalized-music-recommendations-and-ai-dj-commentary">Spotify via ZenML LLMOps DB</a></p>
+
+<h2 id="engine"><span class="layer">Serving layer</span><br>Serving engine — vLLM / SGLang <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> which inference server runs the model. This is the most consequential lossless choice, and the one a per-team model comparison never sees. <b>vLLM</b>'s PagedAttention partitions the KV cache into fixed blocks, eliminating fragmentation and enabling memory sharing. Spotify called adopting vLLM "a game-changer." SGLang's RadixAttention is the sibling technology. Everything below (batching, speculative decoding, prefix caching) is a feature of this layer — turn it on and the model's output is byte-identical.</p>
+<p class="prov">Sources: <a href="https://vllm.ai/blog/2025-09-05-anatomy-of-vllm">Inside vLLM</a> · <a href="https://github.com/vllm-project/vllm">vLLM</a></p>
+
+<h2 id="batch"><span class="layer">Serving layer</span><br>Continuous batching <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> evict finished requests and insert new ones at every decoding step instead of batching statically. Reported <span class="win">up to 23× throughput</span> with lower p50 latency versus static batching. Pure serving efficiency; identical output.</p>
+<p class="prov">Source: <a href="https://cloudthrill.ca/what-is-vllm-features">vLLM continuous batching</a></p>
+
+<h2 id="spec"><span class="layer">Serving layer</span><br>Speculative decoding <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> a small draft model proposes several tokens, the target model verifies them in one pass. Latency drops; output is provably identical to the target model because every token is verified. vLLM supports n-gram, suffix, EAGLE and similar drafters. Free latency — the only cost is the draft model's memory.</p>
+<p class="prov">Source: <a href="https://docs.vllm.ai/en/v0.9.1/">vLLM speculative decoding</a></p>
+
+<h2 id="prefix"><span class="layer">Serving layer</span><br>Prefix / KV caching <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> reuse the KV cache for a shared prompt prefix so repeated context isn't recomputed. This is the mechanism behind "prompt caching" — but it lives in the serving stack, which is why <b>the same open-weights model has a 0% or a 90% cache hit rate depending entirely on who serves it.</b> We measured this: a frontier model on a caching endpoint reused 93–95% of its input at 0.1× price; the same-class open model on a non-caching endpoint reprocessed 1M+ tokens at full price every turn — enough to erode much of its per-token cost advantage over a long session.</p>
+<p class="prov">Sources: <a href="https://vllm.ai/blog/2025-09-05-anatomy-of-vllm">vLLM APC</a> · our own harness (baseline 93.7% hit vs open-model 0%)</p>
+
+<h2 id="promptcache"><span class="layer">Context layer</span><br>Prompt caching (TTL tuning) <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> cache the stable prompt prefix and tune the TTL to the workload. Uber uses a 5-minute TTL for short-lived subagents and 1-hour for main threads (which have idle gaps): a 5-min write costs 1.25×, a 1-hour write 2×, but reads are 0.1×, so the longer TTL wins whenever the prefix is reused across an idle gap. Same output, lower bill.</p>
+<p class="prov">Source: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a></p>
+
+<h2 id="compact"><span class="layer">Context layer</span><br>Context compaction <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> compress conversation history, tool outputs and files before they reach the model. Uber auto-compacts at 400K tokens despite larger windows, to bound cache-burst and repeated-input cost. A local compaction proxy (Headroom) claims 20% fewer tokens for coding agents and 60–95% for JSON. The risk is real and directional: compaction can drop the one detail the next step needed, and — we observed — it can lower the prompt-cache hit rate by disturbing the stable prefix, working against the very savings it delivers. Measure both cost and task success.</p>
+<p class="prov">Sources: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a> · Headroom · our own harness (cache-hit drop under compaction)</p>
+
+<h2 id="tools"><span class="layer">Context layer</span><br>Tool-schema shaping <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> how many tool definitions, and in what form, sit in the context. When an agent has dozens of tools, their JSON schemas can consume <span class="win">40–50% of the window</span> — raising cost and latency and causing "LLM confusion" from irrelevant documentation. Techniques, roughly in order of payoff:</p>
+<table><thead><tr><th>Technique</th><th>Reported reduction</th></tr></thead><tbody>
+<tr><td class="k">Code-execution mode</td><td class="win">98.7% (Anthropic) · 99.9% (Cloudflare: 2,500 endpoints → 2 tools)</td></tr>
+<tr><td class="k">Tool search / on-demand loading</td><td class="win">~85% (10K+ → ~3K tokens/request)</td></tr>
+<tr><td class="k">Progressive disclosure (categories → full schema)</td><td>load the schema only when the tool is chosen</td></tr>
+<tr><td class="k">Schema dedup via JSON $ref</td><td>eliminate repeated sub-schemas across tools</td></tr>
+</tbody></table>
+<p>Rule of thumb from the field: no more than <b>10–15 tools</b> live at once. All lossless — the model's capability is unchanged, only what it must read shrinks.</p>
+<p class="prov">Sources: <a href="https://thenewstack.io/how-to-reduce-mcp-token-bloat/">The New Stack</a> · <a href="https://www.stackone.com/blog/mcp-token-optimization/">StackOne</a> · <a href="https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1576">MCP SEP-1576</a> · <a href="https://www.mindstudio.ai/blog/optimize-mcp-server-token-usage">MindStudio</a></p>
+
+<h2 id="effort"><span class="layer">Context layer</span><br>Reasoning effort <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> how much the model is allowed to think. Output tokens bill at a multiple of input, so reasoning effort is a direct cost dial. Uber defaults to <b>Medium, not maximum</b> — the cost/quality knee for most work. Raise it only for the tasks that measurably need it.</p>
+<p class="prov">Source: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a></p>
+
+<h2 id="turns"><span class="layer">Orchestration layer</span><br>Turn & request reduction <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> how many round trips the agent takes. Every turn resends the whole conversation, so cost grows roughly with the <i>square</i> of turns. Uber's cost model is explicit — <span class="hp">Users × Sessions × Turns × Requests × Tokens × Price</span> — and each factor is optimised in isolation. Fewer, better turns is usually the highest-leverage orchestration change; the risk is cutting a turn the task needed, which shows up as lower success, not lower cost.</p>
+<p class="prov">Source: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a></p>
+
+<h2 id="subagent"><span class="layer">Orchestration layer</span><br>Subagent downgrade <span class="risk trade">TRADES QUALITY</span></h2>
+<p><b>Knob:</b> run well-scoped subtasks (review, extraction, triage) on a cheaper model while the flagship orchestrates. A special case of routing, applied inside a single session. We use it directly: a Sonnet reviewer gates a task an orchestrating model planned. Cheap where the subtask is bounded; risky where the subtask secretly needs the flagship's judgement.</p>
+<p class="prov">Source: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a> · our own reviewer subagent</p>
+
+<h2 id="codemode"><span class="layer">Orchestration layer</span><br>Code-mode batching <span class="risk safe">LOSSLESS</span></h2>
+<p><b>Knob:</b> collapse a sequence of tool calls into one script the agent writes and runs, instead of N model turns with intermediate polling. Uber reports 55–71% token reduction for small result sets and ~100% for large bulk workflows, by keeping polling loops out of the model's context entirely. The work is identical; only the round trips vanish.</p>
+<p class="prov">Source: <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Uber</a></p>
+
+<h2 id="measure"><span class="layer">Measurement</span><br>Denominating cost by outcome</h2>
+<p>None of the above means anything measured in tokens alone. The metric that ties spend to value is <b>cost per completed unit of work</b> — Uber tracks cost per merged PR, per review posted, per alert triaged. We use cost-per-passing-test and cost-per-rubric-point. The reason is concrete: in our runs the <i>cheapest</i> model per token was often the <i>most expensive</i> per passing test, because it failed more. A price list ranks models the wrong way; an outcome denominator ranks them right.</p>
+<div class="note"><b>The through-line.</b> Lossless levers — serving engine, batching, speculative decoding, prefix caching, prompt caching, tool-schema shaping, code-mode — should simply be on; there is no quality to trade. The quality-trading levers — routing, quantization, distillation, compaction, effort, turn-cutting — are where the real decisions live, and none can be settled from a spec sheet. They interact (caching amortises the context that compaction shrinks; routing to a weak model raises turns): a change that helps one dimension can erode another. That interaction is the argument for owning optimization <b>centrally, per workload, measured</b> — not scattered across teams each pulling one knob blind.</p></div>
+
+<footer>
+Compiled September 2026 from cited public sources and this harness's own measurements. Win figures reflect the sources' workloads; treat every row as a hypothesis to test on yours. Lossless / trades-quality labels reflect whether the technique can change model output, not whether it is easy to deploy.
+</footer>
+</div>

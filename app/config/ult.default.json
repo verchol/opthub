@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "about": "LLM Ultra Light (ULT) — the runtime router behind `opt optimize`. Layered: this file, then $OPT_HOME/ult.json, then <project>/.opthub/ult.json, then --config, then flags. Spec: opthub docs/runtime-optimization.md.",
+  "mode": "shadow",
+  "listen": { "host": "127.0.0.1", "port": 8787 },
+  "remote": {
+    "provider": "anthropic",
+    "baseUrl": "https://api.anthropic.com",
+    "defaultModel": null
+  },
+  "local": {
+    "enabled": true,
+    "baseUrl": "http://127.0.0.1:11434",
+    "dockerBaseUrl": "http://host.docker.internal:11434",
+    "model": "qwen2.5-coder:1.5b",
+    "timeoutMs": 120000
+  },
+  "classifier": {
+    "rules": true,
+    "jev": {
+      "enabled": false,
+      "endpoint": "https://api.typesafe.ai/v1/systemone",
+      "model": "jev-1.13.0",
+      "timeoutMs": 1500,
+      "minRuleConfidence": 0.6
+    },
+    "context": { "persist": true, "historyPerSession": 50 }
+  },
+  "policy": {
+    "version": "v14",
+    "pin": null,
+    "neverDowngrade": ["review/security", "coding/debug"],
+    "routes": {
+      "background/utility": "local",
+      "non-coding/*": "remote:claude-haiku-4-5",
+      "coding/*": "keep",
+      "review/*": "keep",
+      "unclear": "keep"
+    },
+    "minConfidence": 0.6,
+    "localWithTools": false,
+    "economics": { "requireSaving": true, "assumeCachedPrefix": true, "expectedOutputTokens": 800 },
+    "stickyThreads": true
+  },
+  "audit": { "prompts": false },
+  "prices": {
+    "claude-opus-5-5": [4, 20],
+    "claude-opus-5": [5, 25],
+    "claude-opus-4-8": [5, 25],
+    "claude-fable-5-1": [10, 50],
+    "claude-fable-5": [10, 50],
+    "claude-sonnet-5-5": [2, 10],
+    "claude-sonnet-5": [2, 10],
+    "claude-haiku-4-5": [1, 5],
+    "local": [0, 0]
+  },
+  "cache": { "read": 0.1, "write5m": 1.25, "write1h": 2.0 },
+  "models": {
+    "about": "What a routed request must be adapted to. thinking: adaptive | budget | none. Requests routed to a model without adaptive thinking are sent with thinking off (routes are for non-coding classes).",
+    "claude-haiku-4-5": { "maxOutput": 64000, "thinking": "budget", "effort": false, "systemMessages": false,
+                          "dropBetas": ["effort-", "per-turn-control-", "advisor-tool-", "thinking-token-count-", "mid-conversation-"] },
+    "claude-sonnet-5-5": { "maxOutput": 128000, "thinking": "adaptive", "effort": true },
+    "claude-sonnet-5": { "maxOutput": 128000, "thinking": "adaptive", "effort": true },
+    "claude-opus-5-5": { "maxOutput": 128000, "thinking": "adaptive", "effort": true }
+  }
+}

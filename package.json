@@ -1,0 +1,24 @@
+{
+  "name": "opthub",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Measures whether a cheaper way of running a coding agent does the same job: the opt CLI, the Optimization Hub, and the sandbox providers it runs arms in.",
+  "scripts": {
+    "demo": "node app/opt.mjs demo run",
+    "scenarios": "node app/opt.mjs demo scenarios",
+    "status": "node app/opt.mjs status",
+    "report": "node app/report.mjs",
+    "test": "node app/test/tune.test.mjs && node app/test/ult.test.mjs && node app/test/hub-graph.test.mjs && node app/test/behaviour.test.mjs && node app/test/claude-p.test.mjs && node app/test/demo-startup.test.mjs && node sandbox/test.mjs",
+    "build:web": "npm --prefix app/web ci && npm --prefix app/web run build",
+    "dev:web": "npm --prefix app/web run dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0"
+  },
+  "optionalDependencies": {
+    "e2b": "^1.2.0"
+  },
+  "bin": {
+    "opt": "./opt"
+  }
+}

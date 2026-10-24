@@ -1,0 +1,47 @@
+$ python3 tools/rerun.py plan 2ec4f5ed-cda7-52b6-b1ee-2441513113bc --goal cost --dynamic --repeats 3 --from-dir --run-id golden-fix-rounding --test-cmd 'python3 -m unittest -q'
+dynamic  : model -> claude-haiku-4-5-20251001: 1 file(s) edited in 9 requests — a small, local change
+dynamic  : effort -> low: thinking is 62% of output tokens
+run      : golden-fix-rounding
+session  : 2ec4f5ed-cda7-52b6-b1ee-2441513113bc   2 of 2 prompts replayed
+goal     : cost  (model-downgrade + effort-tune) — wins if cost lower, quality and done no worse
+arm      : baseline  --model claude-opus-5-5 --effort high
+arm      : cost      --model claude-sonnet-5 --effort medium
+arm      : dynamic   --model claude-haiku-4-5-20251001 --effort low
+repeats  : 3
+runs in  : local Docker sandbox (allowlisted egress, no capabilities) · --permission-mode bypassPermissions
+judge    : claude-opus-5 (blind, pairwise, position-swapped; on the host, no tools)
+spend    : 18 claude -p turns, each capped at $2.00 (ceiling $36.00) + 12 judge calls
+
+next     : python3 tools/rerun.py run golden-fix-rounding --yes
+
+$ python3 tools/rerun.py plan c19db0a3-ce45-5b6e-b1fa-72b8d183aa75 --goal cost --dynamic --repeats 3 --from-dir --run-id golden-csv-export --test-cmd 'python3 -m unittest -q'
+dynamic  : model -> claude-sonnet-5: 4 files, median context 85,117 — mid-sized work
+dynamic  : effort kept (high): thinking is 34% of output tokens
+run      : golden-csv-export
+session  : c19db0a3-ce45-5b6e-b1fa-72b8d183aa75   3 of 3 prompts replayed
+goal     : cost  (model-downgrade + effort-tune) — wins if cost lower, quality and done no worse
+arm      : baseline  --model claude-opus-5-5 --effort high
+arm      : cost      --model claude-sonnet-5 --effort medium
+arm      : dynamic   --model claude-sonnet-5 --effort high
+repeats  : 3
+runs in  : local Docker sandbox (allowlisted egress, no capabilities) · --permission-mode bypassPermissions
+judge    : claude-opus-5 (blind, pairwise, position-swapped; on the host, no tools)
+spend    : 27 claude -p turns, each capped at $2.00 (ceiling $54.00) + 12 judge calls
+
+next     : python3 tools/rerun.py run golden-csv-export --yes
+
+$ python3 tools/rerun.py plan b562a247-cf3b-547a-98a6-5771b9cd31a1 --goal cost --dynamic --repeats 3 --from-dir --run-id golden-slow-report --test-cmd 'python3 -m unittest -q'
+dynamic  : model kept (claude-opus-5-5): median context 230,329 >= 150,000 — long-context work is where a downgrade is riskiest; try context-lifecycle instead
+dynamic  : effort -> medium: thinking is 56% of output tokens
+run      : golden-slow-report
+session  : b562a247-cf3b-547a-98a6-5771b9cd31a1   3 of 3 prompts replayed
+goal     : cost  (model-downgrade + effort-tune) — wins if cost lower, quality and done no worse
+arm      : baseline  --model claude-opus-5-5 --effort high
+arm      : cost      --model claude-sonnet-5 --effort medium
+arm      : dynamic   --model claude-opus-5-5 --effort medium
+repeats  : 3
+runs in  : local Docker sandbox (allowlisted egress, no capabilities) · --permission-mode bypassPermissions
+judge    : claude-opus-5 (blind, pairwise, position-swapped; on the host, no tools)
+spend    : 27 claude -p turns, each capped at $2.00 (ceiling $54.00) + 12 judge calls
+
+next     : python3 tools/rerun.py run golden-slow-report --yes

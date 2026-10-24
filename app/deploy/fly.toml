@@ -1,0 +1,36 @@
+# Optimization Hub — read-only deploy.
+#
+# One tiny machine serving a frozen snapshot. It stops when nobody is looking
+# and starts on the next request, so an idle demo costs nothing; the first hit
+# after a quiet spell waits a second or two for the machine to wake.
+#
+#   fly launch --no-deploy --copy-config --name opthub-demo   (first time)
+#   fly secrets set HUB_PASSWORD=...                          (required)
+#   ./build.sh && fly deploy ./build
+app = 'opthub-demo'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '8080'
+  HUB_USER = 'demo'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '5s'
+    method = 'GET'
+    path = '/healthz'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'

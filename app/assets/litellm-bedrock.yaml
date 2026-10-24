@@ -1,0 +1,11 @@
+# Whatever model name Claude Code asks for is served by the open-weights model.
+# Claude Code validates model ids, so we let it send its own and route here.
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: bedrock/qwen.qwen3-coder-480b-a35b-v1:0
+      aws_region_name: os.environ/AWS_REGION
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: sk-local

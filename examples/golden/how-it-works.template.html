@@ -1,0 +1,329 @@
+<title>opthub Replay Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="How opthub decides whether a cheaper way of running a coding agent does the same job: inspect, classify, decide, verify, compare.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working bench. Controls on top, the pipeline drawn as a wiring diagram, the trace beneath it,
+   then the reference columns. Arm colours match tools/rerun.py reports: amber baseline, teal best, violet dynamic. */
+:root{
+  --bg:#f4f5f3; --surface:#ffffff; --surface-2:#eceeea; --line:#d7dbd4; --line-strong:#b3b9b0;
+  --fg:#171a17; --muted:#5a6159; --faint:#8a9188;
+  --accent:#0f7f74; --accent-soft:#dcf0ec; --accent-ink:#0a5c54;
+  --arm0:#b7791f; --arm1:#0f8a7e; --arm2:#7c4dcc; --arm0-soft:#f7ead6; --arm1-soft:#dcf0ec; --arm2-soft:#ece4fa;
+  --ok:#1c7c46; --ok-soft:#e0f2e7; --deny:#b8382c; --deny-soft:#fbe5e2; --warn:#8a5a00; --warn-soft:#fbefd2;
+  --shadow:0 1px 2px rgba(23,26,23,.05),0 6px 20px rgba(23,26,23,.06);
+  --f-display:"Bricolage Grotesque","IBM Plex Sans",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1210; --surface:#171b18; --surface-2:#1f2420; --line:#2b322d; --line-strong:#3e4740;
+    --fg:#e5e9e4; --muted:#9ba49b; --faint:#6c756c;
+    --accent:#3cc2b3; --accent-soft:#12302c; --accent-ink:#7fe0d4;
+    --arm0:#e0a04a; --arm1:#3cc2b3; --arm2:#a98af0; --arm0-soft:#33260f; --arm1-soft:#12302c; --arm2-soft:#261d3d;
+    --ok:#58c58c; --ok-soft:#13291d; --deny:#f3786d; --deny-soft:#3b1815; --warn:#e8b54a; --warn-soft:#33270c;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1210; --surface:#171b18; --surface-2:#1f2420; --line:#2b322d; --line-strong:#3e4740;
+  --fg:#e5e9e4; --muted:#9ba49b; --faint:#6c756c;
+  --accent:#3cc2b3; --accent-soft:#12302c; --accent-ink:#7fe0d4;
+  --arm0:#e0a04a; --arm1:#3cc2b3; --arm2:#a98af0; --arm0-soft:#33260f; --arm1-soft:#12302c; --arm2-soft:#261d3d;
+  --ok:#58c58c; --ok-soft:#13291d; --deny:#f3786d; --deny-soft:#3b1815; --warn:#e8b54a; --warn-soft:#33270c;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+main{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h1{font-size:clamp(26px,4vw,36px);line-height:1.1;letter-spacing:-.01em}
+h2{font-size:19px} h3{font-size:15px;font-family:var(--f-body);font-weight:600}
+p{margin:0}
+.eyebrow{font:500 12px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink)}
+.lede{color:var(--muted);max-width:68ch;margin-top:8px}
+.head{display:flex;flex-direction:column;gap:6px}
+.badge{display:inline-flex;align-items:center;gap:6px;font:500 11.5px var(--f-mono);letter-spacing:.04em;text-transform:uppercase;
+  padding:3px 8px;border-radius:4px;background:var(--warn-soft);color:var(--warn);width:fit-content}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.bench{padding:16px;display:flex;flex-direction:column;gap:14px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end}
+.controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:500;min-width:0}
+select{font:14px var(--f-body);padding:7px 10px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--fg);max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+.seg button{font:500 13.5px var(--f-body);padding:7px 12px;border:0;background:var(--surface);color:var(--muted);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line-strong)}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.btn{font:600 14px var(--f-body);padding:8px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--surface);cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dg-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.dg-wrap svg{display:block;min-width:860px;width:100%;height:auto}
+.node rect{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.2;transition:fill .25s,stroke .25s}
+.node .t{font:600 13px var(--f-body);fill:var(--fg)}
+.node .s{font:400 10px var(--f-mono);fill:var(--muted)}
+.node .n{font:600 10.5px var(--f-mono);fill:var(--accent-ink)}
+.node.active rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2.4}
+.node.done rect{stroke:var(--ok);stroke-width:1.8}
+.node.fail rect{fill:var(--deny-soft);stroke:var(--deny);stroke-width:2.2}
+.node.dim{opacity:.35}
+.node.arm0 rect{stroke:var(--arm0)} .node.arm1 rect{stroke:var(--arm1)} .node.arm2 rect{stroke:var(--arm2)}
+.node.arm0.active rect{fill:var(--arm0-soft)} .node.arm1.active rect{fill:var(--arm1-soft)} .node.arm2.active rect{fill:var(--arm2-soft)}
+.edge{stroke:var(--line-strong);stroke-width:1.4;fill:none}
+.edge.lit{stroke:var(--accent);stroke-width:2}
+.box{fill:none;stroke:var(--line-strong);stroke-dasharray:5 4}
+.boxl{font:500 10.5px var(--f-mono);fill:var(--faint);letter-spacing:.05em}
+.arrow{fill:var(--line-strong)}
+.tl-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.timeline{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:4px}
+.timeline li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:8px 10px;border-radius:6px;background:var(--surface-2);
+  animation:in .25s ease-out both}
+.timeline li .k{font:600 12px var(--f-mono);color:var(--accent-ink);padding-top:2px}
+.timeline li b{font-weight:600}
+.timeline li .d{color:var(--muted);font-size:13.5px}
+.timeline li.fail{background:var(--deny-soft)} .timeline li.win{background:var(--ok-soft)}
+.timeline .empty{display:block;color:var(--muted);background:none;padding:4px 0}
+code,.mono{font-family:var(--f-mono);font-size:12.5px}
+.muted{color:var(--muted)} .sm{font-size:12.5px}
+@keyframes in{from{opacity:.3;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.pad{padding:18px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.steps{padding-left:26px;margin:0;display:flex;flex-direction:column;gap:10px}
+.steps li::marker{font-family:var(--f-mono);color:var(--accent-ink);font-weight:600}
+.guar{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
+.comp{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.comp div{border:1px solid var(--line);border-radius:6px;padding:9px 11px;font-size:13.5px;color:var(--muted)}
+.comp b{display:block;color:var(--fg);font-weight:600}
+.comp code{color:var(--accent-ink)}
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13.5px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:12px}
+td.num{text-align:right} th.num{text-align:right}
+.chip{display:inline-block;font:500 11.5px var(--f-mono);padding:2px 7px;border-radius:4px}
+.chip.win{background:var(--ok-soft);color:var(--ok)} .chip.no{background:var(--deny-soft);color:var(--deny)}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.run{font:13px var(--f-mono);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow-x:auto;white-space:pre;margin:0}
+</style>
+
+<main>
+  <header class="head">
+    <p class="eyebrow">opthub · how it works</p>
+    <h1>Is the cheaper setting doing the same job?</h1>
+    <p class="lede">opthub takes a real coding-agent session, picks cheaper settings for it, runs the same task again under each setting in a sandbox, and has a second model grade the results without knowing which is which. Pick a session and how the settings are chosen, then play it.</p>
+    <span class="badge" id="simBadge">Synthetic example · numbers are simulated</span>
+  </header>
+
+  <section class="card bench" aria-label="Replay a session">
+    <div class="controls">
+      <label for="pick-session">Session<select id="pick-session"></select></label>
+      <label>Settings
+        <span class="seg" role="group" aria-label="How the cheaper settings are chosen">
+          <button type="button" id="mode-best" data-mode="best" aria-pressed="false">Best preset</button>
+          <button type="button" id="mode-dynamic" data-mode="dynamic" aria-pressed="true">Dynamic</button>
+        </span>
+      </label>
+      <button class="btn" id="play" type="button">Play</button>
+      <span class="muted sm" id="modeNote"></span>
+    </div>
+    <div class="dg-wrap" id="diagram"></div>
+    <div class="legend">
+      <span><i style="background:var(--arm0)"></i>baseline: the settings the session ran with</span>
+      <span><i style="background:var(--arm1)"></i>best preset: one fixed answer for every session</span>
+      <span><i style="background:var(--arm2)"></i>dynamic: settings picked from this session's own numbers</span>
+    </div>
+    <div class="tl-head"><h3>Trace</h3><span class="mono muted sm" id="traceNote"></span></div>
+    <ol class="timeline" id="trace"></ol>
+  </section>
+
+  <section class="card pad" aria-label="Results">
+    <div class="tl-head"><h2>All three sessions, every setting</h2><span class="muted sm">median of 3 replays per setting · cost priced at list rates</span></div>
+    <div class="tbl-wrap"><table id="results"></table></div>
+    <p class="muted sm" id="resultsNote"></p>
+  </section>
+
+  <div class="cols">
+    <section class="card pad">
+      <h2>The five steps</h2>
+      <ol class="steps">
+        <li><b>Inspect.</b> Read the transcript Claude Code already left on disk: how many requests, how big the context got, which model and effort, how much of the output was thinking. Nothing is sent anywhere.</li>
+        <li><b>Classify.</b> Work out where the money went (re-reading context, writing it, output, thinking) and how much each lever could take off this session. Every estimate is labelled: priced, guess or detector.</li>
+        <li><b>Decide.</b> Choose the settings to try. The best preset is the same for every session. Dynamic settings are picked from this session's own numbers: a one-file fix gets a small model, a long investigation keeps the big one.</li>
+        <li><b>Verify.</b> Run the session's prompts again from the same starting code, once per setting, three times each, in a sandbox with no credentials of its own. A second model scores the code changes blind, twice with the order swapped.</li>
+        <li><b>Compare.</b> Each cheaper setting is compared with the baseline replay, never with the original session. It wins only if it costs less and quality and finished work are no worse. Below three repeats there is no verdict.</li>
+      </ol>
+    </section>
+    <section class="card pad">
+      <h2>What the result guarantees</h2>
+      <ul class="guar">
+        <li>A setting that is cheaper and worse is reported as cheaper and worse.</li>
+        <li>The grader never sees which setting, model or cost produced a change.</li>
+        <li>Every replay is a new session you can open and inspect like any other.</li>
+        <li>Prompts, diffs and paths stay on your machine.</li>
+        <li>Nothing that spends money starts without <code>--yes</code>.</li>
+      </ul>
+      <h2>Where each step lives</h2>
+      <div class="comp">
+        <div><b>Inspect</b><code>tools/sessions.py</code></div>
+        <div><b>Classify</b><code>tools/savings.py</code></div>
+        <div><b>Decide</b><code>tools/tune.py</code></div>
+        <div><b>Verify</b><code>tools/rerun.py run · judge</code></div>
+        <div><b>Compare</b><code>tools/rerun.py report</code></div>
+        <div><b>All five</b><code>examples/golden/demo.py</code></div>
+      </div>
+      <pre class="run">python3 examples/golden/demo.py          # free
+python3 examples/golden/demo.py --check  # golden test</pre>
+    </section>
+  </div>
+</main>
+
+<script>
+(function(){
+const DATA = /*__DATA__*/null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money = v => "$" + v.toFixed(2);
+const flagStr = f => f.join(" ");
+const shortModel = m => (m || "").replace("claude-", "").replace("-20251001", "");
+const settingStr = f => { const o = {}; for (let i = 0; i < f.length; i += 2) o[f[i]] = f[i+1];
+  return shortModel(o["--model"]) + (o["--effort"] ? " · " + o["--effort"] : ""); };
+const ARM_LABEL = {baseline: "baseline", cost: "best preset", dynamic: "dynamic"};
+const ARM_VAR = {baseline: 0, cost: 1, dynamic: 2};
+
+if (!DATA) { $("#trace").innerHTML = '<li class="empty">No data. Run python3 examples/golden/demo.py to build this page.</li>'; return; }
+if (!DATA.simulated) $("#simBadge").textContent = "Live replay";
+
+let mode = "dynamic", timer = null;
+const sel = $("#pick-session");
+DATA.sessions.forEach((s, i) => { const o = document.createElement("option"); o.value = i; o.textContent = s.key + " — " + s.prompts[0].slice(0, 48) + (s.prompts[0].length > 48 ? "…" : ""); sel.appendChild(o); });
+
+// Diagram: transcript -> inspect -> classify -> decide -> {baseline, chosen} replays -> blind grader -> compare
+const N = [
+  {id:"src", x:16, y:118, w:112, t:"Transcript", s:"~/.claude/projects"},
+  {id:"inspect", x:152, y:118, w:112, t:"Inspect", s:"sessions.py", n:"1"},
+  {id:"classify", x:288, y:118, w:112, t:"Classify", s:"savings.py", n:"2"},
+  {id:"decide", x:424, y:118, w:112, t:"Decide", s:"tune.py", n:"3"},
+  {id:"arm0", x:584, y:58, w:132, t:"Baseline replay", s:"×3 in sandbox", cls:"arm0"},
+  {id:"armc", x:584, y:178, w:132, t:"Cheaper replay", s:"×3 in sandbox", cls:"arm2"},
+  {id:"judge", x:752, y:118, w:104, t:"Blind grader", s:"scores /60", n:"4"},
+  {id:"compare", x:880, y:118, w:96, t:"Compare", s:"report", n:"5"},
+];
+const H = 54, byId = Object.fromEntries(N.map(n => [n.id, n]));
+const E = [["src","inspect"],["inspect","classify"],["classify","decide"],["decide","arm0"],["decide","armc"],["arm0","judge"],["armc","judge"],["judge","compare"]];
+function edgePath(a, b) { a = byId[a]; b = byId[b];
+  const x1 = a.x + a.w, y1 = a.y + H/2, x2 = b.x - 6, y2 = b.y + H/2, mx = (x1 + x2) / 2;
+  return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`; }
+function drawDiagram() {
+  let s = `<svg viewBox="0 0 992 300" role="img" aria-label="Pipeline: transcript, inspect, classify, decide, baseline and cheaper replays, blind grader, compare">`;
+  s += `<defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" class="arrow"/></marker></defs>`;
+  s += `<rect class="box" x="568" y="32" width="164" height="234" rx="10"/><text class="boxl" x="580" y="50">SANDBOX · NO CREDENTIALS</text>`;
+  s += `<text class="boxl" x="16" y="282">on your machine · read-only</text><text class="boxl" x="752" y="282">blind: no names, flags or costs</text>`;
+  E.forEach(([a, b]) => s += `<path id="e-${a}-${b}" class="edge" d="${edgePath(a, b)}" marker-end="url(#ah)"/>`);
+  N.forEach(n => {
+    s += `<g class="node ${n.cls || ""}" id="n-${n.id}"><rect x="${n.x}" y="${n.y}" width="${n.w}" height="${H}" rx="8"/>`;
+    if (n.n) s += `<text class="n" x="${n.x + 10}" y="${n.y + 16}">${n.n}</text>`;
+    s += `<text class="t" x="${n.x + (n.n ? 24 : 10)}" y="${n.y + 23}" id="t-${n.id}">${n.t}</text><text class="s" x="${n.x + 10}" y="${n.y + 42}" id="s-${n.id}">${n.s}</text></g>`;
+  });
+  $("#diagram").innerHTML = s + "</svg>";
+}
+drawDiagram();
+
+function setNode(id, state) { const g = $("#n-" + id); g.classList.remove("active", "done", "fail", "dim"); if (state) g.classList.add(state); }
+function lightEdges(to) { E.forEach(([a, b]) => { if (b === to) $(`#e-${a}-${b}`).classList.add("lit"); }); }
+
+function current() {
+  const s = DATA.sessions[+sel.value];
+  const base = s.arms.find(a => a.name === "baseline");
+  const want = mode === "best" ? "cost" : "dynamic";
+  const chosen = s.arms.find(a => a.name === want) || s.arms.find(a => a.name === "cost");
+  return {s, base, chosen, same: !s.arms.find(a => a.name === want)};
+}
+
+function steps() {
+  const {s, base, chosen, same} = current();
+  const p = s.profile, cName = ARM_LABEL[chosen.name];
+  const won = chosen.verdict && chosen.verdict.includes(" wins ");
+  const dq = chosen.quality - base.quality, dc = (chosen.cost - base.cost) / base.cost * 100;
+  return [
+    {node:"src", k:"0", b:"Session found", d:`${s.prompts.length} prompts typed by a person. First: “${esc(s.prompts[0])}”`},
+    {node:"inspect", k:"1", b:"Inspect", d:`${p.reqs} requests on ${esc(shortModel(p.model))} at effort ${esc(p.effort)}. Median context ${p.ctx_p50.toLocaleString()} tokens. ${p.files_edited} file${p.files_edited === 1 ? "" : "s"} edited.`},
+    {node:"classify", k:"2", b:"Classify", d:`Thinking is ${Math.round(p.think_share * 100)}% of output tokens. ${p.ctx_p50 >= 150000 ? "Most of the cost is carrying a large context." : "The context stays moderate, so the model and effort are the levers."}`},
+    {node:"decide", k:"3", b:`Decide: ${cName}`, d: mode === "best"
+      ? `Best preset for the cost goal, the same for every session: <code>${esc(flagStr(DATA.best))}</code>.`
+      : `Dynamic, from this session's numbers: <code>${esc(flagStr(s.dynamic))}</code>. ${s.why.map(esc).join(". ")}.` + (same ? " These equal the best preset, so no separate arm ran." : "")},
+    {node:"arm0", k:"4a", b:"Baseline replay", d:`<code>${esc(flagStr(base.flags))}</code> ×${base.n}: median ${money(base.cost)}, ${Math.round(base.wall)} s, ${Math.round(base.reqs)} requests.`},
+    {node:"armc", k:"4b", b:`${cName[0].toUpperCase() + cName.slice(1)} replay`, d:`<code>${esc(flagStr(chosen.flags))}</code> ×${chosen.n}: median ${money(chosen.cost)}, ${Math.round(chosen.wall)} s, ${Math.round(chosen.reqs)} requests. Tests passed in ${Math.round(chosen.done * chosen.n)} of ${chosen.n}.`},
+    {node:"judge", k:"4c", b:"Blind grade", d:`The grader saw the two code changes as A and B, twice with positions swapped. Quality ${base.quality} vs ${chosen.quality} out of 60.`},
+    {node:"compare", k:"5", b: won ? `${cName} wins` : `${cName} does not clear the bar`, win: won, fail: !won,
+      d:`Cost ${dc >= 0 ? "+" : ""}${dc.toFixed(0)}%, quality ${dq >= 0 ? "+" : ""}${dq}, finished ${Math.round(chosen.done * 100)}% vs ${Math.round(base.done * 100)}%. ` +
+        (won ? "Cheaper, and nothing got worse." : dq < 0 || chosen.done < base.done ? "Cheaper, and worse. Reported as such." : "Not cheaper than the baseline replay.")},
+  ];
+}
+
+function reset() {
+  clearTimeout(timer);
+  N.forEach(n => setNode(n.id, null));
+  document.querySelectorAll(".edge").forEach(e => e.classList.remove("lit"));
+  const {chosen} = current();
+  $("#t-armc").textContent = chosen.name === "cost" ? "Best-preset replay" : "Dynamic replay";
+  $("#s-armc").textContent = settingStr(chosen.flags);
+  $("#s-arm0").textContent = settingStr(current().base.flags);
+  $("#n-armc").setAttribute("class", "node " + (chosen.name === "cost" ? "arm1" : "arm2"));
+  const {s} = current();
+  $("#modeNote").textContent = mode === "best" ? "Best preset: " + settingStr(DATA.best) : "Dynamic: " + settingStr(s.dynamic);
+}
+
+function render(list, upto) {
+  $("#trace").innerHTML = list.slice(0, upto).map(st =>
+    `<li class="${st.win ? "win" : st.fail ? "fail" : ""}"><span class="k">${st.k}</span><div><b>${st.b}.</b> <span class="d">${st.d}</span></div></li>`).join("");
+}
+
+function play(instant) {
+  reset();
+  const list = steps(), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let i = 0;
+  $("#traceNote").textContent = DATA.simulated ? "simulated by examples/golden/synth.py" : "live replay";
+  const tick = () => {
+    if (i > 0) setNode(list[i-1].node, list[i-1].fail ? "fail" : "done");
+    if (i >= list.length) return;
+    setNode(list[i].node, list[i].fail ? "fail" : "active"); lightEdges(list[i].node);
+    render(list, i + 1); i++;
+    timer = setTimeout(tick, instant || reduce ? 0 : 650);
+  };
+  if (instant || reduce) { while (i <= list.length) { if (i > 0) setNode(list[i-1].node, list[i-1].fail ? "fail" : "done"); if (i < list.length) lightEdges(list[i].node); i++; } render(list, list.length); return; }
+  tick();
+}
+
+function setMode(m) { mode = m; document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === m))); play(true); }
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+sel.addEventListener("change", () => play(true));
+$("#play").addEventListener("click", () => play(false));
+
+// Results table
+let rows = `<tr><th>session</th><th>setting</th><th>model · effort</th><th class="num">cost</th><th class="num">vs baseline</th><th class="num">quality /60</th><th class="num">finished</th><th>verdict</th></tr>`;
+DATA.sessions.forEach(s => {
+  const b = s.arms[0];
+  s.arms.forEach((a, i) => {
+    const d = a === b ? "" : ((a.cost - b.cost) / b.cost * 100).toFixed(0) + "%";
+    const v = a.verdict == null ? "" : a.verdict.includes(" wins ") ? '<span class="chip win">wins</span>' : '<span class="chip no">does not clear</span>';
+    rows += `<tr><td>${i === 0 ? esc(s.key) : ""}</td><td><span class="sw" style="background:var(--arm${ARM_VAR[a.name]})"></span>${ARM_LABEL[a.name]}</td><td class="mono">${esc(settingStr(a.flags))}</td>` +
+      `<td class="num">${money(a.cost)}</td><td class="num">${d.startsWith("-") ? d : d ? "+" + d : ""}</td><td class="num">${a.quality ?? "–"}</td><td class="num">${Math.round(a.done * 100)}%</td><td>${v}</td></tr>`;
+  });
+});
+$("#results").innerHTML = rows;
+$("#resultsNote").textContent = DATA.simulated
+  ? "Simulated by examples/golden/synth.py so the pipeline can run for free. Use it to learn how a verdict is reached; never quote these numbers."
+  : "Live replay, priced from the replay transcripts.";
+
+play(true);
+})();
+</script>

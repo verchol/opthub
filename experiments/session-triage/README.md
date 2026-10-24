@@ -130,7 +130,7 @@ JEV_API_KEY=... python3 src/run.py --arms rules,jev # + jev-C0 and hybrid-C0 (21
 python3 ../../tools/savings.py --days 30 --csv data/private/ledger.csv
 python3 src/extract.py --days 30
 python3 src/tasks.py --days 30      # tasks per session (prompt titles, scrubbed; local only, never sent to Jev)
-python3 src/export_hub.py           # -> sandbox/e2b/results/triage.json, shown in Hub → Triage
+python3 src/export_hub.py           # -> app/results/triage.json, shown in Hub → Triage
 ```
 
 **When Jev cannot answer the model question** (`capability = unclear`), no route saving is
@@ -210,3 +210,40 @@ the working files.
    not judgement, so it belongs in rules, not in a question to Jev.
 4. **Confidence** is recorded and never gates (SPEC §6.1.1): it is decisiveness, not
    correctness.
+
+## 9. Interactive labelling, and turning a run into settings
+
+*Added 2026-10-18.*
+
+**Classification mode.** `run.py` and `score.py` take `--mode auto|interactive`. `auto` (the
+default, and what the hub calls) runs the classifiers only. `interactive` also asks you, at the
+terminal, to label the most expensive sessions (`--limit`, default 20) — the gold of §8.1. Each
+session shows the evidence a classifier sees and the rules (or hybrid) answer; Enter keeps it, a
+number or prefix picks an option, `u` unclear, `?` the option wording, `s` skip, `q` stop. Answers
+are appended to `data/private/gold.jsonl` as you go, so a pass can stop and resume, and any later
+`auto` run loads them as the `human` arm. Every other arm's agreement with `human` is the nearest
+thing to an accuracy this experiment has — and with one labelled session it is n = 1, not a finding.
+
+```sh
+python3 src/run.py --mode interactive --limit 20 --ledger data/private/ledger.csv \
+    --features data/private/features.jsonl --out-dir data/private
+```
+
+**Recommendations.** `src/recommend.py` prices a run's labels with `methods.py` (as `export_hub.py`
+does) and recommends a method for a project when the sessions it unlocks hold ≥ `--share` (0.5) of
+that project's spend and it saves money at its floor. It writes to `data/private/recommend/`:
+
+- `settings.json` — the fragment that holds across all sessions (`model`, `env.CLAUDE_CODE_SUBAGENT_MODEL`).
+  `--copy settings` puts it on the clipboard.
+- `apply.sh` — runs in plan mode by default and changes nothing; `apply.sh apply [claude] [llm] [other]` acts.
+  - **claude**: merges per-project settings into `<project>/.claude/settings.local.json`, backing up first.
+    Effort and context have no settings key we have verified, so they are printed as launch flags.
+  - **llm**: re-classify with `score.py` (+ Jev when `JEV_API_KEY` is set, paid), the interactive gold
+    pass when at a terminal, and the recommender again.
+  - **other**: the sandbox re-run plan for sessions with no answer to the model question (plan only),
+    batch candidates, and the follow-up comparison.
+- `recommend.json` — the same per project, for the hub.
+
+Savings are per-method headroom with the method's label, not measurements, and are not totalled
+across methods. Tested: plan output over the live run, the settings merge on a scratch file, the
+labeller with scripted input. **Not tested: `apply` against a real project.**

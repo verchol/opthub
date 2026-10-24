@@ -9,6 +9,7 @@ The one tool in tools/ that can spend money. `plan` and `report` never do;
     python3 tools/rerun.py judge  <run-id> --yes                  # blind pairwise score of the diffs
     python3 tools/rerun.py report <run-id>                        # free: radar + tables -> report.html
     python3 tools/rerun.py go <session-id> --goal cost --repeats 3 --yes   # all four
+    python3 tools/rerun.py plan <session-id> --goal cost --dynamic  # + a third arm, flags from tools/tune.py
 
 How a run is built, and why:
 
@@ -27,7 +28,7 @@ How a run is built, and why:
     turns `--resume` it. Each arm/repeat is therefore a new session on this machine
     and shows up in tools/sessions.py and /lenops like any other.
   * Local Docker sandbox by default (--sandbox docker). Each arm/repeat gets one
-    container from tools/sandbox/: read-only rootfs, no capabilities, uid 10001, an
+    container from sandbox/docker/: read-only rootfs, no capabilities, uid 10001, an
     --internal network whose only way out is an allowlisting proxy (api.anthropic.com,
     Bedrock). The repo copy is the one writable mount, plus a per-cell $HOME so
     `--resume` finds the session between turns. Because the box is the boundary, the
@@ -38,21 +39,28 @@ How a run is built, and why:
   * The judge is blind. It sees the task and two diffs labelled A and B, in random
     order, twice with positions swapped, never the arm names, flags or costs. Its
     model must not be one an arm runs on (SPEC §6.1.1). Its own cost is reported.
+  * Best and dynamic. The goal arm runs the goal's preset — one fixed "best known"
+    answer for every session. --dynamic adds a third arm whose flags tools/tune.py
+    picks from this session's own measurements (context, thinking share, files
+    edited). Each candidate gets its own verdict against the baseline.
   * Cost is `priced` — transcript tokens at list rates (tools/sessions.py), the
     same unit as every other number in docs/. n = 1 is not a finding: the report
     prints a verdict only at --repeats >= 3.
 
 Everything lands in data/private/reruns/<run-id>/ (gitignored): prompts, diffs and
-paths stay on this machine.
+paths stay on this machine. OPTHUB_PROJECTS and OPTHUB_RERUNS relocate the transcript
+store and the run directory (examples/golden uses both). Secrets come from the shell
+or the repo's .env (tools/envfile.py).
 """
 import argparse, datetime as dt, glob, html, json, math, os, random, re, shutil, statistics, subprocess, sys, time, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sessions import PRICE, req_cost, DEFAULT_MODEL  # noqa: E402
+import envfile, tune  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "data", "private", "reruns")
-PROJECTS = os.path.expanduser("~/.claude/projects")
+OUT = os.environ.get("OPTHUB_RERUNS") or os.path.join(ROOT, "data", "private", "reruns")
+PROJECTS = os.environ.get("OPTHUB_PROJECTS") or os.path.expanduser("~/.claude/projects")
 JUDGE = "claude-opus-5"                       # SPEC §8 judge.pinned
 CRITERIA = ["correctness", "completeness", "code_quality", "scope", "tests", "clarity"]
 
@@ -190,10 +198,10 @@ def artifact(dest):
 
 
 # -------------------------------------------------------------------- sandbox
-# Same names and images as sandbox/e2b/template/docker/sandbox.sh, so a box built
-# or started by either is reused by the other.
+# The Docker provider in sandbox/docker/, driven from Python: the same names and images as
+# sandbox.sh there, so a box built or started by either is reused by the other.
 
-SBX_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sandbox")
+SBX_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sandbox", "docker")
 NET_INT, NET_OUT, PROXY = "opthub-sbx-internal", "opthub-sbx-egress", "opthub-egress"
 AGENT_IMG, PROXY_IMG = "opthub/agent:0.1", "opthub/egress:0.1"
 # The box authenticates with the subscription OAuth token only. An API key is never
@@ -305,7 +313,19 @@ def cmd_plan(a):
     arm_models = {s["model"]} | {cand_flags[i + 1] for i, f in enumerate(cand_flags[:-1]) if f == "--model"}
     if a.judge in arm_models:
         sys.exit(f"judge {a.judge} is also an arm's model — pick another --judge (SPEC §6.1.1)")
-    rid = f"rr-{a.session[:8]}-{a.goal}-{dt.datetime.now():%Y%m%d%H%M}"
+    arms = [dict(name="baseline", flags=base_flags), dict(name=f"{a.goal}", flags=cand_flags)]
+    if a.dynamic:
+        dyn_flags, why = tune.choose(tune.profile(s["sid"], PROJECTS))
+        for w in why:
+            print(f"dynamic  : {w}")
+        if dyn_flags in (base_flags, cand_flags):
+            print(f"note: dynamic flags equal the {'baseline' if dyn_flags == base_flags else a.goal} arm — no third arm")
+        else:
+            arms.append(dict(name="dynamic", flags=dyn_flags, why=why))
+            arm_models.add(dyn_flags[1])
+            if a.judge in arm_models:
+                sys.exit(f"judge {a.judge} is also an arm's model — pick another --judge (SPEC §6.1.1)")
+    rid = a.run_id or f"rr-{a.session[:8]}-{a.goal}-{dt.datetime.now():%Y%m%d%H%M}"
     plan = dict(id=rid, created=dt.datetime.now().isoformat(timespec="seconds"),
                 session=s["sid"], cwd=s["cwd"], start=s["start"], goal=a.goal,
                 lever=goal["lever"] if not a.flags else "custom", wins=goal["wins"],
@@ -313,8 +333,7 @@ def cmd_plan(a):
                 sandbox=a.sandbox, budget_per_turn=a.budget,
                 permission_mode=a.permission_mode or ("bypassPermissions" if a.sandbox == "docker" else "acceptEdits"),
                 test_cmd=a.test_cmd, judge=a.judge, from_dir=a.from_dir,
-                arms=[dict(name="baseline", flags=base_flags),
-                      dict(name=f"{a.goal}", flags=cand_flags)])
+                arms=arms)
     d = os.path.join(OUT, rid)
     os.makedirs(d, exist_ok=True)
     json.dump(plan, open(os.path.join(d, "plan.json"), "w"), indent=2)
@@ -337,7 +356,7 @@ def print_plan(p):
     print(f"judge    : {p['judge']} (blind, pairwise, position-swapped; on the host, no tools)")
     calls = n * p["repeats"] * len(p["arms"])
     print(f"spend    : {calls} claude -p turns, each capped at ${p['budget_per_turn']:.2f} "
-          f"(ceiling ${calls * p['budget_per_turn']:.2f}) + {2 * p['repeats']} judge calls")
+          f"(ceiling ${calls * p['budget_per_turn']:.2f}) + {2 * p['repeats'] * (len(p['arms']) - 1)} judge calls")
     print(f"\nnext     : python3 tools/rerun.py run {p['id']} --yes")
 
 
@@ -534,9 +553,13 @@ def norm(arms, key, higher):
 
 
 def verdict(p, arms):
+    """One verdict per candidate arm, each against the baseline arm."""
     if len(arms) < 2:
         return "incomplete — an arm has no runs"
-    b, c = arms[0], arms[1]
+    return "; ".join(verdict_one(p, arms[0], c) for c in arms[1:])
+
+
+def verdict_one(p, b, c):
     n = min(b["n"], c["n"])
     if n < 3:
         return f"no verdict — n = {n} per arm; three repeats is the minimum (n = 1 is not a finding)"
@@ -591,7 +614,7 @@ def cmd_report(a):
     b = arms[0]
 
     # terminal
-    print(f"{p['id']} — goal {p['goal']} · {v}\n")
+    print(f"{p['id']} — goal {p['goal']} · {v}" + ("   [SIMULATED — examples/golden]" if p.get("simulated") else "") + "\n")
     print(f"{'metric':<22}" + "".join(f"{a['name']:>16}" for a in arms))
     for k, label, _, fmt in SPOKES + [("cache_hit", "cache hit", True, lambda x: f"{x * 100:.1f}%"),
                                      ("files", "files changed", True, lambda x: f"{x:.0f}")]:
@@ -634,6 +657,9 @@ def cmd_report(a):
                 f"no names, flags or costs. It spent ${j.get('spent', 0):.2f}, charged to verify." if j else "Not judged yet: quality spoke is empty.")]
     if same:
         caveats.insert(0, "Both arms ran identical flags: the gap between them is the noise floor, not a result.")
+    if p.get("simulated"):
+        caveats.insert(0, "<b>Simulated.</b> No arm ran and no judge was called: transcripts, diffs and scores come "
+                          "from examples/golden/synth.py. This page teaches the pipeline; never quote its numbers.")
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Session rerun report</title>
 <style>
@@ -670,6 +696,7 @@ table{{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}} t
 # ------------------------------------------------------------------------- cli
 
 def main():
+    envfile.load()
     ap = argparse.ArgumentParser(description="Replay a session with new flags; judge blind; radar report.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -687,6 +714,8 @@ def main():
         sp.add_argument("--test-cmd", help="shell command run in each arm's repo afterwards; exit 0 = done")
         sp.add_argument("--judge", default=JUDGE, help=f"pinned judge model (default {JUDGE})")
         sp.add_argument("--from-dir", action="store_true", help="copy the directory as it is now instead of git archive")
+        sp.add_argument("--dynamic", action="store_true", help="add a third arm with flags tools/tune.py picks for this session")
+        sp.add_argument("--run-id", help="name the run instead of rr-<session>-<goal>-<time>")
 
     plan_args(sub.add_parser("plan", help="free: read the session, write the plan"))
     for name in ("run", "judge"):

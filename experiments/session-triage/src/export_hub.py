@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the classification the Optimization Hub shows under Triage.
 
-    python3 src/export_hub.py                                  # -> ~/workspace/sandbox/e2b/results/triage.json
+    python3 src/export_hub.py                                  # -> app/results/triage.json (or $OPT_HOME/results/)
     python3 src/export_hub.py --out $OPT_HOME/results/triage.json
 
 Reads the live run (data/private/: ledger, features, tasks, results.json) and writes one
@@ -47,7 +47,7 @@ def escalation(labels: dict, verdict_outcome: str) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    default_out = pathlib.Path(os.environ.get("OPT_HOME") or pathlib.Path.home() / "workspace/sandbox/e2b") / "results" / "triage.json"
+    default_out = pathlib.Path(os.environ.get("OPT_HOME") or HERE.parents[1] / "app") / "results" / "triage.json"
     ap.add_argument("--out", default=str(default_out))
     ap.add_argument("--arm", default="jev-C1")
     ap.add_argument("--dir", default=str(PRIV), help="where ledger.csv, features.jsonl, tasks.jsonl, results.json are")

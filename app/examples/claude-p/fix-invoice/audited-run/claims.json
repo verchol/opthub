@@ -1,0 +1,181 @@
+{
+  "run": "cp-20261020-084341-d9b9",
+  "audited": "2026-10-20T08:45:16.041Z",
+  "summary": {
+    "verified": 13,
+    "failed": 0,
+    "notProven": 0,
+    "notes": 2
+  },
+  "claims": [
+    {
+      "id": "same-input",
+      "claim": "Both sides were given the same task and the same source tree.",
+      "status": "verified",
+      "evidence": [
+        "task.md sha256 849ff468ec6d across 6 runs",
+        "source tree sha256 d5a91114aef9 (one read-only mount for every run)"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "same-model",
+      "claim": "Both sides ran the same main model.",
+      "status": "verified",
+      "evidence": [
+        "optimized-1: claude-opus-5-5 (Claude Code's init event)",
+        "optimized-2: claude-opus-5-5 (Claude Code's init event)",
+        "optimized-3: claude-opus-5-5 (Claude Code's init event)",
+        "plain-1: claude-opus-5-5 (Claude Code's init event)",
+        "plain-2: claude-opus-5-5 (Claude Code's init event)",
+        "plain-3: claude-opus-5-5 (Claude Code's init event)"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "same-client",
+      "claim": "Claude Code loaded the same tools and version on both sides.",
+      "status": "verified",
+      "evidence": [
+        "tools: 22 plain, 22 optimized",
+        "Claude Code 2.1.289"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "finished",
+      "claim": "Every run finished without an error.",
+      "status": "verified",
+      "evidence": [
+        "optimized-1: result after 5 turns",
+        "optimized-2: result after 5 turns",
+        "optimized-3: result after 6 turns",
+        "plain-1: result after 6 turns",
+        "plain-2: result after 5 turns",
+        "plain-3: result after 5 turns"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "cheaper",
+      "claim": "The optimized side cost less than plain claude -p (reported 10% cheaper).",
+      "status": "verified",
+      "evidence": [
+        "both sides priced the same way: Claude Code's final token totals (result.modelUsage) at list rates",
+        "baseline $0.0930 · optimized $0.0838 · medians of 3 and 3",
+        "meter cross-check, optimized side: Claude Code's totals $0.0838 vs the gateway's own per-request sum $0.0838",
+        "recomputed from the files: 9.9% cheaper; the run reported 9.9% cheaper",
+        "Claude Code's own estimate (its price list): baseline $0.0778, optimized $0.0685"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "same-result",
+      "claim": "The optimized side's result passes the same hidden check as the baseline (check.py).",
+      "status": "verified",
+      "evidence": [
+        "check check.py sha256 30d9b549530d, run in its own sandbox against each finished workspace",
+        "baseline 3/3 pass · optimized 3/3 pass"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "warm",
+      "claim": "Every measured run started the same way: system prompt and tools warm, the task itself not cached.",
+      "status": "verified",
+      "evidence": [
+        "optimized-1: first request read 11,683 cached tokens, wrote 3,666",
+        "optimized-2: first request read 11,683 cached tokens, wrote 3,666",
+        "optimized-3: first request read 11,683 cached tokens, wrote 3,666",
+        "plain-1: first request read 11,579 cached tokens, wrote 3,666",
+        "plain-2: first request read 11,579 cached tokens, wrote 3,666",
+        "plain-3: first request read 11,579 cached tokens, wrote 3,666",
+        "warm-up: one turn a side beforehand (plain $0.0450, optimized $0.0488), not in the comparison"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "time",
+      "claim": "Wall time of each side.",
+      "status": "note",
+      "evidence": [
+        "baseline 30s · optimized 22s (28% faster)"
+      ],
+      "detail": "the optimized side also waits for the router and, on local routes, for Ollama"
+    },
+    {
+      "id": "router-optimized-1",
+      "claim": "optimized-1: every model request went through the router, and its log is intact.",
+      "status": "verified",
+      "evidence": [
+        "router audit: 5 requests, hash chain intact (5 entries)",
+        "Claude Code received 5 messages; the router must have seen at least as many requests",
+        "decisions: keep 5 · nothing was moved off the requested model"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "router-optimized-2",
+      "claim": "optimized-2: every model request went through the router, and its log is intact.",
+      "status": "verified",
+      "evidence": [
+        "router audit: 5 requests, hash chain intact (5 entries)",
+        "Claude Code received 5 messages; the router must have seen at least as many requests",
+        "decisions: keep 5 · nothing was moved off the requested model"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "router-optimized-3",
+      "claim": "optimized-3: every model request went through the router, and its log is intact.",
+      "status": "verified",
+      "evidence": [
+        "router audit: 6 requests, hash chain intact (6 entries)",
+        "Claude Code received 6 messages; the router must have seen at least as many requests",
+        "decisions: keep 6 · nothing was moved off the requested model"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "credential",
+      "claim": "The optimized agent never held your real credential; only the router did.",
+      "status": "verified",
+      "evidence": [
+        "optimized-1: sha256 of the key inside the container 25d107cbdd83 = the placeholder",
+        "optimized-2: sha256 of the key inside the container 25d107cbdd83 = the placeholder",
+        "optimized-3: sha256 of the key inside the container 25d107cbdd83 = the placeholder"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "profile",
+      "claim": "The optimized side ran on the balanced profile: --effort medium, lean rules, skills none.",
+      "status": "verified",
+      "evidence": [
+        "skills loaded (Claude Code's init event): —",
+        "skills invoked: none (attached, not used on this task)",
+        "flags and rules: recorded in run.json and the task trail (rules sha256 d1ccfcaa9cab)"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "trail",
+      "claim": "The run is in the hash-chained task trail, and no log holds the task text.",
+      "status": "verified",
+      "evidence": [
+        "tasks.jsonl: chain intact (123 entries), 8 entries for claude-p-20261020084341-68645c",
+        "task text not found in tasks.jsonl or the router audit"
+      ],
+      "detail": ""
+    },
+    {
+      "id": "sample",
+      "claim": "n = 3 per side.",
+      "status": "note",
+      "evidence": [
+        "3 runs a side, compared by median"
+      ],
+      "detail": ""
+    }
+  ]
+}

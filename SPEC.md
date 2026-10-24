@@ -871,6 +871,6 @@ Three rules carry over from the measurements:
    reaches nothing but ULT and the egress proxy.
 
 The full epic — stories, components, flags, configuration, audit schema, what is deferred and why —
-is `docs/runtime-optimization.md`. Implementation lives in `sandbox/e2b`: `optimize-live.mjs`,
+is `docs/runtime-optimization.md`. Implementation lives in `app/`: `optimize-live.mjs`,
 `ult.mjs`, `lib/ult/`, `config/ult.default.json`.
 

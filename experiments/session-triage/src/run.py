@@ -5,12 +5,18 @@
     JEV_API_KEY=... python3 src/run.py --arms rules,jev
     python3 src/run.py --dry-run                    # print the Jev payload for the top session
     python3 src/run.py --ledger data/private/ledger.csv --features data/private/features.jsonl --arms rules,jev
+    python3 src/run.py --mode interactive --limit 20  # you label the 20 most expensive sessions (gold)
 
 Arms: rules-C0 always; rules-C1 and jev-C1 when --features is given; jev-C0 with --arms jev.
 `hybrid` is derived, not called: rules answer, Jev fills only the axes rules left
 'unclear' (SPEC §6.7 detector-first). No arm is scored against gold — there is no gold
 for "could this have waited" — so what is reported is the money each arm's labels
 would move, the agreement between arms, and how often an arm contradicts itself.
+
+--mode auto (default) runs only the classifiers. --mode interactive also asks you, at the
+terminal, to label the most expensive sessions (classifiers/human.py); answers go to
+--gold and become the `human` arm, and every other arm's agreement with it is the nearest
+thing to an accuracy this experiment has. An auto run loads an existing gold file too.
 """
 
 import argparse
@@ -180,6 +186,11 @@ def main():
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--ctx", default="C0,C1", help="Jev evidence levels to call: C0, C1 or both (one paid call each per session)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--mode", choices=("auto", "interactive"), default="auto",
+                    help="auto: classifiers only; interactive: you also label sessions at the terminal")
+    ap.add_argument("--limit", type=int, default=20, help="interactive: sessions to ask about this run")
+    ap.add_argument("--gold", default=str(HERE / "data" / "private" / "gold.jsonl"),
+                    help="human labels, appended as you go (gitignored)")
     a = ap.parse_args()
 
     taxonomy = json.loads(pathlib.Path(a.taxonomy).read_text())
@@ -215,13 +226,33 @@ def main():
                                        for i in labels[f"rules-{ctx}"]}
             results["arms"][f"hybrid-{ctx}"] = {"outcomes": None, "predictions": None}
 
+    from classifiers.human import HumanLabeller
+    human = HumanLabeller(taxonomy, a.gold)
+    if a.mode == "interactive":
+        if not sys.stdin.isatty():
+            sys.exit("--mode interactive needs a terminal; use --mode auto from scripts and the hub")
+        suggest = labels.get("hybrid-C1") or labels.get("rules-C1") or labels["rules-C0"]
+        hv = human.run(sessions, suggest, a.limit)
+    else:
+        hv = human.verdicts(sessions)
+    if hv:
+        labels["human"] = {s["id"]: hv[s["id"]].labels if s["id"] in hv else {} for s in sessions}
+        results["arms"]["human"] = {"outcomes": {"labelled": len(hv), "not labelled": len(sessions) - len(hv)},
+                                    "predictions": {k: {"labels": v.labels, "outcome": "ok", "confidence": {},
+                                                        "probabilities": {}, "latency_ms": 0} for k, v in hv.items()}}
+
     for name in results["arms"]:
         results["arms"][name]["eval"] = evaluate(sessions, labels[name], taxonomy)
     ids = [s["id"] for s in sessions]
     names = [n for n in labels if not n.startswith("hybrid")]
+    if "human" in labels:  # against gold, the derived arms are worth comparing too
+        names = [n for n in labels if n != "human"] + ["human"]
     results["agreement"] = {f"{x} vs {y}": agreement(labels[x], labels[y], taxonomy, ids)
                             for i, x in enumerate(names) for y in names[i + 1:]}
 
+    if a.mode == "interactive" or hv:
+        out_dir = pathlib.Path(a.out_dir or (HERE / "data" / "private"))  # gold describes your sessions
+        out_dir.mkdir(parents=True, exist_ok=True)
     md = render(results, sessions, taxonomy, pathlib.Path(a.ledger).name)
     (out_dir / "RESULTS.md").write_text(md)
     for r in results["arms"].values():

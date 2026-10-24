@@ -1,0 +1,20 @@
+$ python3 tools/tune.py 2ec4f5ed-cda7-52b6-b1ee-2441513113bc
+session  : 2ec4f5ed-cda7-52b6-b1ee-2441513113bc
+measured : claude-opus-5-5 · effort high · 9 req · ctx p50 31,229 · thinking 62% of output · 1 files edited
+dynamic  : --model claude-haiku-4-5-20251001 --effort low   (guess — replay to measure)
+  - model -> claude-haiku-4-5-20251001: 1 file(s) edited in 9 requests — a small, local change
+  - effort -> low: thinking is 62% of output tokens
+
+$ python3 tools/tune.py c19db0a3-ce45-5b6e-b1fa-72b8d183aa75
+session  : c19db0a3-ce45-5b6e-b1fa-72b8d183aa75
+measured : claude-opus-5-5 · effort high · 24 req · ctx p50 85,117 · thinking 34% of output · 4 files edited
+dynamic  : --model claude-sonnet-5 --effort high   (guess — replay to measure)
+  - model -> claude-sonnet-5: 4 files, median context 85,117 — mid-sized work
+  - effort kept (high): thinking is 34% of output tokens
+
+$ python3 tools/tune.py b562a247-cf3b-547a-98a6-5771b9cd31a1
+session  : b562a247-cf3b-547a-98a6-5771b9cd31a1
+measured : claude-opus-5-5 · effort high · 44 req · ctx p50 230,329 · thinking 56% of output · 3 files edited
+dynamic  : --model claude-opus-5-5 --effort medium   (guess — replay to measure)
+  - model kept (claude-opus-5-5): median context 230,329 >= 150,000 — long-context work is where a downgrade is riskiest; try context-lifecycle instead
+  - effort -> medium: thinking is 56% of output tokens

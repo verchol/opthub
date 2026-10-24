@@ -423,3 +423,31 @@
   **Similar**: a kNN graph of sessions by purpose, artifact, project and intent words.
 - n = 1 per category in places; percentiles below n = 20 are top values, and the page says so.
 
+
+## 2026-10-23 · One self-contained repo: the implementation merged in as `app/` and `sandbox/`
+- The implementation (formerly the private `sandbox/e2b` repo, branch `react-ui` at `fcaa674`) is copied
+  in as `app/`, from its tracked files only: no git history, no `.env`, no run output. The sandbox
+  providers moved out of it into `sandbox/docker/` and `sandbox/e2b/` (templates `harness/`, `kong/`,
+  `openmodel/`). The Docker sandbox that `tools/rerun.py` vendored in `tools/sandbox/` is gone: both sides
+  now build the same images from `sandbox/docker/`.
+- Only `sandbox/e2b/index.mjs` loads the E2B SDK, lazily, so the hub and `opt` start without it; `e2b` is
+  an optional dependency. The hub finds the scoring pipeline and session graph in this checkout instead
+  of `~/workspace/demos/opthub`; the Optimization Atlas is read from `docs/atlas/` instead of a copy.
+- One `package.json` and one `.env` at the root. `node sandbox/test.mjs` (in `npm test`) fails if any
+  of that regresses: SDK outside its provider, a provider importing the app, a second Docker copy, a path
+  or symlink leaving the checkout. `npm test` all passing (Node suites 82/24/38/35/13 plus two
+  all-passed suites); golden check 6/6.
+
+## 2026-10-23 · Per-session Claude Code configuration: 12.8% going forward; usage was double-counted
+- `tools/dynconfig.py` prices the Claude Code config catalog per session, in applied order, over every
+  transcript on the development machine: 134 sessions, 7,592 requests, $1,349.57 at list price
+  (2026-08-24 to 10-22). Report: `docs/dynamic-config-analysis.md`.
+- A config chosen per session saves 19.5% all-time, but 12.9 points of that is Opus 5 to Opus 5.5,
+  already taken (all sessions since 09-23). Last two weeks: 12.8% ($30.21 of $235.70), of which the
+  measured part is the cache TTL (5.4%: 1h to 5m on the sessions' real gaps). `/clear` per task stays
+  the largest lever: a 21.5% ceiling over the two weeks, and not settable by config.
+- **Claim changed:** transcripts repeat each response's usage once per content block (1.4 to 3.4
+  records per request on every version on disk). `savings.py`, `sessions.py`, `lenops.py` and the hub's
+  `sessions-index.mjs` sum per record and overstate cost about 2× on recent transcripts (`savings.py`:
+  $2,951.04 against $1,349.57). Deduplicated, the token counts match Claude Code's own `cost-state`.
+  Claude Code prices Opus 5.5 about 20% below the repo's price table (median ratio 1.25, n=66).

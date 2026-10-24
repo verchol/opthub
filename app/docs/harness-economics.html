@@ -1,0 +1,245 @@
+<title>Harness Economics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root{
+    --ground:#F3F5F5; --surface:#FFFFFF; --raise:#EAEEEE; --ink:#12181A; --muted:#5A6B6E;
+    --rule:#D7DEDE; --rule-strong:#B4BFBF;
+    --armA:#A8611F; --armA-soft:#F7EDE1;
+    --armB:#0E6E65; --armB-soft:#E1F0EE;
+    --display:'Archivo',system-ui,sans-serif;
+    --body:'Source Serif 4',Georgia,serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#0D1214; --surface:#151B1E; --raise:#1D2529; --ink:#E3EAE9; --muted:#8B9C9E;
+    --rule:#232D30; --rule-strong:#37474A;
+    --armA:#E2A462; --armA-soft:#2B2015; --armB:#46BFAF; --armB-soft:#0E2A27;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0D1214; --surface:#151B1E; --raise:#1D2529; --ink:#E3EAE9; --muted:#8B9C9E;
+    --rule:#232D30; --rule-strong:#37474A;
+    --armA:#E2A462; --armA-soft:#2B2015; --armB:#46BFAF; --armB-soft:#0E2A27;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16.5px;
+       line-height:1.62;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:56px 24px 96px;display:flex;flex-direction:column;gap:56px}
+  section{display:flex;flex-direction:column;gap:18px}
+
+  .eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.15em;
+           text-transform:uppercase;color:var(--muted)}
+  h1{font-family:var(--display);font-weight:800;font-size:clamp(34px,6vw,58px);line-height:1.02;
+     letter-spacing:-.03em;margin:10px 0 0;text-wrap:balance;max-width:16ch}
+  .lede{font-size:20px;line-height:1.5;max-width:60ch;margin:18px 0 0;color:var(--ink)}
+  .lede em{font-style:normal;color:var(--muted)}
+  h2{font-family:var(--display);font-weight:700;font-size:clamp(22px,3vw,28px);letter-spacing:-.02em;
+     margin:0;text-wrap:balance}
+  h3{font-family:var(--display);font-weight:600;font-size:16px;letter-spacing:-.01em;margin:0}
+  p{margin:0;max-width:66ch}
+  p.wide{max-width:74ch}
+  strong{font-weight:600}
+
+  .band{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;
+        background:var(--rule);border:1px solid var(--rule)}
+  .band>div{background:var(--surface);padding:20px 18px;display:flex;flex-direction:column;gap:4px}
+  .band .v{font-family:var(--display);font-size:30px;font-weight:800;letter-spacing:-.03em;
+           color:var(--armB);font-variant-numeric:tabular-nums;line-height:1}
+  .band .k{font-family:var(--mono);font-size:10.5px;line-height:1.45;letter-spacing:.03em;color:var(--muted)}
+  .cite{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .cite a{color:var(--muted)}
+
+  ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:2px}
+  ol.steps li{counter-increment:s;background:var(--surface);border:1px solid var(--rule);
+              padding:16px 20px 16px 58px;position:relative}
+  ol.steps li::before{content:counter(s);position:absolute;left:20px;top:16px;
+              font-family:var(--mono);font-size:12px;font-weight:700;color:var(--armB)}
+  ol.steps b{font-family:var(--display);font-weight:600}
+  ol.steps span{display:block;color:var(--muted);font-size:15px;margin-top:3px}
+
+  figure{margin:0;display:flex;flex-direction:column;gap:12px}
+  .canvas{background:var(--surface);border:1px solid var(--rule);padding:22px;overflow-x:auto}
+  svg{display:block;width:100%;height:auto;min-width:560px}
+  figcaption{font-size:14.5px;color:var(--muted);max-width:70ch}
+
+  pre{margin:0;background:var(--surface);border:1px solid var(--rule);padding:18px 20px;
+      overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--ink)}
+  pre .c{color:var(--muted)}
+  pre .k{color:var(--armB);font-weight:700}
+
+  .axes{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .ax{background:var(--surface);border:1px solid var(--rule);border-left:2px solid var(--armB);
+      padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+  .ax b{font-family:var(--display);font-size:14.5px;font-weight:600}
+  .ax span{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.02em}
+
+  .status{background:var(--raise);border:1px solid var(--rule);padding:24px 26px;
+          display:flex;flex-direction:column;gap:14px}
+  .status ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .status li{font-family:var(--mono);font-size:12.5px;display:flex;gap:10px;align-items:baseline}
+  .status li i{font-style:normal;font-weight:700;flex:none;width:14px}
+  .status li.y i{color:var(--armB)} .status li.n i{color:var(--armA)}
+  .status p{font-size:15px;color:var(--muted)}
+
+  .kicker{border-left:2px solid var(--armA);padding:4px 0 4px 20px;max-width:68ch}
+  .kicker p{font-size:16px;color:var(--muted)}
+  .kicker p b{color:var(--ink)}
+  a.more{font-family:var(--mono);font-size:12px;color:var(--armB)}
+  footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+         border-top:1px solid var(--rule);padding-top:18px;line-height:1.7}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">A measurement rig for coding-agent efficiency</div>
+    <h1>Harness Economics</h1>
+    <p class="lede">Every comparison of coding agents compares <em>models</em> — the one variable
+    a team doesn't control. This measures the one they do: the <strong>harness</strong> around the
+    model. Same task, same model, two cloud machines, one difference.</p>
+  </header>
+
+  <section>
+    <h2>The lever nobody measures</h2>
+    <p class="wide">Agent spend is becoming a real line item, and the instinct is to manage it by
+    picking a cheaper model. But the largest published account of running agents at scale says the
+    savings came from somewhere else: how work is packaged before the model ever sees it. Uber
+    reported these over six months, holding capability flat.</p>
+    <div class="band">
+      <div><span class="v">34%</span><span class="k">lower cost per 1,000 requests, model held fixed</span></div>
+      <div><span class="v">52%</span><span class="k">lower cost per session from its June peak</span></div>
+      <div><span class="v">9.4×</span><span class="k">growth in weekly agentic requests over the same window</span></div>
+      <div><span class="v">70%</span><span class="k">of pull requests attributed to local or cloud agents</span></div>
+    </div>
+    <p class="cite">Uber, <a href="https://www.uber.com/us/en/blog/efficient-software-factory/">Building an Efficient Software Factory</a>, Feb–Aug 2026.</p>
+    <p class="wide">Those are the numbers of a team that instrumented its harness. The techniques
+    are published; what isn't published is a way to tell whether any of them help <em>you</em>, on
+    <em>your</em> code, before you commit engineering time to them. That is the gap this fills.</p>
+  </section>
+
+  <section>
+    <h2>What the rig does</h2>
+    <ol class="steps">
+      <li><b>Boots two identical cloud microVMs.</b><span>Same base image, same CPU and memory, booted in parallel — roughly a second each.</span></li>
+      <li><b>Gives both the same task and the same model.</b><span>A specification with unambiguous, mechanically checkable requirements. Nothing about the model varies, so nothing measured is attributable to it.</span></li>
+      <li><b>Changes exactly one thing in the second machine.</b><span>An optimization strategy, defined in a single file. Whatever it doesn't set stays at the control's value.</span></li>
+      <li><b>Grades both with a test suite neither could see.</b><span>Written into each machine only after the agent process exits. No run can be tuned against its own scorer.</span></li>
+      <li><b>Reports cost against outcome.</b><span>Not tokens burned — cost per passing test. Spend denominated in work that actually landed.</span></li>
+    </ol>
+    <div class="kicker"><p>The grader was validated at <b>47/47 against a reference implementation</b>
+    before any run happened. That matters more than it sounds: it proves the tests are winnable and
+    the specification is unambiguous, so a low score is a real failure rather than a rigged one.</p></div>
+  </section>
+
+  <figure>
+    <div class="canvas">
+      <svg viewBox="0 0 820 300" role="img" aria-label="Diagram: a shared task specification and base prompt feed both sandboxes. The control receives only those. A single experiment file adds a strategy to the second sandbox. Both are then scored by the same hidden test suite.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="JetBrains Mono, monospace">
+          <rect x="20" y="118" width="150" height="64" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5"/>
+          <text x="95" y="144" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">shared task</text>
+          <text x="95" y="162" text-anchor="middle" font-size="10" fill="var(--muted)">spec + base prompt</text>
+
+          <path d="M170,140 H250" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#a2)" color="var(--muted)"/>
+          <path d="M170,160 H250" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#a2)" color="var(--muted)"/>
+
+          <rect x="255" y="58" width="230" height="72" fill="var(--armA-soft)" stroke="var(--armA)" stroke-width="1.5"/>
+          <text x="370" y="86" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--armA)">control</text>
+          <text x="370" y="106" text-anchor="middle" font-size="10" fill="var(--muted)">a regular session, nothing added</text>
+
+          <rect x="255" y="172" width="230" height="72" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="370" y="200" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--armB)">optimized</text>
+          <text x="370" y="220" text-anchor="middle" font-size="10" fill="var(--muted)">control + one strategy</text>
+
+          <rect x="255" y="264" width="230" height="30" fill="var(--surface)" stroke="var(--armB)" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="370" y="284" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--armB)">experiment.md — the only variable</text>
+          <path d="M370,264 V248" fill="none" stroke="var(--armB)" stroke-width="1.4" marker-end="url(#a2)" color="var(--armB)"/>
+
+          <path d="M485,94 H575 V138" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#a2)" color="var(--muted)"/>
+          <path d="M485,208 H575 V162" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#a2)" color="var(--muted)"/>
+
+          <rect x="600" y="118" width="200" height="64" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="700" y="144" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">hidden grader</text>
+          <text x="700" y="162" text-anchor="middle" font-size="10" fill="var(--muted)">arrives after both exit</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>One file is the independent variable. Everything else is held identical by
+    construction, including the model. <a class="more" href="https://claude.ai/code/artifact/5f5da277-d053-4b0a-8984-dfa9d6c45949">Full architecture →</a></figcaption>
+  </figure>
+
+  <section>
+    <h2>An idea becomes an experiment in four lines</h2>
+    <p class="wide">This is the whole interface. No code, no configuration schema, no rebuild — a
+    description and an instruction, saved as a file. The system appends it to the task prompt the
+    control also receives, so for a strategy like this one, that paragraph <em>is</em> the entire
+    difference between the two machines.</p>
+<pre><span class="c">--- experiments/plan-first.md</span>
+<span class="k">description:</span> Force an explicit behaviour checklist before any code is written.
+
+Before you write a single line, write PLAN.md containing a numbered
+checklist of every distinct behaviour the spec requires — every value
+rule, every error type and the exact condition that triggers it.</pre>
+    <p class="wide">More elaborate strategies add flags, drop scaffolding files into the workspace,
+    or introduce a reviewer agent on a cheaper model that gates completion. Six ship with the rig,
+    spanning a single flag through a full stack of techniques.</p>
+  </section>
+
+  <section>
+    <h2>What comes out</h2>
+    <p class="wide">A standalone page with both sessions overlaid on six axes, each normalised so
+    the better one reaches the outer edge — plus every raw number unnormalised beneath it, because a
+    radar chart flatters whichever shape encloses more area.</p>
+    <div class="axes">
+      <div class="ax"><b>Correctness</b><span>hidden suite pass rate</span></div>
+      <div class="ax"><b>Cost efficiency</b><span>total spend</span></div>
+      <div class="ax"><b>Token economy</b><span>output tokens</span></div>
+      <div class="ax"><b>Turn economy</b><span>assistant turns</span></div>
+      <div class="ax"><b>Cache reuse</b><span>prompt-cache hit rate</span></div>
+      <div class="ax"><b>Speed</b><span>agent wall time</span></div>
+    </div>
+    <p class="wide">And the number that ties spend to outcome: <strong>cost per passing test</strong>.
+    Plus a per-test failure breakdown, which is usually the most informative panel — the two sessions
+    tend to fail <em>differently</em>, not merely more or less.</p>
+  </section>
+
+  <section>
+    <h2>Where this stands</h2>
+    <div class="status">
+      <ul>
+        <li class="y"><i>✓</i><span>Infrastructure proven end to end — VMs boot in ~1s, agent tooling installs in ~6s</span></li>
+        <li class="y"><i>✓</i><span>Benchmark and 47-test hidden grader built and validated at 47/47</span></li>
+        <li class="y"><i>✓</i><span>Six optimization strategies defined and loading</span></li>
+        <li class="y"><i>✓</i><span>Comparison report and chart generating</span></li>
+        <li class="n"><i>—</i><span>No comparison has been run yet. There are no results.</span></li>
+      </ul>
+      <p>Stated plainly because the alternative is worse. When results do arrive they will be
+      <strong>n=1 per arm</strong>, and agent runs vary substantially between passes — the shape of
+      a difference, not a defensible figure, until three repeats say otherwise. The optimized arm is
+      <em>expected</em> to win on cost; that is the hypothesis under test, not a finding.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why it generalizes</h2>
+    <p class="wide">Nothing in the machinery is specific to the sample task. The specification, the
+    grader, and the strategy files are all swappable inputs. Point it at a task from your own
+    codebase with a real test suite, and the same apparatus answers the same question: <strong>does
+    this way of working actually pay for itself here</strong> — before anyone spends a quarter
+    rolling it out.</p>
+    <p class="wide">The model is deliberately held constant throughout. Model routing was the single
+    largest lever in the published account, and it is excluded here precisely so that everything
+    measured belongs to the harness.</p>
+  </section>
+
+  <footer>
+    Two E2B microVMs · Claude Code on subscription auth · sample task: a spreadsheet formula engine ·
+    47 hidden tests injected post-exit · grader validated 47/47 against a reference implementation
+  </footer>
+</div>

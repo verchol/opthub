@@ -1,0 +1,349 @@
+<title>Two Harnesses, One Task</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root{
+    --ground:#F3F5F5; --surface:#FFFFFF; --ink:#12181A; --muted:#5A6B6E;
+    --rule:#D7DEDE; --rule-strong:#B4BFBF;
+    --armA:#A8611F; --armA-soft:#F7EDE1;
+    --armB:#0E6E65; --armB-soft:#E1F0EE;
+    --gate:#12181A;
+    --display:'Archivo',system-ui,sans-serif;
+    --body:'Source Serif 4',Georgia,serif;
+    --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0D1214; --surface:#151B1E; --ink:#E3EAE9; --muted:#8B9C9E;
+      --rule:#232D30; --rule-strong:#37474A;
+      --armA:#E2A462; --armA-soft:#2B2015;
+      --armB:#46BFAF; --armB-soft:#0E2A27;
+      --gate:#E3EAE9;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0D1214; --surface:#151B1E; --ink:#E3EAE9; --muted:#8B9C9E;
+    --rule:#232D30; --rule-strong:#37474A;
+    --armA:#E2A462; --armA-soft:#2B2015;
+    --armB:#46BFAF; --armB-soft:#0E2A27;
+    --gate:#E3EAE9;
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--ground);color:var(--ink);font-family:var(--body);
+       font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:48px 24px 80px;
+        display:flex;flex-direction:column;gap:44px}
+
+  header{display:flex;flex-direction:column;gap:14px}
+  .eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;
+           letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5vw,46px);
+     line-height:1.06;letter-spacing:-.02em;margin:0;text-wrap:balance}
+  .lede{font-size:18px;color:var(--muted);max-width:62ch;margin:0}
+  .lede b{color:var(--ink);font-weight:600}
+
+  .status{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .chip{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.02em;
+        padding:5px 10px;border:1px solid var(--rule);border-radius:2px;
+        background:var(--surface);color:var(--muted);white-space:nowrap}
+  .chip.on{color:var(--armB);border-color:var(--armB)}
+  .chip.off{color:var(--armA);border-color:var(--armA)}
+
+  figure{margin:0;display:flex;flex-direction:column;gap:14px}
+  .figtop{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .fignum{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;
+          text-transform:uppercase;color:var(--muted)}
+  .figttl{font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.01em}
+  .canvas{background:var(--surface);border:1px solid var(--rule);
+          padding:20px;overflow-x:auto}
+  svg{display:block;width:100%;height:auto;min-width:640px}
+  figcaption{font-size:15px;color:var(--muted);max-width:70ch}
+  figcaption b{color:var(--ink);font-weight:600}
+
+  h2{font-family:var(--display);font-weight:600;font-size:21px;letter-spacing:-.01em;
+     margin:0 0 14px;text-wrap:balance}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);
+        vertical-align:top}
+  thead th{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+           text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule-strong)}
+  td.a{color:var(--armA)} td.b{color:var(--armB)}
+  td.lv{font-family:var(--mono);font-size:12.5px}
+  tbody tr:last-child td{border-bottom:none}
+  .src{font-size:13px;color:var(--muted)}
+
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+         gap:1px;background:var(--rule);border:1px solid var(--rule)}
+  .fact{background:var(--surface);padding:14px 16px;display:flex;
+        flex-direction:column;gap:3px}
+  .fact .v{font-family:var(--mono);font-size:19px;font-weight:700;
+           font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .fact .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+           text-transform:uppercase;color:var(--muted)}
+
+  .note{border-left:2px solid var(--armA);padding:2px 0 2px 18px;
+        font-size:15px;color:var(--muted);max-width:70ch}
+  .note b{color:var(--ink);font-weight:600}
+  footer{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+         border-top:1px solid var(--rule);padding-top:16px}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">E2B sandbox benchmark · harness A/B</div>
+    <h1>Two Harnesses, One Task</h1>
+    <p class="lede">Two identical cloud microVMs run Claude Code on the <b>same</b> spec. One session is
+    <b>stock</b>; the other stacks optimization techniques. A 47-test suite neither agent can see grades both. The model is held
+    fixed, so what's measured is the <b>harness</b> — the part a team actually controls.</p>
+    <div class="status">
+      <span class="chip on">E2B boot 1.0s ✓</span>
+      <span class="chip on">claude install 6.1s ✓</span>
+      <span class="chip on">grader 47/47 vs reference ✓</span>
+      <span class="chip off">anthropic token 401 ✗</span>
+      <span class="chip">0 arms executed</span>
+    </div>
+  </header>
+
+  <figure>
+    <div class="figtop"><span class="fignum">Fig 1</span>
+      <span class="figttl">Where the two credentials apply, and when the grader arrives</span></div>
+    <div class="canvas">
+      <svg viewBox="0 0 900 646" role="img" aria-label="Flow diagram: run-demo.mjs on the local Mac uses E2B_API_KEY to boot two microVMs in parallel; each installs Claude Code and uses CLAUDE_CODE_OAUTH_TOKEN to reach api.anthropic.com; only after both agent processes exit is the 47-test hidden suite injected and both workspaces graded into a report.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="JetBrains Mono, monospace" color="var(--muted)">
+
+          <!-- row 1 : local -->
+          <rect x="155" y="24" width="590" height="50" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5"/>
+          <text x="450" y="45" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">run-demo.mjs</text>
+          <text x="450" y="62" text-anchor="middle" font-size="11" fill="var(--muted)">orchestrator · your Mac</text>
+
+          <path d="M450,74 V90 H275 V122" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <path d="M450,74 V90 H625 V122" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- boundary 1 -->
+          <line x1="40" y1="104" x2="860" y2="104" stroke="var(--rule-strong)" stroke-width="1" stroke-dasharray="3 4"/>
+          <text x="40" y="99" font-size="11" font-weight="700" fill="var(--muted)">E2B_API_KEY</text>
+          <text x="860" y="99" font-size="11" text-anchor="end" fill="var(--muted)">boot 2 microVMs · in parallel</text>
+
+          <!-- row 2 : sandboxes -->
+          <rect x="155" y="122" width="240" height="56" fill="var(--armA-soft)" stroke="var(--armA)" stroke-width="1.5"/>
+          <text x="275" y="144" text-anchor="middle" font-size="13" font-weight="700" fill="var(--armA)">sandbox A</text>
+          <text x="275" y="162" text-anchor="middle" font-size="10.5" fill="var(--muted)">Firecracker · 2 vCPU / 478 MB</text>
+          <rect x="505" y="122" width="240" height="56" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="625" y="144" text-anchor="middle" font-size="13" font-weight="700" fill="var(--armB)">sandbox B</text>
+          <text x="625" y="162" text-anchor="middle" font-size="10.5" fill="var(--muted)">Firecracker · 2 vCPU / 478 MB</text>
+
+          <line x1="275" y1="178" x2="275" y2="200" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <line x1="625" y1="178" x2="625" y2="200" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- row 3 : install -->
+          <rect x="155" y="202" width="240" height="42" fill="var(--surface)" stroke="var(--rule-strong)" stroke-width="1"/>
+          <text x="275" y="228" text-anchor="middle" font-size="11.5" fill="var(--ink)">npm i -g claude-code · 6.1s</text>
+          <rect x="505" y="202" width="240" height="42" fill="var(--surface)" stroke="var(--rule-strong)" stroke-width="1"/>
+          <text x="625" y="228" text-anchor="middle" font-size="11.5" fill="var(--ink)">npm i -g claude-code · 6.1s</text>
+
+          <line x1="275" y1="244" x2="275" y2="296" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <line x1="625" y1="244" x2="625" y2="296" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- boundary 2 -->
+          <line x1="40" y1="272" x2="860" y2="272" stroke="var(--rule-strong)" stroke-width="1" stroke-dasharray="3 4"/>
+          <text x="40" y="267" font-size="11" font-weight="700" fill="var(--muted)">CLAUDE_CODE_OAUTH_TOKEN</text>
+          <text x="860" y="267" font-size="11" text-anchor="end" fill="var(--muted)">each VM authenticates to api.anthropic.com</text>
+
+          <!-- row 4 : agents -->
+          <rect x="155" y="298" width="240" height="86" fill="var(--armA-soft)" stroke="var(--armA)" stroke-width="1.5"/>
+          <text x="275" y="322" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--armA)">claude -p  (stock)</text>
+          <text x="275" y="343" text-anchor="middle" font-size="10.5" fill="var(--muted)">no flags beyond --model</text>
+          <text x="275" y="359" text-anchor="middle" font-size="10.5" fill="var(--muted)">default effort · default compaction</text>
+          <text x="275" y="375" text-anchor="middle" font-size="10.5" fill="var(--muted)">agent picks its own checks</text>
+
+          <rect x="505" y="298" width="240" height="86" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="625" y="322" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--armB)">claude -p --effort medium</text>
+          <text x="625" y="343" text-anchor="middle" font-size="10.5" fill="var(--muted)">CLAUDE.md · verify skill</text>
+          <text x="625" y="359" text-anchor="middle" font-size="10.5" fill="var(--muted)">./factory · reviewer (sonnet)</text>
+          <text x="625" y="375" text-anchor="middle" font-size="10.5" fill="var(--muted)">autocompact 400K · no MCP</text>
+
+          <line x1="275" y1="384" x2="275" y2="432" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <line x1="625" y1="384" x2="625" y2="432" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- the gate -->
+          <line x1="40" y1="410" x2="860" y2="410" stroke="var(--gate)" stroke-width="2"/>
+          <text x="450" y="404" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--gate)">agent process exits · workspace frozen</text>
+
+          <!-- row 5 : injection -->
+          <rect x="155" y="434" width="590" height="52" fill="var(--surface)" stroke="var(--gate)" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <text x="450" y="456" text-anchor="middle" font-size="13" font-weight="700" fill="var(--ink)">inject test_hidden.py · 47 tests</text>
+          <text x="450" y="474" text-anchor="middle" font-size="10.5" fill="var(--muted)">written into the VM only now — neither agent could read or target it</text>
+
+          <line x1="275" y1="486" x2="275" y2="512" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <line x1="625" y1="486" x2="625" y2="512" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- row 6 : grade -->
+          <rect x="155" y="514" width="240" height="42" fill="var(--surface)" stroke="var(--armA)" stroke-width="1"/>
+          <text x="275" y="540" text-anchor="middle" font-size="11.5" fill="var(--ink)">grade A · n / 47</text>
+          <rect x="505" y="514" width="240" height="42" fill="var(--surface)" stroke="var(--armB)" stroke-width="1"/>
+          <text x="625" y="540" text-anchor="middle" font-size="11.5" fill="var(--ink)">grade B · n / 47</text>
+
+          <path d="M275,556 V572 H450 V590" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <path d="M625,556 V572 H450 V590" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- row 7 : report -->
+          <rect x="155" y="592" width="590" height="46" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5"/>
+          <text x="450" y="612" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--ink)">results/&lt;runId&gt;/</text>
+          <text x="450" y="629" text-anchor="middle" font-size="10.5" fill="var(--muted)">report.html spider chart · run.json · delivered sheet.py</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Two credentials cross two different boundaries: <b>E2B_API_KEY</b> rents the hardware,
+    <b>CLAUDE_CODE_OAUTH_TOKEN</b> buys the model from inside it. The solid rule is the load-bearing
+    part — the hidden suite is written into each VM <b>only after the agent process has exited</b>,
+    so no run can be tuned against the thing that scores it.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="figtop"><span class="fignum">Fig 2</span>
+      <span class="figttl">The one thing that differs: how each arm reaches "done"</span></div>
+    <div class="canvas">
+      <svg viewBox="0 0 900 570" role="img" aria-label="Side-by-side comparison of the two agent loops. Arm A explores the workspace then churns between editing and ad-hoc shell probes, with no gate — the agent itself decides it is finished. Arm B reads grounded repo context, writes a plan, implements, then passes a single batched factory verify call and an adversarial reviewer subagent running on Sonnet, looping back on failure, and is only done when both gates pass.">
+        <g font-family="JetBrains Mono, monospace">
+
+          <!-- ============ PANEL A ============ -->
+          <rect x="14" y="14" width="416" height="542" fill="none" stroke="var(--rule)" stroke-width="1"/>
+          <text x="34" y="42" font-size="12" font-weight="700" fill="var(--armA)">ARM A · regular</text>
+          <text x="34" y="60" font-size="10.5" fill="var(--muted)">out of the box, no scaffolding</text>
+
+          <rect x="72" y="80" width="300" height="42" fill="var(--surface)" stroke="var(--rule-strong)"/>
+          <text x="222" y="106" text-anchor="middle" font-size="11.5" fill="var(--ink)">prompt + SPEC.md</text>
+          <line x1="222" y1="122" x2="222" y2="146" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <rect x="72" y="148" width="300" height="42" fill="var(--surface)" stroke="var(--rule-strong)"/>
+          <text x="222" y="174" text-anchor="middle" font-size="11.5" fill="var(--ink)">explore the workspace</text>
+          <line x1="222" y1="190" x2="222" y2="214" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- churn -->
+          <rect x="42" y="216" width="150" height="104" fill="var(--armA-soft)" stroke="var(--armA)" stroke-width="1.5"/>
+          <text x="117" y="262" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--armA)">edit</text>
+          <text x="117" y="280" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--armA)">sheet.py</text>
+
+          <rect x="252" y="216" width="150" height="104" fill="var(--surface)" stroke="var(--armA)" stroke-width="1"/>
+          <text x="327" y="248" text-anchor="middle" font-size="10" fill="var(--muted)">python3 -c …</text>
+          <text x="327" y="266" text-anchor="middle" font-size="10" fill="var(--muted)">unittest discover</text>
+          <text x="327" y="284" text-anchor="middle" font-size="10" fill="var(--muted)">cat / ls / grep</text>
+          <text x="327" y="302" text-anchor="middle" font-size="10" fill="var(--muted)">python3 -c … again</text>
+
+          <line x1="192" y1="232" x2="248" y2="232" stroke="var(--armA)" stroke-width="1.2" marker-end="url(#ah)" color="var(--armA)"/>
+          <line x1="248" y1="254" x2="192" y2="254" stroke="var(--armA)" stroke-width="1.2" marker-end="url(#ah)" color="var(--armA)"/>
+          <line x1="192" y1="276" x2="248" y2="276" stroke="var(--armA)" stroke-width="1.2" marker-end="url(#ah)" color="var(--armA)"/>
+          <line x1="248" y1="298" x2="192" y2="298" stroke="var(--armA)" stroke-width="1.2" marker-end="url(#ah)" color="var(--armA)"/>
+          <line x1="192" y1="316" x2="248" y2="316" stroke="var(--armA)" stroke-width="1.2" marker-end="url(#ah)" color="var(--armA)"/>
+
+          <text x="222" y="342" text-anchor="middle" font-size="10.5" font-weight="700" fill="var(--armA)">one round trip per check</text>
+          <text x="222" y="358" text-anchor="middle" font-size="10.5" fill="var(--muted)">each result re-enters the context</text>
+
+          <line x1="222" y1="368" x2="222" y2="394" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <rect x="72" y="396" width="300" height="46" fill="var(--surface)" stroke="var(--armA)" stroke-width="1.5"/>
+          <text x="222" y="424" text-anchor="middle" font-size="12" font-weight="700" fill="var(--armA)">agent declares DONE</text>
+
+          <text x="222" y="470" text-anchor="middle" font-size="10.5" fill="var(--muted)">no gate — the agent is the only</text>
+          <text x="222" y="486" text-anchor="middle" font-size="10.5" fill="var(--muted)">judge of whether it is finished</text>
+
+          <!-- ============ PANEL B ============ -->
+          <rect x="470" y="14" width="416" height="542" fill="none" stroke="var(--rule)" stroke-width="1"/>
+          <text x="490" y="42" font-size="12" font-weight="700" fill="var(--armB)">ARM B · uber-factory</text>
+          <text x="490" y="60" font-size="10.5" fill="var(--muted)">grounded context, batched gates</text>
+
+          <rect x="528" y="80" width="300" height="42" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="678" y="99" text-anchor="middle" font-size="11.5" font-weight="700" fill="var(--armB)">prompt + CLAUDE.md</text>
+          <text x="678" y="114" text-anchor="middle" font-size="9.5" fill="var(--muted)">layout · conventions · 8 known traps</text>
+          <line x1="678" y1="122" x2="678" y2="146" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <rect x="528" y="148" width="300" height="42" fill="var(--surface)" stroke="var(--rule-strong)"/>
+          <text x="678" y="174" text-anchor="middle" font-size="11.5" fill="var(--ink)">PLAN.md — behaviour checklist</text>
+          <line x1="678" y1="190" x2="678" y2="214" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <rect x="528" y="216" width="300" height="42" fill="var(--surface)" stroke="var(--rule-strong)"/>
+          <text x="678" y="242" text-anchor="middle" font-size="11.5" fill="var(--ink)">implement sheet.py + tests/</text>
+          <line x1="678" y1="258" x2="678" y2="282" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- the batched gate -->
+          <rect x="528" y="284" width="300" height="56" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="2"/>
+          <text x="678" y="306" text-anchor="middle" font-size="12" font-weight="700" fill="var(--armB)">./factory verify</text>
+          <text x="678" y="322" text-anchor="middle" font-size="9.5" fill="var(--muted)">syntax · import · api · 25 smoke · tests</text>
+          <text x="678" y="334" text-anchor="middle" font-size="9.5" font-weight="700" fill="var(--armB)">5 checks, 1 process, 1 summary block</text>
+          <line x1="678" y1="340" x2="678" y2="366" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- reviewer -->
+          <rect x="528" y="368" width="300" height="56" fill="var(--surface)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="678" y="390" text-anchor="middle" font-size="12" font-weight="700" fill="var(--armB)">reviewer subagent</text>
+          <text x="678" y="407" text-anchor="middle" font-size="9.5" fill="var(--muted)">adversarial, spec-by-spec · read-only</text>
+          <rect x="740" y="372" width="84" height="16" fill="var(--armB)"/>
+          <text x="782" y="384" text-anchor="middle" font-size="9" font-weight="700" fill="var(--surface)">→ sonnet</text>
+          <line x1="678" y1="424" x2="678" y2="450" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+
+          <!-- fix loop -->
+          <rect x="528" y="452" width="300" height="40" fill="var(--surface)" stroke="var(--rule-strong)"/>
+          <text x="678" y="477" text-anchor="middle" font-size="11.5" fill="var(--ink)">fix every real finding</text>
+          <path d="M828,472 H864 V312 H832" fill="none" stroke="var(--armB)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#ah)" color="var(--armB)"/>
+          <text x="878" y="396" text-anchor="middle" font-size="9.5" fill="var(--armB)" transform="rotate(-90 878 396)">re-verify</text>
+
+          <line x1="678" y1="492" x2="678" y2="514" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ah)" color="var(--muted)"/>
+          <rect x="528" y="516" width="300" height="34" fill="var(--armB-soft)" stroke="var(--armB)" stroke-width="1.5"/>
+          <text x="678" y="538" text-anchor="middle" font-size="11" font-weight="700" fill="var(--armB)">DONE = verify clean AND sign-off</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Same task, same model, same VM. Arm A pays a round trip for every check it invents and
+    absorbs each result back into context; nothing but the agent decides when it's finished. Arm B reads
+    grounded context instead of exploring, collapses five checks into <b>one process call</b>, and cannot
+    exit until a cheaper reviewer signs off. <b>The asymmetry is the experiment</b> — B is expected to
+    win on cost; the open questions are whether correctness survives medium effort, and by how much.</figcaption>
+  </figure>
+
+  <section>
+    <h2>Nine levers, each traceable to a claim</h2>
+    <table>
+      <thead><tr><th style="width:30%">Lever in arm B</th><th style="width:22%">Arm A</th><th>What Uber reported</th></tr></thead>
+      <tbody>
+        <tr><td class="lv b">--effort medium</td><td class="lv a">default effort</td><td>Medium by default — output bills at a multiple of input</td></tr>
+        <tr><td class="lv b">reviewer → sonnet</td><td class="lv a">none</td><td>Subagent downgrade; flagship reserved for orchestration</td></tr>
+        <tr><td class="lv b">./factory verify</td><td class="lv a">ad-hoc probes</td><td>Code-mode batching — 55–71% token reduction</td></tr>
+        <tr><td class="lv b">verify skill</td><td class="lv a">none</td><td>CLI resolution instead of loading tool schemas</td></tr>
+        <tr><td class="lv b">--strict-mcp-config</td><td class="lv a">same</td><td>No MCP preload — they measured 50–70K tokens/session</td></tr>
+        <tr><td class="lv b">CLAUDE.md context</td><td class="lv a">explore</td><td>Context graph: 38s grounded vs 20m09s ungrounded</td></tr>
+        <tr><td class="lv b">reviewer gates done</td><td class="lv a">self-declared</td><td>uReview, the managed code-review agent</td></tr>
+        <tr><td class="lv b">--autocompact 400000</td><td class="lv a">default</td><td>Compact at 400K despite larger windows</td></tr>
+        <tr><td class="lv b">exclude-dynamic-prompt</td><td class="lv a">default</td><td>Raise prompt-cache hit rate</td></tr>
+      </tbody>
+    </table>
+    <p class="src">Source: Uber, <i>Building an Efficient Software Factory</i> — Feb–Aug 2026: 7× weekly
+    active users, 34% lower cost per 1,000 requests, 70% of PRs agent-authored.</p>
+  </section>
+
+  <section>
+    <h2>Measured so far</h2>
+    <div class="facts">
+      <div class="fact"><span class="v">1.0s</span><span class="k">VM cold boot</span></div>
+      <div class="fact"><span class="v">6.1s</span><span class="k">claude install</span></div>
+      <div class="fact"><span class="v">47</span><span class="k">hidden tests</span></div>
+      <div class="fact"><span class="v">47/47</span><span class="k">reference score</span></div>
+      <div class="fact"><span class="v">25</span><span class="k">smoke assertions</span></div>
+      <div class="fact"><span class="v">0</span><span class="k">arms executed</span></div>
+    </div>
+    <p class="note" style="margin-top:20px"><b>No results exist yet.</b> Everything above is real: the
+    infrastructure is proven end to end and the grader was validated against a throwaway reference
+    implementation. The run itself is blocked on an Anthropic token that returns 401. When results land,
+    read them as <b>n=1 per arm</b> — a single pass shows the shape of a difference, not a defensible
+    number, and three repeats is the minimum for a claim.</p>
+  </section>
+
+  <footer>task: sheet.py formula engine · grader: 47 tests, post-hoc · model held fixed across arms · results/&lt;runId&gt;/run.json</footer>
+
+</div>
