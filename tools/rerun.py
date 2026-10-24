@@ -55,7 +55,7 @@ or the repo's .env (tools/envfile.py).
 import argparse, datetime as dt, glob, html, json, math, os, random, re, shutil, statistics, subprocess, sys, time, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sessions import PRICE, req_cost, DEFAULT_MODEL  # noqa: E402
+from ratecard import req_cost, DEFAULT_MODEL  # noqa: E402
 import envfile, tune  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

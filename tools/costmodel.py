@@ -6,19 +6,18 @@ Computes marginal $/1k-request contribution of each optimizer, applied in order.
 Every number quoted in docs/optimizers.md comes from this script. Run it before
 changing a number in the docs.
 
-Pricing: Anthropic first-party rates, $/MTok.
-  cache read  = 0.10x base input
-  cache write = 1.25x base input (5-minute TTL)
+Pricing: tools/ratecard.py, $/MTok. Cache writes at the 5-minute TTL.
 """
+import os, sys
 
-PRICING = {
-    # model: (input $/MTok, output $/MTok, min cacheable prefix tokens)
-    "claude-opus-5":     (5.00, 25.00, 512),
-    "claude-haiku-4-5":  (1.00,  5.00, 4096),
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ratecard import W5 as CACHE_WRITE_MULT, rates  # noqa: E402
+
+MIN_PREFIX = {
+    # model: min cacheable prefix tokens
+    "claude-opus-5":     512,
+    "claude-haiku-4-5":  4096,
 }
-
-CACHE_READ_MULT = 0.10
-CACHE_WRITE_MULT = 1.25   # 5-minute TTL
 
 
 class Workload:
@@ -37,7 +36,8 @@ class Workload:
 
     def cost_per_1k(self, model, cached, share=1.0):
         """$/1k requests for `share` of traffic on `model`."""
-        inp, out, min_prefix = PRICING[model]
+        inp, out, read_mult = rates(model)
+        min_prefix = MIN_PREFIX[model]
         n = 1000 * share
         if cached and self.prefix_tok < min_prefix:
             # Silently does not cache. This is a real trap when routing to Haiku 4.5,
@@ -48,7 +48,7 @@ class Workload:
             writes = n * self.write_rate
             reads = n - writes
             prefix_cost = (
-                self.prefix_tok * reads / 1e6 * inp * CACHE_READ_MULT
+                self.prefix_tok * reads / 1e6 * inp * read_mult
                 + self.prefix_tok * writes / 1e6 * inp * CACHE_WRITE_MULT
             )
         else:

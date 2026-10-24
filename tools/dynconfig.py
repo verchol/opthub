@@ -41,14 +41,11 @@ import argparse, collections, csv, datetime as dt, glob, json, os, statistics, s
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-PRICE = {k: tuple(v) for k, v in json.load(open(os.path.join(REPO, "app", "config", "ult.default.json")))["prices"].items()}
-# Not in the price table: Haiku 5.5 is priced at Haiku 4.5 list rates (conservative: the levers doc
-# cites a lower published price), the 1M-context Opus 5 id at Opus 5 rates.
-ALIAS = {"claude-haiku-5-5": "claude-haiku-4-5", "claude-haiku-4-5-20251001": "claude-haiku-4-5",
-         "claude-opus-5[1m]": "claude-opus-5"}
+sys.path.insert(0, HERE)
+from ratecard import W1H, W5, canonical, rates as price  # noqa: E402
+
 HAIKU, OPUS55, SONNET = "claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5"
 OLD_OPUS = {"claude-opus-5", "claude-opus-4-8"}
-W5, W1H, READ = 1.25, 2.0, 0.1
 LONG_CTX, SMALL_FILES, SMALL_REQS, THINK_HEAVY = 150_000, 2, 12, 0.5     # tools/tune.py
 HOOK_OVER, HOOK_KEEP, CHARS_PER_TOKEN, EFFORT_CUT = 8_000, 2_000, 4, 0.5
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -58,10 +55,6 @@ LABEL = {"fast": "fast mode off", "switch": "no model switch mid-session", "ttl"
          "subagent": "subagents on Haiku", "opus55": "Opus 5 / 4.8 -> Opus 5.5"}
 EVIDENCE = {"fast": "measured", "switch": "measured", "ttl": "measured", "tools": "priced", "hook": "guess",
             "effort": "guess", "subagent": "priced", "opus55": "priced"}
-
-
-def price(model):
-    return PRICE.get(ALIAS.get(model, model))
 
 
 def text_len(c):
@@ -148,27 +141,39 @@ def load(root, cutoff):
 
 
 def cost(q, model=None):
-    pi, po = price(model or q["model"])
-    return dict(inp=((q["raw"] + q["cr"] * READ) + q["w5"] * W5 + q["w1"] * W1H) * pi / 1e6,
-                out=q["out"] * po / 1e6, think=q["think"] * po / 1e6)
+    """Dollars by side; `read` is the cache-read part of `inp`."""
+    pi, po, rd = price(model or q["model"])
+    return dict(inp=((q["raw"] + q["cr"] * rd) + q["w5"] * W5 + q["w1"] * W1H) * pi / 1e6,
+                read=q["cr"] * rd * pi / 1e6, out=q["out"] * po / 1e6, think=q["think"] * po / 1e6)
 
 
 def ttl_sim(reqs, ttl, wm):
     """Input cost of the cached prefix under one TTL, against the requests' real gaps."""
     total, prev = 0.0, None
     for q in reqs:
-        pi = price(q["model"])[0]
+        pi, _, rd = price(q["model"])
         w = q["w5"] + q["w1"]
         gap = (q["t"] - prev).total_seconds() if prev else 0
-        total += ((q["cr"] + w) * wm if prev and gap > ttl and q["cr"] > 0 else q["cr"] * READ + w * wm) * pi / 1e6
+        total += ((q["cr"] + w) * wm if prev and gap > ttl and q["cr"] > 0 else q["cr"] * rd + w * wm) * pi / 1e6
         prev = q["t"]
     return total
+
+
+def repriced(b, frm, to):
+    """A bucket's dollars at another model's rates: cache reads at the read rates, the rest of the
+    input at the input rates, output at the output rates."""
+    fi, fo, fr = price(frm)
+    ti, to_, tr = price(to)
+    read = min(b["read"], b["inp"])
+    new_read = read * (ti * tr) / (fi * fr)
+    return dict(inp=(b["inp"] - read) * ti / fi + new_read, read=new_read,
+                out=b["out"] * to_ / fo, think=b["think"] * to_ / fo)
 
 
 def analyse(s):
     main, sub = s["main"], s["sub"]
     # buckets the levers act on, keyed (side, model): dollars of input, output (incl. thinking), thinking
-    B = collections.defaultdict(lambda: dict(inp=0.0, out=0.0, think=0.0))
+    B = collections.defaultdict(lambda: dict(inp=0.0, read=0.0, out=0.0, think=0.0))
     for side, reqs in (("main", main), ("sub", sub)):
         for q in reqs:
             c = cost(q)
@@ -178,7 +183,7 @@ def analyse(s):
     total = lambda: sum(b["inp"] + b["out"] for b in B.values())
     mm = collections.Counter(q["model"] for q in main).most_common(1)
     model = mm[0][0] if mm else (sub[0]["model"] if sub else None)
-    pin = price(model)[0] if model else 0
+    pin, _, prd = price(model) if model else (0, 0, 0)
     S, fired = {}, []
 
     def take(lever, side, mdl, k, dollars):
@@ -202,7 +207,8 @@ def analyse(s):
     d, prev = 0.0, None
     for q in main:
         if prev and q["model"] != prev:
-            extra = (q["w5"] * (W5 - READ) + q["w1"] * (W1H - READ)) * price(q["model"])[0] / 1e6
+            pi, _, rd = price(q["model"])
+            extra = (q["w5"] * (W5 - rd) + q["w1"] * (W1H - rd)) * pi / 1e6
             d += take("switch", "main", q["model"], "inp", extra)
         prev = q["model"]
     S["switch"] = d
@@ -224,7 +230,7 @@ def analyse(s):
             unused.append(sum(len(json.dumps(x)) for x in tools
                               if isinstance(x, dict) and x.get("name") not in s["tools_used"]))
         tok = statistics.mean(unused) / CHARS_PER_TOKEN
-        S["tools"] = take("tools", "main", model, "inp", tok * pin * (W5 + READ * (len(main) - 1)) / 1e6)
+        S["tools"] = take("tools", "main", model, "inp", tok * pin * (W5 + prd * (len(main) - 1)) / 1e6)
         S["tools_unused_tok"] = round(tok)
     else:
         S["tools"], S["tools_unused_tok"] = 0.0, None
@@ -239,7 +245,7 @@ def analyse(s):
         later = sum(1 for x in times if x > t and (stop is None or x < stop))
         if later:
             tok = (n - HOOK_KEEP) / CHARS_PER_TOKEN
-            d += tok * pin * (W5 + READ * (later - 1)) / 1e6
+            d += tok * pin * (W5 + prd * (later - 1)) / 1e6
     S["hook"] = take("hook", "main", model, "inp", d)
 
     # 6 effort down one level where thinking dominates output (tools/tune.py rule)
@@ -255,26 +261,24 @@ def analyse(s):
 
     # 7 subagents on Haiku: what is left of subagent spend, re-priced
     d = 0.0
-    hi, ho = price(HAIKU)
     for (side, mdl), b in list(B.items()):
-        if side != "sub" or ALIAS.get(mdl, mdl) == HAIKU:
+        if side != "sub" or canonical(mdl).startswith("claude-haiku"):
             continue
-        pi, po = price(mdl)
-        new_in, new_out, new_think = b["inp"] * hi / pi, b["out"] * ho / po, b["think"] * ho / po
-        d += (b["inp"] - new_in) + (b["out"] - new_out)
+        new = repriced(b, mdl, HAIKU)
+        d += (b["inp"] - new["inp"]) + (b["out"] - new["out"])
         h = B[("sub", HAIKU)]
-        h["inp"] += new_in; h["out"] += new_out; h["think"] += new_think
-        b["inp"] = b["out"] = b["think"] = 0.0
+        for k in h:
+            h[k] += new[k]
+        b.update(inp=0.0, read=0.0, out=0.0, think=0.0)
     S["subagent"] = d
 
     # 8 Opus 5 / 4.8 -> Opus 5.5: whatever is left on the old ids, re-priced
     d = 0.0
-    oi, oo = price(OPUS55)
     for (side, mdl), b in list(B.items()):
-        if ALIAS.get(mdl, mdl) in OLD_OPUS:
-            pi, po = price(mdl)
-            d += b["inp"] * (1 - oi / pi) + b["out"] * (1 - oo / po)
-            b["inp"] *= oi / pi; b["out"] *= oo / po; b["think"] *= oo / po
+        if canonical(mdl) in OLD_OPUS:
+            new = repriced(b, mdl, OPUS55)
+            d += (b["inp"] - new["inp"]) + (b["out"] - new["out"])
+            b.update(new)
     S["opus55"] = d
 
     # X1 ceiling: input re-sent above LONG_CTX (standalone, original prices)
@@ -290,8 +294,8 @@ def analyse(s):
     if main and model and not model.startswith("claude-haiku") and p50 < LONG_CTX:
         target = HAIKU if len(s["edited"]) <= SMALL_FILES and len(main) <= SMALL_REQS else (
             SONNET if model.startswith(("claude-opus", "claude-fable")) else None)
-    x2 = sum(sum(cost(q).values()) - cost(q)["think"] - (sum(cost(q, target).values()) - cost(q, target)["think"])
-             for q in main) if target else 0.0
+    io = lambda c: c["inp"] + c["out"]
+    x2 = sum(io(cost(q)) - io(cost(q, target)) for q in main) if target else 0.0
 
     after = total()
     return dict(sid=s["sid"], project=s["project"], entry=s["entry"] or "?", start=s["start"], model=model,

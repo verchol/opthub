@@ -24,7 +24,8 @@ when testing.
   (214 sessions, $508.80). Prompts and absolute paths are stripped; keep it that way.
 - `docs/screens/` — hub screenshots (`INDEX.md`) and rendered demo diagrams (`diagrams/`).
 - `tools/` — stdlib Python, read-only: `sessions.py`, `lenops.py`, `loopscan.py`, `savings.py`,
-  `costmodel.py`, `ctxwatch.py`. They are the source of every number in `docs/`.
+  `costmodel.py`, `ctxwatch.py`. They are the source of every number in `docs/`, and all price with
+  `ratecard.py` (one versioned rate card; `ratecard.py check` compares it with Claude Code's own cost records).
   `rerun.py` is the exception: it replays a session's prompts as new sessions with new flags
   (baseline arm vs goal arm), judges the diffs blind, and writes a radar report to `data/private/reruns/`.
   Arms run in the local Docker sandbox by default (`sandbox/docker/`, not E2B); `--sandbox host` opts out.
@@ -56,6 +57,7 @@ python3 tools/costmodel.py                   # run before editing any number in 
 python3 tools/rerun.py plan <session-id> --goal cost   # free; then run/judge --yes, then report
 python3 tools/tune.py <session-id>           # dynamic flags for one session (free)
 python3 tools/dynconfig.py                   # per-session config savings over every transcript (free)
+python3 tools/ratecard.py check              # the rate card vs Claude Code's own per-model costs (free)
 python3 examples/golden/demo.py --check      # golden test of the whole pipeline; --update after a deliberate change
 python3 tools/envfile.py check               # which secrets are set, from shell or .env
 cd experiments/session-triage && python3 src/run.py          # rules arm, pinned ledger, no egress
