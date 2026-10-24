@@ -479,3 +479,18 @@
 - Not changed yet: `ctxwatch.py` still prints one line per record; the hub's `app/lib/sessions-index.mjs`
   and `app/config/ult.default.json` still price Opus 5.5 reads at 0.1× and sum per record; the J3
   experiment's own price index (`experiments/session-triage/src/savings.py`) runs on the pinned ledgers.
+
+## 2026-10-24 · Onboarding scan built: on this machine every probe is silent
+- Steps 3–8 of `docs/onboarding-spec.md`: `probe_cache.py` (P2), `gapscan.py` (P3), `cachestatus.py` (P1),
+  `sessiongraph.py` spend by thread (P5), `savings.py --classes` (P4), `onboard.py` (P0 and the run), on one
+  loader (`onboardlib.py`). 24 tests in `tools/test_onboard.py`: known answers, silent cases, a stability
+  flip, byte-identical reruns, and no planted prompt text or path in any output.
+- `python3 tools/onboard.py`, last 30 days: 74 sessions, $326.47 at list price, 2.489 transcript records per
+  request. Nothing emitted. P1 is silent at a 97.1% hit rate. P3's best case, 5 minutes on write:read < 0.5,
+  saves $12.53 but flips sign on 1 of 5 sub-windows, so it is not proposed. P4's largest class ceiling doesn't
+  clear 3× the cost of a sweep. P5 found no subagent that only reads. Smart TTL stays unconfirmed until P2 runs.
+- Over everything on disk, 5 minutes everywhere would cost $214.39 more on the 128 sessions with write:read
+  under 0.5. That is a population result. `dynconfig.py`'s TTL lever (2026-10-23) picks the cheaper TTL per
+  session after the fact, which no setting can do; read it as a ceiling, not a policy.
+- P2 is built and not yet run: about $0.09 on Opus 5.5, with approval. Its result decides whether smart-TTL
+  savings may be counted.

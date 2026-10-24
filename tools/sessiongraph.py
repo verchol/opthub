@@ -23,11 +23,19 @@ transcripts (<session>/subagents/**/*.jsonl) are read too and charged to the tas
 was running when they started. Cost is tools/sessions.py's req_cost (list-price
 equivalent, `priced`), not a bill. Context per task is the largest single request's
 input (fresh + cache read + cache write). Cache hit is a detector, not a lever.
+
+Spend by thread (P5 subagent-share, docs/onboarding-spec.md): the summary splits the session's
+spend into the main thread and each subagent type and model, with the subagents' tool mix.
+`probe()` runs the same split over a window: subagents that only read (Read, Grep, Glob, LS,
+web) are candidates, re-priced on Haiku 5.5 at 1.5x the tokens (`guess`). It proposes only when
+the ceiling projected to 30 days clears 3x the cost of verifying it (SPEC §6.4). A T2
+model-routing proposal is never applied, only proposed.
 """
 import argparse, collections, datetime as dt, glob, json, os, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from sessions import req_cost, DEFAULT_MODEL                       # noqa: E402
+import onboardlib as ob, ratecard                                  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 PREVIEW = REPO / "docs" / "preview" / "session-graph"
@@ -310,6 +318,64 @@ def page(graph, kind, out):
     pathlib.Path(out).write_text(tpl.replace("/*GRAPH*/null", json.dumps(graph).replace("</", "<\\/")))
 
 
+READ_ONLY = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch", "TodoWrite", "NotebookRead"}
+HAIKU, TOKEN_PENALTY = "claude-haiku-5-5", 1.5
+VERIFY_ARMS, VERIFY_REPEATS, VERIFY_TOP, MIN_ROI = 2, 3, 3, 3.0     # baseline vs Haiku, 3 repeats, top 3 sessions
+
+
+def split(sessions):
+    """{thread: dict(usd, reqs, tools)}; thread is ('main', model) or (agent type, model)."""
+    T = collections.defaultdict(lambda: dict(usd=0.0, reqs=0, tools=collections.Counter()))
+    for s in sessions:
+        for q in s["reqs"] + s["subs"]:
+            t = T[("main" if q["side"] == "main" else q["agent"], ratecard.canonical(q["model"]))]
+            t["usd"] += ob.cost(q)
+            t["reqs"] += 1
+            t["tools"].update(q["tools"])
+    return T
+
+
+def on_haiku(q, penalty=TOKEN_PENALTY):
+    """A request re-priced on Haiku 5.5 with `penalty` x the tokens; True when it lands in the long tier."""
+    u = {k: int(v * penalty) for k, v in q["u"].items() if isinstance(v, (int, float))}
+    w5, w1 = ratecard.split_write(q["u"])
+    u["cache_creation"] = dict(ephemeral_5m_input_tokens=int(w5 * penalty), ephemeral_1h_input_tokens=int(w1 * penalty))
+    return ratecard.req_cost(HAIKU, u), ratecard.prompt_tokens(u) > ratecard.LONG[HAIKU][0]
+
+
+def verify_cost(sessions, pop):
+    """Re-running the population's top sessions: baseline and Haiku arms, 3 repeats, at their own cost."""
+    top = sorted((s for s in sessions if s["sid"] in pop), key=lambda s: -s["cost"])[:VERIFY_TOP]
+    return sum(s["cost"] for s in top) * VERIFY_ARMS * VERIFY_REPEATS
+
+
+def probe(sessions, win, window_usd):
+    T = split(sessions)
+    cand = {k for k, t in T.items() if k[0] != "main" and set(t["tools"]) <= READ_ONLY}
+    todo = {k for k in cand if not k[1].startswith("claude-haiku")}
+    reqs = [q for s in sessions for q in s["subs"] if (q["agent"], ratecard.canonical(q["model"])) in todo]
+    pop = {s["sid"] for s in sessions for q in s["subs"] if (q["agent"], ratecard.canonical(q["model"])) in todo}
+    cur = sum(ob.cost(q) for q in reqs)
+    priced = [on_haiku(q) for q in reqs]
+    cf, long_ = sum(c for c, _ in priced), sum(1 for _, x in priced if x)
+    sub_usd = sum(t["usd"] for k, t in T.items() if k[0] != "main")
+    if not cand:
+        status, note = "silent", f"no read-only subagents; subagents are ${sub_usd:.2f} of ${window_usd:.2f}"
+    elif not todo:
+        status, note = "silent", "read-only subagents already run on Haiku"
+    elif cur - cf <= ob.floor(window_usd):
+        status, note = "silent", f"read-only subagents on other models cost ${cur:.2f}: under the floor"
+    elif (cur - cf) * 30 / max(win["days"] or 0, 1) <= MIN_ROI * verify_cost(sessions, pop):
+        status, note = "silent", (f"30-day ceiling ${(cur - cf) * 30 / max(win['days'] or 0, 1):.2f} does not clear "
+                                  f"{MIN_ROI:g}x the verification's ${verify_cost(sessions, pop):.2f}")
+    else:
+        status, note = "emit", (f"{', '.join(sorted(f'{a} on {m}' for a, m in todo))}; Haiku at {TOKEN_PENALTY}x tokens (guess)"
+                                + (f"; {long_} requests land in Haiku's long-prompt tier" if long_ else ""))
+    return [ob.finding("subagent-share", "model-routing", "T2", "read-only subagents not on Haiku", len(pop),
+                       cur, win, cur, f"{HAIKU} for read-only subagents", cf, "priced", status,
+                       "run-sweep" if status == "emit" else "none", window_usd, note=note)]
+
+
 def main():
     ap = argparse.ArgumentParser(description="One Claude Code session as a graph of tasks.")
     ap.add_argument("session", help="session id (prefix ok) or a .jsonl path")
@@ -321,7 +387,8 @@ def main():
     ap.add_argument("--max-res", type=int, default=36, help="files/commands drawn (most-touched first)")
     a = ap.parse_args()
 
-    g = build(find(a.session, a.root), keep=a.keep_text, max_res=a.max_res)
+    path = pathlib.Path(find(a.session, a.root))
+    g = build(path, keep=a.keep_text, max_res=a.max_res)
     for out in filter(None, (a.out, a.html)):
         if a.keep_text:
             private_only(out)
@@ -341,6 +408,10 @@ def main():
     print("  models  " + "  ".join(n["label"] for n in g["nodes"] if n["kind"] == "model"))
     if m["dropped_res"]:
         print(f"  {m['dropped_res']} less-touched files/commands not drawn (--max-res {a.max_res})")
+    sessions, _ = ob.load(str(path.parent.parent), only={path.stem})
+    for (thread, model), t in sorted(split(sessions).items(), key=lambda kv: -kv[1]["usd"]):
+        mix = "  ".join(f"{k} {v}" for k, v in t["tools"].most_common(4))
+        print(f"  thread  {thread:16} {model:18} {t['reqs']:5d} req  ${t['usd']:8.2f}  {mix}")
     for out in filter(None, (a.out, a.html)):
         print(f"  -> {out}")
 

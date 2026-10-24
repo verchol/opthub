@@ -19,13 +19,27 @@ assumption, and the assumption is the part that needs an experiment.
 A and B are multiplicative-ish and roughly independent (input side vs output
 side). C is measured and usually negative. D is a ceiling nobody should ship
 without an eval; it is here to size the prize, not to propose the change.
+
+Lever B per session class (P4 effort-sizing, docs/onboarding-spec.md):
+
+    python3 tools/savings.py --classes [--days 30]
+
+Classes are the metadata axes of the J3 rules arm: latency (interactive, or unattended for
+sdk-cli) by context (short: <= 15 requests; continuous: median context >= 150k and >= 200
+requests; else mid). Per class: thinking share of output, output's share of cost, the effort
+levels recorded, and lever B's ceiling (`guess`). `effort_probe()` proposes an `effort-sweep`
+only when the ceiling projected to 30 days is over 3x the sweep's estimated cost (SPEC §6.4):
+baseline against itself, then low, medium and high, 3 repeats each, on the class's top 3
+sessions, each run priced at the session's own cost. It also prices effort switches: a change of
+the recorded effort mid-session followed by a cache write, the rewrite counted as pure loss.
 """
 import argparse, collections, csv, datetime as dt, glob, json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ratecard import W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
+from ratecard import DEFAULT_MODEL, W1H, W5, parts, rates, req_cost, request_key, split_write  # noqa: E402
 
 SONNET = "claude-sonnet-5"
+SWEEP_ARMS, SWEEP_REPEATS, SWEEP_TOP, MIN_ROI = 4, 3, 3, 3.0
 TRIM, EFFORT = 0.25, 0.50          # lever A and B assumptions
 
 
@@ -120,6 +134,94 @@ def levers(s):
     return a, b, c, d
 
 
+def session_class(s):
+    m = sorted(sum(q["u"].get(k, 0) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+               for q in s["reqs"])
+    p50, n = (m[len(m) // 2] if m else 0), len(s["reqs"])
+    context = "short" if n <= 15 else "continuous" if p50 >= 150_000 and n >= 200 else "mid"
+    return f"{'unattended' if s['entry'] == 'sdk-cli' else 'interactive'}/{context}"
+
+
+def thinking_usd(q):
+    out = (rates(q["model"]) or rates(DEFAULT_MODEL))[1]
+    return (q["u"].get("output_tokens_details") or {}).get("thinking_tokens", 0) * out / 1e6
+
+
+def classes(sessions):
+    C = collections.defaultdict(lambda: dict(sessions=[], cost=0.0, out_usd=0.0, think_usd=0.0, out_tok=0,
+                                             think_tok=0, effort=collections.Counter()))
+    for s in sessions:
+        c = C[session_class(s)]
+        c["sessions"].append(s)
+        for q in s["reqs"] + s["subs"]:
+            c["cost"] += req_cost(q["model"], q["u"])
+            c["out_usd"] += parts(q["model"], q["u"])["output"]
+            c["think_usd"] += thinking_usd(q)
+            c["out_tok"] += q["u"].get("output_tokens", 0)
+            c["think_tok"] += (q["u"].get("output_tokens_details") or {}).get("thinking_tokens", 0)
+            if q["side"] == "main" and q["effort"]:
+                c["effort"][q["effort"]] += 1
+    return C
+
+
+def effort_switches(s):
+    """(switches, dollars): a recorded effort change on the main thread followed by a cache write."""
+    n, loss, prev = 0, 0.0, None
+    for q in s["reqs"]:
+        if prev and prev["effort"] and q["effort"] and q["effort"] != prev["effort"]:
+            p, _, rd = rates(q["model"]) or rates(DEFAULT_MODEL)
+            w5, w1 = split_write(q["u"])
+            if w5 + w1:
+                n += 1
+                loss += (w5 * (W5 - rd) + w1 * (W1H - rd)) * p / 1e6
+        prev = q
+    return n, loss
+
+
+def effort_probe(sessions, win, window_usd):
+    import onboardlib as ob
+    out, days = [], max(win["days"] or 0, 1)
+    for name, c in sorted(classes(sessions).items()):
+        ceiling = EFFORT * c["think_usd"]
+        top = sorted(c["sessions"], key=lambda s: -s["cost"])[:SWEEP_TOP]
+        sweep = sum(s["cost"] for s in top) * SWEEP_ARMS * SWEEP_REPEATS
+        projected = ceiling * 30 / days
+        share = c["think_tok"] / c["out_tok"] if c["out_tok"] else 0.0
+        seen = ",".join(f"{k}:{v}" for k, v in c["effort"].most_common()) or "not recorded"
+        if ceiling <= ob.floor(window_usd):
+            status, note = "silent", f"thinking is ${c['think_usd']:.2f} ({100 * share:.0f}% of output); ceiling under the floor"
+        elif projected <= MIN_ROI * sweep:
+            status, note = "silent", f"30-day ceiling ${projected:.2f} does not clear {MIN_ROI:g}x the sweep's ${sweep:.2f}"
+        else:
+            status, note = "emit", f"thinking {100 * share:.0f}% of output; effort {seen}; sweep ${sweep:.2f}, 30-day ceiling ${projected:.2f}"
+        out.append(ob.finding("effort-sizing", "effort-tuning", "T1", name, len(c["sessions"]), c["cost"], win,
+                              c["cost"], f"effort-sweep (thinking -{int(100 * EFFORT)}%)", c["cost"] - ceiling, "guess",
+                              status, "run-sweep" if status == "emit" else "none", window_usd, note=note))
+    sw = [effort_switches(s) for s in sessions]
+    n, loss = sum(x for x, _ in sw), sum(y for _, y in sw)
+    pop = [s for s, (x, _) in zip(sessions, sw) if x]
+    hit = loss > ob.floor(window_usd)
+    out.append(ob.finding("effort-sizing", "effort-tuning", "T0", "sessions that switched effort mid-session", len(pop),
+                          sum(s["cost"] for s in pop), win, loss, "no mid-session effort switch", 0.0, "detector",
+                          "emit" if hit else "silent", "apply-shadow" if hit else "none", window_usd,
+                          note=f"{n} switch{'es' if n != 1 else ''} followed by a cache write, the rewrite priced as loss"))
+    return out
+
+
+def print_classes(root, cutoff):
+    import onboardlib as ob
+    S, _ = ob.load(root, cutoff)
+    tot = sum(s["cost"] for s in S)
+    print(f"lever B by session class · {len(S)} sessions · ${tot:,.2f} list price\n")
+    print(f"  {'class':24} {'n':>4} {'cost$':>9} {'out%cost':>8} {'think%out':>9} {'think$':>8} {'B ceiling':>9}  effort recorded")
+    for name, c in sorted(classes(S).items()):
+        print(f"  {name:24} {len(c['sessions']):4d} {c['cost']:9.2f} {100 * c['out_usd'] / c['cost'] if c['cost'] else 0:7.1f}% "
+              f"{100 * c['think_tok'] / c['out_tok'] if c['out_tok'] else 0:8.1f}% {c['think_usd']:8.2f} {EFFORT * c['think_usd']:9.2f}  "
+              + (",".join(f"{k}:{v}" for k, v in c["effort"].most_common()) or "-"))
+    for f in effort_probe(S, ob.window(S), tot):
+        print(f"  {f['status']:7} {f['population']['predicate']:40} {f['delta']['usd']:+8.2f}  {f.get('note') or ''}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=32)
@@ -127,9 +229,12 @@ def main():
     ap.add_argument("--top", type=int, default=15)
     ap.add_argument("--root", default=os.path.expanduser("~/.claude/projects"))
     ap.add_argument("--csv")
+    ap.add_argument("--classes", action="store_true", help="lever B per session class (P4 effort-sizing)")
     a = ap.parse_args()
     cutoff = (dt.datetime.fromisoformat(a.since).replace(tzinfo=dt.timezone.utc) if a.since
               else dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=a.days))
+    if a.classes:
+        return print_classes(a.root, cutoff)
     S = walk(a.root, cutoff)
     for sid, s in S.items():
         s["sid"] = sid
