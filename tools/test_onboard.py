@@ -8,7 +8,7 @@ import datetime as dt, hashlib, json, os, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import cachestatus, gapscan, onboardlib as ob, probe_cache, ratecard, savings  # noqa: E402
+import cachestatus, gapscan, onboardlib as ob, probe_cache, ratecard, savings, sessiongraph  # noqa: E402
 
 PLANTED = "PLANTED-PROMPT-zx81"                     # must never appear in any output
 PLANTED_PATH = "/Users/planted-user/secret/file.py"
@@ -241,6 +241,42 @@ class P1CacheStatus(unittest.TestCase):
         self.assertAlmostEqual(f["delta"]["usd"], 1_000_000 * 4 * (1 - 0.05) / 1e6)
         self.assertEqual(side["fast mode"], 4.0)
         self.assertNotIn("batch", side)
+
+
+def usd(q):
+    """A fixture request's list-price cost, straight from its spec."""
+    return ratecard.req_cost(q["model"], dict(input_tokens=q["raw"], cache_read_input_tokens=q["cr"], output_tokens=q["out"],
+                                              cache_creation=dict(ephemeral_5m_input_tokens=q["w5"], ephemeral_1h_input_tokens=q["w1"])))
+
+
+class P5SubagentShare(unittest.TestCase):
+    def window(self, main, subs):
+        d = tempfile.mkdtemp()
+        for i in range(3):
+            write_session(d, f"s{i}", T0 + dt.timedelta(hours=i), main, subs=subs)
+        S, _ = ob.load(d)
+        return S, sessiongraph.probe(S, ob.window(S), sum(s["cost"] for s in S))[0]
+
+    def test_main_plus_subagents_tie_to_the_session_total(self):
+        main = [req(cr=50_000, w1=5_000, out=2_000) for _ in range(4)]
+        explore = [req(cr=30_000, w5=4_000, out=1_000, tools=("Grep", "Read")) for _ in range(5)]
+        S, _ = self.window(main, [("Explore", explore)])
+        total = sum(usd(q) for q in main + explore)
+        split = sum(t["usd"] for t in sessiongraph.split(S[:1]).values())
+        self.assertLess(abs(split - total) / total, 0.001)
+
+    def test_read_only_subagents_off_haiku_are_proposed(self):
+        explore = [req(cr=200_000, w5=20_000, out=4_000, tools=("Grep", "Read")) for _ in range(20)]
+        writer = [req(cr=200_000, w5=20_000, out=4_000, tools=("Edit",)) for _ in range(20)]
+        _, f = self.window([req()], [("Explore", explore), ("general-purpose", writer)])
+        self.assertEqual((f["status"], f["tier"], f["next"]), ("emit", "T2", "run-sweep"))
+        self.assertAlmostEqual(f["current_usd"], round(3 * sum(usd(q) for q in explore), 4), places=3)   # the writer is not a candidate
+
+    def test_subagents_already_on_haiku_emit_nothing(self):
+        explore = [req(model="claude-haiku-5-5", cr=200_000, out=4_000, tools=("Grep",)) for _ in range(20)]
+        _, f = self.window([req()], [("Explore", explore)])
+        self.assertEqual(f["status"], "silent")
+        self.assertIn("already run on Haiku", f["note"])
 
 
 if __name__ == "__main__":

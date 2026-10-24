@@ -27,13 +27,15 @@ def _agent_type(f):
         return "subagent"
 
 
-def load(root=PROJECTS, since=None, until=None):
+def load(root=PROJECTS, since=None, until=None, only=None):
     """Sessions with at least one billed request, oldest first. Each request:
     t, model, u (usage), side ('main' | 'sub'), agent, stop, tools (names called).
-    Also returns the counting check: (usage records read, distinct requests)."""
+    Also returns the counting check: (usage records read, distinct requests). only: session ids."""
     S, by_key, raw = {}, {}, 0
     for f in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
         sid = os.path.basename(f)[:-6]
+        if only and sid not in only:
+            continue
         proj = hashlib.sha256(os.path.basename(os.path.dirname(f)).encode()).hexdigest()[:12]
         files = [(f, None)] + [(g, _agent_type(g)) for g in sorted(glob.glob(os.path.join(f[:-6], "subagents", "*.jsonl")))]
         for g, agent in files:
