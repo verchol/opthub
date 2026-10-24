@@ -125,6 +125,12 @@ HOURS_MONTH = 730              # always on
 WORK_HOURS = 22 * 12           # G: a warm pool kept up 12 h on working days (scale-to-zero is unrealistic for 8-GPU models)
 PEAK_ACTIVE = 0.5              # G: share of developers with a live session at the peak hour
 
+# Section 6, the Anthropic-only ladder. (low, high) pairs.
+CLEAR_CEILING = 0.215          # priced: dynconfig X1, new session per task, last two weeks (docs/dynamic-config-analysis.md §1)
+CLEAR_CAPTURE = (0.25, 0.50)   # G: share of that ceiling a task-boundary prompt captures
+SUBAGENT_SHARE = (0.10, 0.25)  # G: share of the remaining spend in subagents and side calls that hold quality on Haiku 5.5
+BATCH_SHARE = (0.0, 0.05)      # G: share of the remaining spend that is waitable machine work (CI review, evals)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -232,6 +238,82 @@ def main():
     print(f"  {CTX/1000:.0f}K sessions per H100 replica: {SMALL_SESSIONS}; at 142K (AgentX median request, V): "
           f"{int(H100_KV_GB / (142_000 * KV_KIB_PER_TOKEN * 1024 / 1e9))}")
     print("  peak live sessions, before the routed share: " + ", ".join(f"{d} devs -> {d*PEAK_ACTIVE:.0f}" for d in devs))
+
+    # ------------------------------------------------------------ 6. what staying on Anthropic saves first
+    # Each step acts on what the steps before it left (SPEC R1), so the steps add up to the total.
+    s0 = spend["enterprise-avg-high"][0]
+    ladder = [  # (step, low, high, label, basis)
+        ("Claude Code configuration (dynconfig levers 1-8)", 0.128, 0.128, "M+priced+guess",
+         "docs/dynamic-config-analysis.md, last two weeks: 12.8% (5.4 points measured); computed before ratecard.py"),
+        ("New session per task, prompted at task boundaries", CLEAR_CEILING * CLEAR_CAPTURE[0], CLEAR_CEILING * CLEAR_CAPTURE[1], "priced x G",
+         f"/clear ceiling {CLEAR_CEILING:.1%} (dynconfig X1) x {CLEAR_CAPTURE[0]:.0%}-{CLEAR_CAPTURE[1]:.0%} of it captured"),
+        ("Subagents and side calls on Haiku 5.5", SUBAGENT_SHARE[0] * (1 - r_haiku), SUBAGENT_SHARE[1] * (1 - r_haiku), "priced x G",
+         f"{SUBAGENT_SHARE[0]:.0%}-{SUBAGENT_SHARE[1]:.0%} of the remaining spend moved; Haiku costs {r_haiku:.4f} of it (short-context shape)"),
+        ("Batch API for async machine work", BATCH_SHARE[0] * 0.5, BATCH_SHARE[1] * 0.5, "F x G",
+         f"{BATCH_SHARE[0]:.0%}-{BATCH_SHARE[1]:.0%} of the remaining spend is waitable; batch is 50% off"),
+    ]
+    print(f"\n== 6. Savings while staying on Anthropic, per developer-month (${s0:.0f} on {a.current}), marginal in applied order ==")
+    rows, lo_left, hi_left = [], s0, s0
+    for step, lo, hi, lab, basis in ladder:
+        lo_cut, hi_cut = lo_left * lo, hi_left * hi
+        lo_left, hi_left = lo_left - lo_cut, hi_left - hi_cut
+        rows.append((step, f"${lo_cut:,.2f}-{hi_cut:,.2f}", f"{lo:.1%}-{hi:.1%} of what was left", lab, basis))
+    rows.append(("Total", f"${s0-lo_left:,.2f}-{s0-hi_left:,.2f}", f"{1-lo_left/s0:.1%}-{1-hi_left/s0:.1%} of the bill", "", f"bill left ${lo_left:,.2f}-{hi_left:,.2f}"))
+    table(rows, ("step", "saved $/dev-mo", "share", "label", "basis"))
+    print("Not in the ladder: main loop on Sonnet 5.5 (priced ceiling 20.8%, but replays measured 2.4-3.9x MORE per task, n=2);")
+    print("fast mode off (0 on the dev machine, measured; 50% of fast spend where used, F); US-only inference off (9.1% of that spend, F);")
+    print("stale Opus 5 / 4.8 pins moved to Opus 5.5 (20% of that spend, priced).")
+    out["anthropic_ladder"] = {"rows": rows, "left_low_saving": lo_left, "left_high_saving": hi_left}
+
+    # Hosting against the optimized bill: the slice it displaces shrinks with the bill, so break-even grows.
+    print("\nGLM-5.2-class break-even against the bill left after the ladder (same routed shares of what is left):")
+    for name, (gpus, rate, lab, src, tgt, cap) in DEDICATED.items():
+        if cap: continue
+        for hours, hl in ((HOURS_MONTH, "24x7"), (WORK_HOURS, "12h x 22d")):
+            fixed = gpus * rate * hours + OPS_SHARE * OPS_USD_MONTH
+            cells = []
+            for r in routed:
+                cells.append(f"{r:.0%}: {math.ceil(fixed / (r * lo_left * r_sonnet)):,}-{math.ceil(fixed / (r * hi_left * r_sonnet)):,}")
+            print(f"  {name}, {hl}: " + " · ".join(cells) + " devs")
+
+    # ------------------------------------------------------------ 7. the data: every rate and volume by line
+    print("\n== 7. Data: rates by line, $ per 1M tokens (uncached input · cache write 5m / 1h · cache read · output) ==")
+    rows = []
+    for name, r in ANTHROPIC.items():
+        rows.append((name, f"{r[0]:.3f}", f"{r[1]:.4f}", f"{r[2]:.3f}", f"{r[3]:.4f}", f"{r[4]:.2f}", "F", f"ratecard.py {VERSION}"))
+    for name, (inp, cached, outp, wmul, lab, src) in SERVERLESS.items():
+        w = "—" if cached is None else f"{inp * wmul:.4f}"
+        rows.append((name, f"{inp:.3f}", w, w if cached is not None and wmul == 1.0 else ("—" if cached is None else "30m only"),
+                     "none" if cached is None else f"{cached:.4f}", f"{outp:.2f}", lab, src))
+    table(rows, ("tier", "uncached in", "write 5m", "write 1h", "cache read", "output", "label", "source"))
+    print("Open-model hosts with automatic caching bill a cache write as plain input; Bedrock's explicit cache writes cost 1.25x")
+    print("input with a 30-minute TTL; 'none' = no cache price listed, every input token bills as uncached input.")
+
+    print("\nToken volumes by line (M: E1b shape; uncached input is folded into cache reads by savings.py, see the docstring):")
+    rows = []
+    for shp_name, shp in (("all sessions", full), ("short-context", short)):
+        for sname in ("enterprise-avg-high", "heavy (dev machine)"):
+            s = spend[sname][0]
+            T = s / usd_per_m_input(ANTHROPIC[a.current], shp, a.ttl) * 1e6
+            rows.append((shp_name, f"{sname} ${s:.0f}", f"{T/1e6:,.0f}M", f"{T*shp['read']/1e6:,.1f}M", f"{T*shp['write']/1e6:,.1f}M",
+                         f"{T*shp['out']/1e6:,.2f}M"))
+    table(rows, ("shape", f"spend per dev-month on {a.current}", "input tokens", "cache read", "cache write", "output"))
+
+    print(f"\nCost of 1M input tokens by line, $ (cache read · cache write at {a.ttl} · output · total):")
+    rows = []
+    for shp_name, shp in (("all", full), ("short", short)):
+        for name, r in ANTHROPIC.items():
+            rd, wr, ou = shp["read"] * r[3], shp["write"] * (r[2] if a.ttl == "1h" else r[1]), shp["out"] * r[4]
+            rows.append((shp_name, name, f"{rd:.4f}", f"{wr:.4f}", f"{ou:.4f}", f"{rd+wr+ou:.4f}"))
+        for name, (inp, cached, outp, wmul, lab, src) in SERVERLESS.items():
+            if cached is None:
+                rd, wr = (shp["read"] + shp["write"]) * inp, 0.0
+            else:
+                rd, wr = shp["read"] * cached, shp["write"] * inp * wmul
+            ou = shp["out"] * outp
+            rows.append((shp_name, name, f"{rd:.4f}", f"{wr:.4f}", f"{ou:.4f}", f"{rd+wr+ou:.4f}"))
+    table(rows, ("shape", "tier", "read $", "write $", "output $", "total $"))
+    print("For tiers with no cache price, the 'read $' column is the whole input billed uncached.")
 
     if a.json:
         print(json.dumps(out, indent=1, default=str))

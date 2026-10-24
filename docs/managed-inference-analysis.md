@@ -8,9 +8,45 @@ A per-customer hosted model does not pay for a first customer. At Anthropic's $2
 average, a small model has to undercut Haiku 5.5 and never breaks even, because its replicas grow with
 headcount; a GLM-5.2-class node against Sonnet 5.5 breaks even at 155–726 developers on DeepInfra and
 304–1,552 on AWS, assuming equal quality that nothing has measured. Heavy users cut these by about a third.
-Until a customer clears that, test the open-model hypothesis on a serverless endpoint with zero fixed cost,
-one routed class at a time, behind the replay gate. vLLM is the engine when hosting is justified, and
-residency is the one reason to self-host early.
+Staying on Anthropic comes first: configuration, task-boundary sessions, Haiku 5.5 for subagents and batch
+save 25.5–42.5% of the bill with no fixed cost, and against the bill that is left the GLM-class break-even
+rises to 208–1,263 developers on DeepInfra. Until a customer clears that, test the open-model hypothesis on a
+serverless endpoint with zero fixed cost, one routed class at a time, behind the replay gate. vLLM is the
+engine when hosting is justified, and residency is the one reason to self-host early.
+
+## Savings on Anthropic first
+
+Before any hosting, Anthropic-only changes cut a $250 Opus 5.5 developer-month by $63.76–106.37 (25.5–42.5%)
+with no fixed cost; a hosted tier is then measured against the bill that is left. Each step acts on what the
+steps before it left (SPEC R1), so the rows add up to the total. Section 6 of `tools/hostcost.py`.
+
+| Step, in applied order | Saved per developer-month | Share of what was left | Basis | Label |
+| --- | --- | --- | --- | --- |
+| Claude Code configuration (8 levers) | $32.00 | 12.8% | `dynconfig.py`, last two weeks on the development machine; 5.4 points measured ([`dynamic-config-analysis.md`](dynamic-config-analysis.md)) | measured + priced + guess |
+| New session per task, prompted at task boundaries | $11.72–23.43 | 5.4–10.8% | The 21.5% `/clear` ceiling, 25–50% of it captured | priced × guess |
+| Subagents and side calls on Haiku 5.5 | $20.04–47.25 | 9.7–24.3% | 10–25% of the remaining spend moved; on short-context work Haiku costs 2.86% of Opus | priced × guess |
+| Batch API for async machine work | $0–3.68 | 0–2.5% | 0–5% of the remaining spend is waitable; batch is 50% off | priced × guess |
+| **Total** | **$63.76–106.37** | **25.5–42.5% of the bill** | Bill left: $143.63–186.24 | |
+
+Left out of the total: the main loop on Sonnet 5.5 (a 20.8% priced ceiling, but replays measured it 2.4–3.9×
+more expensive per task, n=2); fast mode off (none on the development machine; 50% of fast-mode spend where
+used); US-only inference off (9.1% of that spend); stale Opus 5 or 4.8 pins moved to Opus 5.5 (20% of that
+spend, priced). The configuration figure predates `tools/ratecard.py`'s 5.5 cache-read price; re-run
+`dynconfig.py` before quoting it to a customer.
+
+Measured against what is left, the Sonnet-class slice a hosted model displaces shrinks with the bill, and the
+GLM-5.2-class break-even rises (range = smaller to larger Anthropic saving):
+
+| GLM-5.2-class, 8×H200 | 25% of the remaining spend routed | 50% routed |
+| --- | --- | --- |
+| DeepInfra, 24×7 | 974–1,263 | 487–632 |
+| DeepInfra, 12 h × 22 days | 416–539 | 208–270 |
+| AWS on demand, 24×7 | 2,083–2,701 | 1,042–1,351 |
+| AWS on demand, 12 h × 22 days | 817–1,059 | 409–530 |
+
+After the Anthropic savings, a 500-developer customer clears the node comfortably only with a 12-hour warm
+pool on DeepInfra at 50% routed (208–270). At 25% with that warm pool, at 50% always on, or on AWS with a warm
+pool at 50%, it sits on the line (409–632); every other case needs 817 developers or more.
 
 ## Four ways to host
 
@@ -214,6 +250,66 @@ AWS H100 and B200 capacity is Stockholm.
 8. **Residency.** No managed provider found serves open models inside Israel; AWS il-central-1 offers A10G and A100 only.
 9. **Ops load.** A fully loaded GPU infrastructure engineer costs about $275,000 a year; on one H100, a tenth of
    that is more than the GPU.
+
+## Data: input and output, cached and uncached
+
+Every figure above comes from these three tables (section 7 of `tools/hostcost.py`). Two shapes are used:
+**all sessions** (the whole E1b ledger) for Sonnet-class comparisons, and **short-context** (the 206 sessions
+whose median request is at most 100K tokens) for Haiku-class work. The ledger folds uncached input into
+cache reads, so uncached input is not a separate line in the volumes; Anthropic's own `/usage` example puts it
+at about 0.1% of input.
+
+**Rates, $ per 1M tokens** (fetched 2026-10-24). Open-model hosts with automatic caching bill a cache write as
+plain input; Bedrock's explicit cache writes cost 1.25× input with a 30-minute TTL; "none" means no cache price
+is listed, so every input token bills as uncached input.
+
+| Tier | Uncached input | Cache write 5m | Cache write 1h | Cache read | Output | Source |
+| --- | --- | --- | --- | --- | --- | --- |
+| Opus 5.5 | 4.000 | 5.000 | 8.000 | 0.2000 | 20.00 | `tools/ratecard.py` |
+| Sonnet 5.5 | 2.000 | 2.500 | 4.000 | 0.1000 | 10.00 | `tools/ratecard.py` |
+| Haiku 5.5, prompt ≤ 100K | 0.100 | 0.125 | 0.200 | 0.0100 | 0.50 | `tools/ratecard.py` |
+| Haiku 5.5, prompt > 100K | 0.500 | 0.625 | 1.000 | 0.0500 | 2.50 | `tools/ratecard.py` |
+| gpt-oss-120b · Fireworks | 0.150 | 0.150 | 0.150 | 0.0150 | 0.60 | [Fireworks](https://fireworks.ai/pricing) |
+| DeepSeek V4.1 Flash · Fireworks | 0.300 | 0.300 | 0.300 | 0.0060 | 1.20 | [Fireworks](https://fireworks.ai/pricing) |
+| GLM 5.3 Flash · Fireworks | 0.150 | 0.150 | 0.150 | 0.0300 | 0.50 | [Fireworks](https://fireworks.ai/pricing) |
+| MiniMax M3 · Fireworks | 0.300 | 0.300 | 0.300 | 0.0600 | 1.20 | [Fireworks](https://fireworks.ai/pricing) |
+| Qwen3-Coder-480B · DeepInfra | 0.300 | 0.300 | 0.300 | 0.1000 | 1.00 | [DeepInfra](https://deepinfra.com/pricing) |
+| GLM 5.3 · Fireworks | 1.400 | 1.400 | 1.400 | 0.2600 | 4.40 | [Fireworks](https://fireworks.ai/pricing) |
+| Kimi K3 · Bedrock global | 3.000 | 3.750 (30m) | — | 0.3000 | 15.00 | [Bedrock](https://aws.amazon.com/bedrock/pricing/) |
+| Qwen3 Coder Next · Bedrock US | 0.500 | — | — | none | 1.20 | [Bedrock](https://aws.amazon.com/bedrock/pricing/) |
+| MiniMax M2.5 · Bedrock US | 0.300 | — | — | none | 1.20 | [Bedrock](https://aws.amazon.com/bedrock/pricing/) |
+
+**Token volumes per developer-month**, Opus 5.5 spend turned into tokens through each shape:
+
+| Shape | Spend per developer-month | Input tokens | Cache read | Cache write | Output |
+| --- | --- | --- | --- | --- | --- |
+| All sessions | $250 (enterprise average, upper) | 413M | 399.3M | 13.9M | 2.94M |
+| All sessions | $388 (development machine, corrected) | 641M | 619.6M | 21.6M | 4.56M |
+| Short-context | $250 | 198M | 179.4M | 18.5M | 3.31M |
+| Short-context | $388 | 307M | 278.4M | 28.7M | 5.14M |
+
+**Cost of 1M input tokens by line, $** (cache writes at the 1h price on Anthropic; for tiers with no cache price
+the cache-read column is the whole input billed uncached):
+
+| Tier | All: read | All: write | All: output | All: total | Short: read | Short: write | Short: output | Short: total |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Opus 5.5 | 0.1933 | 0.2693 | 0.1424 | 0.6050 | 0.1813 | 0.7470 | 0.3350 | 1.2633 |
+| Sonnet 5.5 | 0.0966 | 0.1347 | 0.0712 | 0.3025 | 0.0907 | 0.3735 | 0.1675 | 0.6317 |
+| Haiku 5.5, ≤ 100K | 0.0097 | 0.0067 | 0.0036 | 0.0200 | 0.0091 | 0.0187 | 0.0084 | 0.0361 |
+| Haiku 5.5, > 100K | 0.0483 | 0.0337 | 0.0178 | 0.0998 | 0.0453 | 0.0934 | 0.0419 | 0.1806 |
+| gpt-oss-120b · Fireworks | 0.0145 | 0.0050 | 0.0043 | 0.0238 | 0.0136 | 0.0140 | 0.0101 | 0.0377 |
+| DeepSeek V4.1 Flash · Fireworks | 0.0058 | 0.0101 | 0.0085 | 0.0244 | 0.0054 | 0.0280 | 0.0201 | 0.0536 |
+| GLM 5.3 Flash · Fireworks | 0.0290 | 0.0050 | 0.0036 | 0.0376 | 0.0272 | 0.0140 | 0.0084 | 0.0496 |
+| MiniMax M3 · Fireworks | 0.0580 | 0.0101 | 0.0085 | 0.0766 | 0.0544 | 0.0280 | 0.0201 | 0.1025 |
+| Qwen3-Coder-480B · DeepInfra | 0.0966 | 0.0101 | 0.0071 | 0.1139 | 0.0907 | 0.0280 | 0.0168 | 0.1354 |
+| GLM 5.3 · Fireworks | 0.2512 | 0.0471 | 0.0313 | 0.3297 | 0.2357 | 0.1307 | 0.0737 | 0.4401 |
+| Kimi K3 · Bedrock global | 0.2899 | 0.1262 | 0.1068 | 0.5229 | 0.2720 | 0.3501 | 0.2513 | 0.8734 |
+| Qwen3 Coder Next · Bedrock US, uncached | 0.5000 | 0 | 0.0085 | 0.5085 | 0.5000 | 0 | 0.0201 | 0.5201 |
+| MiniMax M2.5 · Bedrock US, uncached | 0.3000 | 0 | 0.0085 | 0.3085 | 0.3000 | 0 | 0.0201 | 0.3201 |
+
+On short-context work Haiku 5.5 stays the cheapest paid tier ($0.0361) but only just: gpt-oss-120b on Fireworks
+is $0.0377. On Opus 5.5, cache writes are the largest line (44.5% of the all-session cost, 59.1% on short
+context), which is why the TTL choice is the one measured configuration lever.
 
 ## Sources
 
