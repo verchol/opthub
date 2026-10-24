@@ -22,7 +22,8 @@ def _ts(s):
 
 def _agent_type(f):
     try:
-        return json.load(open(f[:-len(".jsonl")] + ".meta.json")).get("agentType") or "subagent"
+        with open(f[:-len(".jsonl")] + ".meta.json") as fh:
+            return json.load(fh).get("agentType") or "subagent"
     except (OSError, ValueError):
         return "subagent"
 
@@ -39,9 +40,9 @@ def load(root=PROJECTS, since=None, until=None, only=None):
         proj = hashlib.sha256(os.path.basename(os.path.dirname(f)).encode()).hexdigest()[:12]
         files = [(f, None)] + [(g, _agent_type(g)) for g in sorted(glob.glob(os.path.join(f[:-6], "subagents", "*.jsonl")))]
         for g, agent in files:
-            for line in open(g, errors="replace"):
-                if not line.startswith("{"):
-                    continue
+            with open(g, errors="replace") as fh:
+                rows = [line for line in fh if line.startswith("{")]
+            for line in rows:
                 try:
                     r = json.loads(line)
                 except ValueError:

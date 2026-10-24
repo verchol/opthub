@@ -15,8 +15,8 @@ PLANTED_PATH = "/Users/planted-user/secret/file.py"
 T0 = dt.datetime(2026, 9, 1, 9, 0, tzinfo=dt.timezone.utc)
 
 
-def req(gap=30, model="claude-opus-5-5", cr=0, w5=0, w1=0, raw=10, out=100, think=0, stop="tool_use", tools=("Read",)):
-    return dict(gap=gap, model=model, cr=cr, w5=w5, w1=w1, raw=raw, out=out, think=think, stop=stop, tools=tools)
+def req(gap=30, model="claude-opus-5-5", cr=0, w5=0, w1=0, raw=10, out=100, think=0, stop="tool_use", tools=("Read",), effort="high"):
+    return dict(gap=gap, model=model, cr=cr, w5=w5, w1=w1, raw=raw, out=out, think=think, stop=stop, tools=tools, effort=effort)
 
 
 def write_session(root, sid, start, reqs, project="-Users-planted-user-proj", dup=2, subs=(), entry="cli"):
@@ -37,7 +37,7 @@ def write_session(root, sid, start, reqs, project="-Users-planted-user-proj", du
                 for k, name in enumerate(q["tools"])]
             for b in (blocks * dup)[:max(dup, len(blocks))]:
                 out.append(dict(type="assistant", sessionId=sid, timestamp=t.isoformat().replace("+00:00", "Z"),
-                                entrypoint=entry, cwd=PLANTED_PATH, isSidechain=side != "main", requestId=f"req_{mid}",
+                                entrypoint=entry, cwd=PLANTED_PATH, isSidechain=side != "main", requestId=f"req_{mid}", effort=q["effort"],
                                 message=dict(id=mid, model=q["model"], role="assistant", stop_reason=q["stop"],
                                              content=[b], usage=usage)))
         return out
@@ -277,6 +277,34 @@ class P5SubagentShare(unittest.TestCase):
         _, f = self.window([req()], [("Explore", explore)])
         self.assertEqual(f["status"], "silent")
         self.assertIn("already run on Haiku", f["note"])
+
+
+class P4EffortSizing(unittest.TestCase):
+    def probe(self, sessions_reqs, entry="cli"):
+        d = tempfile.mkdtemp()
+        for i, rs in enumerate(sessions_reqs):
+            write_session(d, f"s{i:02d}", T0 + dt.timedelta(minutes=30 * i), rs, entry=entry)
+        S, _ = ob.load(d)
+        return savings.effort_probe(S, ob.window(S), sum(s["cost"] for s in S))
+
+    def test_thinking_heavy_class_proposes_a_sweep_that_clears_3x(self):
+        F = self.probe([[req(out=60_000, think=50_000) for _ in range(20)] for _ in range(30)])
+        f = next(x for x in F if x["probe"] == "effort-sizing" and x["tier"] == "T1")
+        self.assertEqual((f["status"], f["population"]["predicate"], f["next"]), ("emit", "interactive/mid", "run-sweep"))
+        think = 30 * 20 * 50_000 * 20 / 1e6                       # thinking tokens at Opus 5.5's $20 output rate
+        self.assertAlmostEqual(f["delta"]["usd"], round(0.5 * think, 4), places=3)
+
+    def test_thinking_under_the_floor_emits_nothing(self):
+        F = self.probe([[req(out=2_000, think=100, cr=500_000, w1=50_000) for _ in range(20)] for _ in range(5)])
+        self.assertTrue(all(f["status"] == "silent" for f in F))
+
+    def test_an_effort_switch_before_a_cache_write_is_priced_as_loss(self):
+        rs = [req(effort="high", w1=0), req(effort="medium", cr=10_000, w1=100_000), req(effort="medium", cr=110_000, w1=0)]
+        F = self.probe([rs])
+        f = F[-1]
+        self.assertEqual(f["label"], "detector")
+        self.assertAlmostEqual(f["current_usd"], round(100_000 * (2.0 - 0.05) * 4 / 1e6, 4))
+        self.assertIn("1 switch followed", f["note"])
 
 
 if __name__ == "__main__":
