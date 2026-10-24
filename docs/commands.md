@@ -25,6 +25,7 @@ node sandbox/test.mjs                        # the boundary alone: SDK in one pl
 python3 examples/golden/demo.py --check      # golden test of the whole pipeline on synthetic sessions
 python3 examples/golden/demo.py --update     # after a deliberate change; regenerates examples/golden/how-it-works.html
 python3 tools/ratecard.py check              # the rate card vs Claude Code's own per-model costs
+python3 -m unittest tools/test_onboard.py    # the onboarding probes: known answers, silent cases, no text in any output
 ```
 
 ## Analysis tools (free, read-only)
@@ -45,6 +46,21 @@ All read `~/.claude/projects` and price with `tools/ratecard.py`, counting usage
 | `python3 tools/ratecard.py` | the rate card in force, with its version |
 
 Anything derived from live sessions goes under the gitignored `data/private/`.
+
+## Onboarding scan (`docs/onboarding-spec.md`)
+
+```sh
+python3 tools/onboard.py [--days 30] [--admin-report usage.json]   # free: P0-P5 -> data/private/onboard/<date>/ (findings.jsonl, report.html)
+python3 tools/onboard.py --dry               # print every field that would leave the machine; write nothing
+python3 tools/cachestatus.py [--admin-report usage.json]          # P1 alone: caching on? uncached share, TTL mix
+python3 tools/gapscan.py [--since YYYY-MM-DD]                     # P3 alone: TTL and keep-alive policy per population
+python3 tools/savings.py --classes           # P4 alone: lever B per session class, effort switches
+python3 tools/sessiongraph.py <sid>          # P5 for one session: spend by thread and subagent model
+python3 tools/probe_cache.py                 # P2 plan and estimated cost (free)
+python3 tools/probe_cache.py conformance --yes   # spends (~$0.09): smart-TTL billing check, ~8 minutes
+python3 tools/probe_cache.py path --yes      # spends (~$0.05): does the gateway keep cache markers
+python3 tools/probe_cache.py show            # stored P2 results and whether they are current
+```
 
 ## Replays: `tools/rerun.py`
 

@@ -27,8 +27,9 @@ input (fresh + cache read + cache write). Cache hit is a detector, not a lever.
 Spend by thread (P5 subagent-share, docs/onboarding-spec.md): the summary splits the session's
 spend into the main thread and each subagent type and model, with the subagents' tool mix.
 `probe()` runs the same split over a window: subagents that only read (Read, Grep, Glob, LS,
-web) are candidates, re-priced on Haiku 5.5 at 1.5x the tokens (`guess`). A T2 model-routing
-proposal is never applied, only proposed.
+web) are candidates, re-priced on Haiku 5.5 at 1.5x the tokens (`guess`). It proposes only when
+the ceiling projected to 30 days clears 3x the cost of verifying it (SPEC §6.4). A T2
+model-routing proposal is never applied, only proposed.
 """
 import argparse, collections, datetime as dt, glob, json, os, pathlib, re, sys
 
@@ -319,6 +320,7 @@ def page(graph, kind, out):
 
 READ_ONLY = {"Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "ToolSearch", "TodoWrite", "NotebookRead"}
 HAIKU, TOKEN_PENALTY = "claude-haiku-5-5", 1.5
+VERIFY_ARMS, VERIFY_REPEATS, VERIFY_TOP, MIN_ROI = 2, 3, 3, 3.0     # baseline vs Haiku, 3 repeats, top 3 sessions
 
 
 def split(sessions):
@@ -341,6 +343,12 @@ def on_haiku(q, penalty=TOKEN_PENALTY):
     return ratecard.req_cost(HAIKU, u), ratecard.prompt_tokens(u) > ratecard.LONG[HAIKU][0]
 
 
+def verify_cost(sessions, pop):
+    """Re-running the population's top sessions: baseline and Haiku arms, 3 repeats, at their own cost."""
+    top = sorted((s for s in sessions if s["sid"] in pop), key=lambda s: -s["cost"])[:VERIFY_TOP]
+    return sum(s["cost"] for s in top) * VERIFY_ARMS * VERIFY_REPEATS
+
+
 def probe(sessions, win, window_usd):
     T = split(sessions)
     cand = {k for k, t in T.items() if k[0] != "main" and set(t["tools"]) <= READ_ONLY}
@@ -357,6 +365,9 @@ def probe(sessions, win, window_usd):
         status, note = "silent", "read-only subagents already run on Haiku"
     elif cur - cf <= ob.floor(window_usd):
         status, note = "silent", f"read-only subagents on other models cost ${cur:.2f}: under the floor"
+    elif (cur - cf) * 30 / max(win["days"] or 0, 1) <= MIN_ROI * verify_cost(sessions, pop):
+        status, note = "silent", (f"30-day ceiling ${(cur - cf) * 30 / max(win['days'] or 0, 1):.2f} does not clear "
+                                  f"{MIN_ROI:g}x the verification's ${verify_cost(sessions, pop):.2f}")
     else:
         status, note = "emit", (f"{', '.join(sorted(f'{a} on {m}' for a, m in todo))}; Haiku at {TOKEN_PENALTY}x tokens (guess)"
                                 + (f"; {long_} requests land in Haiku's long-prompt tier" if long_ else ""))

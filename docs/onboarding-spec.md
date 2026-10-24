@@ -1,6 +1,6 @@
 # OptHub onboarding scan: spec
 
-**Status:** draft v0.1 · **Date:** 2026-10-24 · **Extends:** SPEC.md v0.4 §10 (`opthub detect`)
+**Status:** draft v0.1, built (steps 1–8, 2026-10-24; P2 built, not yet run) · **Date:** 2026-10-24 · **Extends:** SPEC.md v0.4 §10 (`opthub detect`)
 
 ## Summary
 
@@ -169,6 +169,22 @@ A probe ships when it reproduces a number the repo already pins, and stays silen
 | P5 | Main plus subagent spend ties to the session total within 0.1% | All subagents already on Haiku: emits nothing |
 
 ## Build plan
+
+**As built (2026-10-24).** All eight steps are in `tools/`, with fixtures in `tools/test_onboard.py`. Where
+the build departs from the plan:
+
+- Two acceptance targets can't be met as written: SPEC §2.4's +$12.75 / −$8.56 (P3) and lever B's $13.72
+  (P4). The E1/E1b transcripts were deleted by retention, and those ledgers counted usage once per record,
+  about 2.5× too high (PROGRESS, 2026-10-24). The tests check the same logic another way: P3's `5m` policy
+  equals `savings.py` lever C, and the policy a session ran prices it exactly as run. P4 is checked against
+  hand-computed ceilings.
+- P3 never re-prices two kinds of read as re-writes: a session's first request (Claude Code's shared prefix)
+  and a read after a gap longer than the session's own TTL. Without that, "1h everywhere" priced 1h sessions
+  $92.88 above what they cost.
+- P4's effort-switch check runs on transcripts too: they record effort per request.
+- P5 has the same 3× ROI gate as P4, with verification costed as 2 arms × 3 repeats on the top 3 sessions.
+- P2 speaks the Anthropic Messages API only; Bedrock and Vertex need signers that aren't built. `onboard.py`
+  never runs it. It reads the stored result and reports `run-probe` when there is none.
 
 Two fixes come before any probe, because every number the probes print depends on them. Six tools (`sessions.py`, `savings.py`, `loopscan.py`, `lenops.py`, `ctxwatch.py`, `costmodel.py`) price every cache read at 0.1× input. That is 2× the real rate on Opus 5.5 and Sonnet 5.5, and 4× on Fable 5.1. And only `sessiongraph.py` de-duplicates requests by message id.
 

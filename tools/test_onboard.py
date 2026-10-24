@@ -8,10 +8,10 @@ import datetime as dt, hashlib, json, os, sys, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import cachestatus, gapscan, onboardlib as ob, probe_cache, ratecard, savings, sessiongraph  # noqa: E402
+import cachestatus, gapscan, onboard, onboardlib as ob, probe_cache, ratecard, savings, sessiongraph  # noqa: E402
 
 PLANTED = "PLANTED-PROMPT-zx81"                     # must never appear in any output
-PLANTED_PATH = "/Users/planted-user/secret/file.py"
+PLANTED_PATH = "/Users/someone/planted-zx81/file.py"
 T0 = dt.datetime(2026, 9, 1, 9, 0, tzinfo=dt.timezone.utc)
 
 
@@ -19,7 +19,7 @@ def req(gap=30, model="claude-opus-5-5", cr=0, w5=0, w1=0, raw=10, out=100, thin
     return dict(gap=gap, model=model, cr=cr, w5=w5, w1=w1, raw=raw, out=out, think=think, stop=stop, tools=tools, effort=effort)
 
 
-def write_session(root, sid, start, reqs, project="-Users-planted-user-proj", dup=2, subs=(), entry="cli"):
+def write_session(root, sid, start, reqs, project="-Users-someone-planted-zx81-proj", dup=2, subs=(), entry="cli"):
     """A Claude Code transcript: a planted prompt, then each request as `dup` records (one per
     content block) repeating its usage, as Claude Code writes them. subs: [(agentType, reqs)]."""
     def records(rs, t, side):
@@ -250,9 +250,9 @@ def usd(q):
 
 
 class P5SubagentShare(unittest.TestCase):
-    def window(self, main, subs):
+    def window(self, main, subs, n=3):
         d = tempfile.mkdtemp()
-        for i in range(3):
+        for i in range(n):
             write_session(d, f"s{i}", T0 + dt.timedelta(hours=i), main, subs=subs)
         S, _ = ob.load(d)
         return S, sessiongraph.probe(S, ob.window(S), sum(s["cost"] for s in S))[0]
@@ -268,9 +268,16 @@ class P5SubagentShare(unittest.TestCase):
     def test_read_only_subagents_off_haiku_are_proposed(self):
         explore = [req(cr=200_000, w5=20_000, out=4_000, tools=("Grep", "Read")) for _ in range(20)]
         writer = [req(cr=200_000, w5=20_000, out=4_000, tools=("Edit",)) for _ in range(20)]
-        _, f = self.window([req()], [("Explore", explore), ("general-purpose", writer)])
+        _, f = self.window([req()], [("Explore", explore), ("general-purpose", writer)], n=10)
         self.assertEqual((f["status"], f["tier"], f["next"]), ("emit", "T2", "run-sweep"))
-        self.assertAlmostEqual(f["current_usd"], round(3 * sum(usd(q) for q in explore), 4), places=3)   # the writer is not a candidate
+        self.assertAlmostEqual(f["current_usd"], round(10 * sum(usd(q) for q in explore), 4), places=3)   # the writer is not a candidate
+
+    def test_a_ceiling_that_does_not_pay_for_its_verification_is_not_proposed(self):
+        explore = [req(cr=200_000, w5=20_000, out=4_000, tools=("Grep", "Read")) for _ in range(20)]
+        writer = [req(cr=200_000, w5=20_000, out=4_000, tools=("Edit",)) for _ in range(20)]
+        _, f = self.window([req()], [("Explore", explore), ("general-purpose", writer)], n=3)
+        self.assertEqual(f["status"], "silent")
+        self.assertIn("does not clear 3x", f["note"])
 
     def test_subagents_already_on_haiku_emit_nothing(self):
         explore = [req(model="claude-haiku-5-5", cr=200_000, out=4_000, tools=("Grep",)) for _ in range(20)]
@@ -305,6 +312,52 @@ class P4EffortSizing(unittest.TestCase):
         self.assertEqual(f["label"], "detector")
         self.assertAlmostEqual(f["current_usd"], round(100_000 * (2.0 - 0.05) * 4 / 1e6, 4))
         self.assertIn("1 switch followed", f["note"])
+
+
+class Onboard(unittest.TestCase):
+    """The whole scan: P0 then every probe, as `tools/onboard.py` runs it."""
+
+    def window(self, days=12, n=24):
+        d = tempfile.mkdtemp()
+        for i in range(n):
+            explore = [req(cr=50_000, w5=5_000, out=2_000, think=500, tools=("Grep",)) for _ in range(3)]
+            write_session(d, f"s{i:02d}", T0 + dt.timedelta(days=days * i / n),
+                          (dense() if i % 2 else spaced()) + [req(stop="end_turn", gap=900, cr=900_000, w1=20_000, think=800)],
+                          subs=[("Explore", explore)])
+        return d
+
+    def run_scan(self, root):
+        inv, F = onboard.scan(root, T0 - dt.timedelta(days=1), capture_dir=os.path.join(root, "nope"))
+        out = tempfile.mkdtemp()
+        onboard.report(inv, F, os.path.join(out, "report.html"))
+        with open(os.path.join(out, "report.html")) as fh:
+            page = fh.read()
+        return inv, F, ob.dumps(inv) + "".join(ob.dumps(f) for f in F), page
+
+    def test_every_probe_reports_and_no_text_leaves(self):
+        inv, F, records, page = self.run_scan(self.window())
+        self.assertTrue(inv["enough"])
+        self.assertEqual({f["probe"] for f in F}, {"cache-conformance", "cache-status", "gap-scan", "effort-sizing", "subagent-share"})
+        for out in (records, page):
+            for planted in (PLANTED, PLANTED_PATH, "planted-zx81", "file.py"):
+                self.assertNotIn(planted, out)
+
+    def test_counting_check_sees_the_repeated_usage(self):
+        inv, *_ = self.run_scan(self.window())
+        self.assertEqual(inv["counting"]["records"], 2 * inv["counting"]["requests"])     # dup=2 in the fixture
+
+    def test_same_input_gives_byte_identical_findings(self):
+        root = self.window()
+        a, b = self.run_scan(root), self.run_scan(root)
+        self.assertEqual(a[2], b[2])
+        self.assertTrue(a[0]["window"]["input_hash"].startswith("sha256:"))
+
+    def test_three_days_says_collect_first_and_runs_only_p2(self):
+        inv, F, _, page = self.run_scan(self.window(days=3))
+        self.assertFalse(inv["enough"])
+        self.assertIn("collect first", inv["why"])
+        self.assertEqual([f["probe"] for f in F], ["cache-conformance"])
+        self.assertIn("collect first", page)
 
 
 if __name__ == "__main__":
