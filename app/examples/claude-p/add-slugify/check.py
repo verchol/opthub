@@ -1,6 +1,6 @@
 """Hidden check for the add-slugify example. It runs outside the agent's view, against the finished workspace.
 
-Passes when: the visible tests were not edited, the whole suite passes, and seven cases the agent never
+Passes when: the visible tests were not edited, the whole suite passes, and ten cases the agent never
 saw hold. Each case follows from slugify's docstring alone.
 """
 import hashlib
@@ -27,6 +27,9 @@ try:
         (slugify("one two", max_length=7), "one-two", "an exact fit is not cut"),
         (slugify("ab cd", max_length=2), "ab", "a separator right at the limit"),
         (slugify("日本語"), "untitled", "no ASCII letters or digits"),
+        (slugify("Hello\u2014World"), "hello-world", "a non-ASCII dash is a separator, not deleted"),
+        (slugify("Cre\u0300me"), "creme", "an accent stored as a combining mark still folds"),
+        (slugify("x\u00b2 + y\u00b2"), "x-y", "a superscript is not an accented letter: a separator"),
     ]
     for got, want, what in cases:
         if got != want:

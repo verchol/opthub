@@ -5,12 +5,13 @@ Each case is an example in app/examples/claude-p/<name>/ (project/, task.md, a h
 reference solution/ that proves the check can pass). A case is judged three ways:
 
   deterministic  the run's own files: every arm finished, n >= 3 a side, one model, every arm passes the
-                 hidden check, the claims audit re-run from the files fails nothing, and the real
-                 credential appears in no file the run left
+                 hidden check (as it was at run time, and as it stands now), the claims audit re-run from
+                 the files finds the comparison fair, and the real credential appears in no file the run left
   blind          a grader agent sees each pair (plain-i vs optimized-i) as A and B, shuffled, and scores
                  both diffs against the task; the key stays in key.json until `record`
-  verdict        optimized does the same job when every deterministic check passes and plain is not
-                 preferred in a majority of pairs
+  verdict        optimized does the same job when the comparison is fair (every check but the hidden
+                 check's), optimized passes the hidden check as it stands at least as often as plain, and
+                 plain is not preferred in a majority of blind pairs
 
     python3 evals/claude_p.py list
     python3 evals/claude_p.py preflight                  # free: Docker, credential, images, each case well-posed
@@ -29,6 +30,7 @@ REPO = os.path.dirname(HERE)
 EXAMPLES = os.path.join(REPO, "app", "examples", "claude-p")
 WORK = os.path.join(os.environ.get("OPTHUB_EVALS") or os.path.join(REPO, "data", "private", "evals"), "claude-p")
 OPT = ["node", os.path.join(REPO, "app", "opt.mjs")]
+OUTCOME_CLAIMS = ("cheaper",)
 KEY_CLAIMS = ("same-input", "same-model", "same-client", "finished", "same-result", "warm", "credential", "trail")
 
 
@@ -157,10 +159,24 @@ def check(name):
         claims = {c["id"]: c for c in json.loads(au.stdout[au.stdout.index("["):])}
     except ValueError:
         claims = {}
-    failed = [k for k, c in claims.items() if c["status"] == "failed"]
-    add("D5-audit", claims and not failed, f"re-audited from files: {len(claims)} claims, failed {failed or 'none'}")
+    # "cheaper" is the comparison's outcome, reported beside the verdict; every other claim says whether the
+    # comparison was fair and the run is what it says it is
+    failed = [k for k, c in claims.items() if c["status"] == "failed" and k not in OUTCOME_CLAIMS]
+    add("D5-audit", claims and not failed, f"re-audited from files: {len(claims)} claims, failed {failed or 'none'}"
+        + "".join(f" · outcome {k}: {claims[k]['status']}" for k in OUTCOME_CLAIMS if k in claims))
     missing = [k for k in KEY_CLAIMS if claims.get(k, {}).get("status") != "verified"]
     add("D6-key-claims", not missing, f"not verified: {missing}" if missing else "all of " + ", ".join(KEY_CLAIMS))
+    ws = "ws-" + rj["run"][3:]
+    chk = os.path.join(EXAMPLES, name, "check.py")
+    now = {}
+    for a in arms:                          # one at a time: the timing cases must not share the machine
+        r = subprocess.run([sys.executable, chk], cwd=os.path.join(d, a["label"], ws), capture_output=True, text=True, timeout=300)
+        now[a["label"]] = "pass" if r.returncode == 0 else "fail: " + "; ".join(x[5:] for x in r.stdout.splitlines() if x.startswith("FAIL "))
+    revised = rj.get("check", {}).get("sha256") != sha256_file(chk)
+    add("D8-check-as-it-stands", all(v == "pass" for v in now.values()),
+        ("check revised since the run · " if revised else "") + f"plain {sum(now[a['label']] == 'pass' for a in side('baseline'))}/{len(side('baseline'))} · "
+        f"optimized {sum(now[a['label']] == 'pass' for a in side('optimized'))}/{len(side('optimized'))}"
+        + "".join(f" · {k} {v}" for k, v in now.items() if v != "pass"))
     leak = node("import './app/secrets.mjs'; import fs from 'node:fs'; import path from 'node:path';"
                 "import { launcherCredential } from './app/lib/ult/credentials.mjs';"
                 f"const c = launcherCredential(process.env); const root = {json.dumps(d)}; let n = 0, hit = [];"
@@ -177,6 +193,12 @@ def check(name):
     print(f"{name} · {rj['run']}")
     for c in out:
         print(f"  {'✓' if c['ok'] else '✗'} {c['id']}: {c['detail']}")
+
+
+def sha256_file(p):
+    import hashlib
+    with open(p, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def med(xs):
@@ -248,17 +270,23 @@ def record(name):
         pref[k[g["prefer"]] if g["prefer"] in ("A", "B") else "tie"] += 1
         for letter in "AB":
             score[k[letter]].append(sum(g[letter][c] for c in ("correct", "scope", "clarity")) / 3)
-    det_ok = all(c["ok"] for c in ck["checks"])
-    same_job = det_ok and pref["plain"] <= len(key) / 2
-    res = dict(case=name, run=ck["run"], date=dt.date.today().isoformat(), deterministic=det_ok,
+    by = {c["id"]: c for c in ck["checks"]}
+    fair = all(c["ok"] for k, c in by.items() if k not in ("D4-hidden-check", "D8-check-as-it-stands"))
+    passes = {s: int(re.search(rf"{s} (\d+)/", by["D8-check-as-it-stands"]["detail"]).group(1)) for s in ("plain", "optimized")}
+    runs = {s: int(re.search(rf"{s} \d+/(\d+)", by["D8-check-as-it-stands"]["detail"]).group(1)) for s in ("plain", "optimized")}
+    same_job = fair and passes["optimized"] >= passes["plain"] and pref["plain"] <= len(key) / 2
+    note = ("both sides miss the task's hidden cases" if passes["plain"] < runs["plain"] and passes["optimized"] < runs["optimized"] else "")
+    res = dict(case=name, run=ck["run"], date=dt.date.today().isoformat(), fair=fair,
                failed=[f"{c['id']}: {c['detail']}" for c in ck["checks"] if not c["ok"]],
-               preferred=pref, mean_score={k: round(sum(v) / len(v), 2) if v else None for k, v in score.items()},
-               cost=ck["cost"], seconds=ck["seconds"], tool_verdict=(ck.get("verdict") or {}).get("verdict"), same_job=same_job)
+               check_now={s: f"{passes[s]}/{runs[s]}" for s in passes}, preferred=pref,
+               mean_score={k: round(sum(v) / len(v), 2) if v else None for k, v in score.items()},
+               cost=ck["cost"], seconds=ck["seconds"], tool_verdict=(ck.get("verdict") or {}).get("verdict"),
+               same_job=same_job, note=note)
     with open(os.path.join(w, "result.json"), "w") as fh:
         json.dump(res, fh, indent=1)
-    print(f"{name}: {'SAME JOB' if same_job else 'NOT SHOWN'} · deterministic {'pass' if det_ok else 'FAIL'} · "
-          f"blind prefers plain {pref['plain']}, optimized {pref['optimized']}, tie {pref['tie']} · "
-          f"mean score plain {res['mean_score']['plain']} optimized {res['mean_score']['optimized']}")
+    print(f"{name}: {'SAME JOB' if same_job else 'NOT SHOWN'} · fair {'yes' if fair else 'NO'} · hidden check now plain "
+          f"{res['check_now']['plain']}, optimized {res['check_now']['optimized']} · blind prefers plain {pref['plain']}, "
+          f"optimized {pref['optimized']}, tie {pref['tie']}" + (f" · {note}" if note else ""))
     for f in res["failed"]:
         print(f"  - {f}")
 
@@ -269,21 +297,20 @@ def report():
          "then the deterministic checks on the run's files and a blind A/B review of each pair's diffs.", "",
          "Costs are priced from Claude Code's token totals at list rates (not billed), medians per side. n = 3 a side per case: "
          "a direction for these tasks, not a finding for yours.", "",
-         "| case | run | deterministic | blind: plain / optimized / tie | mean score plain → optimized | cost plain → optimized | seconds plain → optimized | tool verdict | same job? |",
-         "|---|---|---|---|---|---|---|---|---|"]
-    fmt = lambda v, p="$": "—" if v is None else (f"${v:.4f}" if p == "$" else f"{v:.0f}")
+         "| case | run | fair comparison | hidden check now: plain / optimized | blind: plain / optimized / tie | cost plain → optimized | tool verdict | same job? |",
+         "|---|---|---|---|---|---|---|---|"]
     for n in cases():
         p = os.path.join(WORK, n, "result.json")
         if not os.path.exists(p):
-            L.append(f"| {n} | — | not run | | | | | | |")
+            L.append(f"| {n} | — | not run | | | | | |")
             continue
         with open(p) as fh:
             r = json.load(fh)
-        pr = r["preferred"]
-        L.append(f"| {n} | `{r['run']}` | {'pass' if r['deterministic'] else 'FAIL: ' + '; '.join(r['failed']).replace('|', '/')} | "
-                 f"{pr['plain']} / {pr['optimized']} / {pr['tie']} | {r['mean_score']['plain']} → {r['mean_score']['optimized']} | "
-                 f"{fmt(r['cost']['plain'])} → {fmt(r['cost']['optimized'])} | {fmt(r['seconds']['plain'], 's')} → {fmt(r['seconds']['optimized'], 's')} | "
-                 f"{r['tool_verdict']} | **{'yes' if r['same_job'] else 'not shown'}** |")
+        pr, unfair = r["preferred"], [f for f in r["failed"] if not f.startswith(("D4", "D8"))]
+        L.append(f"| {n} | `{r['run']}` | {'yes' if r['fair'] else 'no: ' + '; '.join(unfair).replace('|', '/')} | "
+                 f"{r['check_now']['plain']} / {r['check_now']['optimized']} | {pr['plain']} / {pr['optimized']} / {pr['tie']} | "
+                 f"${r['cost']['plain']:.4f} → ${r['cost']['optimized']:.4f} | {r['tool_verdict']} | "
+                 f"**{'yes' if r['same_job'] else 'not shown'}**{' (' + r['note'] + ')' if r['note'] else ''} |")
     with open(os.path.join(HERE, "CLAUDE-P-RESULTS.md"), "w") as fh:
         fh.write("\n".join(L) + "\n")
     print("evals/CLAUDE-P-RESULTS.md")

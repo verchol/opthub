@@ -120,6 +120,14 @@ Found by the evals, confirmed by the grader, not fixed yet:
 - The README says `costmodel.py` reads the pinned ledgers; its workload is hardcoded (EV-01).
 - `opt` ignores `OPTHUB_ENV_FILE`, so `opt` and `envfile.py check` can read different files (EV-01).
 
+Found by the `opt claude -p --compare` evals (`evals/CLAUDE-P-RESULTS.md`), open:
+
+- **Parallel arms can share a prompt cache.** All optimized arms of one comparison run at once with the
+  same prompt and working directory, so an arm that starts after a sibling's first request can read the
+  whole task from the cache: a discount the other side did not get. The claims audit catches it (`warm`
+  failed on one of six arms in the first `fix-invoice` run) and the eval marks that comparison unfair.
+  Separate workspace names per arm, or staggered starts, would remove it; either changes how runs are cached.
+
 Not covered yet: UC-03 deterministically (needs `opt init` to skip network checks when no key is set),
 `opt session --watch` status rules (live/open/idle/closed), the hub's run endpoints (*spends*), and any
 live replay (*spends*; three repeats per arm is the minimum, SPEC R-rules).

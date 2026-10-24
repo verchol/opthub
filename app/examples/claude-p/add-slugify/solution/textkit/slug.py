@@ -5,8 +5,12 @@ import unicodedata
 
 def slugify(title, max_length=None):
     """Reference solution: see the project's docstring for the spec."""
-    ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
-    slug = re.sub(r"[^a-z0-9]+", "-", ascii_title.lower()).strip("-")
+    chars = []
+    for ch in unicodedata.normalize("NFD", title):      # an accented letter -> its letter + combining marks
+        if unicodedata.combining(ch):
+            continue
+        chars.append(ch.lower() if ch.isascii() and ch.isalnum() else "-")
+    slug = re.sub(r"-+", "-", "".join(chars)).strip("-")
     if not slug:
         return "untitled"
     if max_length is not None and len(slug) > max_length:
