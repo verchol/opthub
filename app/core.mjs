@@ -14,6 +14,7 @@ import { parseDateSpec, describeRange } from './lib/daterange.mjs'
 import { startTask, readTasks, summarizeTasks, verifyAudit, AUDIT_FILE, sha256 } from './lib/task-audit.mjs'
 import { loadCatalog } from './lib/optimizations.mjs'
 import { localPlan, mergePlans, containerScript, readResult, diffTrees, runSandbox, outRoot, tilde, setParallel, parallelLimit } from './lib/local-run.mjs'
+import { bulkReadSummary } from './lib/arm-config.mjs'
 import { propose, parseTemperature, GOALS, TEMPERATURES } from './lib/goals.mjs'
 import { findTranscript, processTranscript } from './lib/sessions-index.mjs'
 import { STATE as STATE_DIR } from './lib/state.mjs'
@@ -525,10 +526,15 @@ async function runOptimize({ f, entries, needSecrets, text, session, dir, analys
     const { result, model, turns } = readResult(ev)
     const work = path.join(outDir, 'workspace')
     const diff = fs.existsSync(work) ? diffTrees(dir, work) : { added: [], changed: [] }
+    // a bulk-read worker spends outside Claude Code's own total: add it, or the arm looks cheaper than it is
+    const brLog = path.join(outDir, 'bulk-read.jsonl')
+    const bulkRead = fs.existsSync(brLog) ? bulkReadSummary(fs.readFileSync(brLog, 'utf8')) : null
     const r = {
       run: a.label, side: a.side, exit: code, is_error: result?.is_error ?? (code !== 0), model,
       error: result?.is_error ? String(result.result ?? '').split('\n')[0].slice(0, 120) : (!result ? stderr.trim().split('\n').slice(-1)[0]?.slice(0, 120) ?? `exit ${code}` : null),
-      cost_usd: result?.total_cost_usd ?? null, turns: result?.num_turns ?? turns, duration_ms: result?.duration_ms ?? null,
+      cost_usd: result?.total_cost_usd != null ? result.total_cost_usd + (bulkRead?.workerUsd ?? 0) : null,
+      ...(bulkRead ? { bulk_read: bulkRead } : {}),
+      turns: result?.num_turns ?? turns, duration_ms: result?.duration_ms ?? null,
       files_added: diff.added.length, files_changed: diff.changed.length, files: [...diff.added.map((x) => '+' + x), ...diff.changed.map((x) => '~' + x)],
       timed_out: code === 124, check: null,
     }

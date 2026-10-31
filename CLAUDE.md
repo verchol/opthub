@@ -33,7 +33,8 @@ when testing.
   `dynconfig.py` prices every lever of the Claude Code config catalog per session, marginal in applied
   order, counting usage once per request (transcripts repeat it per content block).
   `tune.py` picks a session's "dynamic" flags from its own numbers; `rerun.py plan --dynamic` adds them as a
-  third arm beside the goal's fixed "best" preset. `envfile.py` loads secrets from `.env` (template `.env.example`).
+  third arm beside the goal's fixed "best" preset. `readscan.py` finds large whole-file reads and prices
+  what the `bulk-read-delegation` lever (hooks in `app/hooks/bulk-read/`) could take off, as a ceiling. `envfile.py` loads secrets from `.env` (template `.env.example`).
   The onboarding scan (`docs/onboarding-spec.md`): `onboard.py` runs P0–P5 over `onboardlib.py`'s loader —
   `cachestatus.py` (P1), `probe_cache.py` (P2, the only one that spends; `--yes`), `gapscan.py` (P3),
   `savings.py --classes` (P4), `sessiongraph.py` (P5) — and writes findings to `data/private/onboard/<date>/`.
@@ -66,6 +67,7 @@ python3 tools/dynconfig.py                   # per-session config savings over e
 python3 tools/ratecard.py check              # the rate card vs Claude Code's own per-model costs (free)
 python3 tools/onboard.py                     # day-0 onboarding scan, P0-P5 (free; --dry prints what would leave)
 python3 -m unittest tools/test_onboard.py    # the probes' fixtures: known answers, silent cases, no text out
+python3 tools/readscan.py --days 30          # large reads and the bulk-read ceiling (free); tests: tools/test_readscan.py
 python3 examples/golden/demo.py --check      # golden test of the whole pipeline; --update after a deliberate change
 python3 tools/envfile.py check               # which secrets are set, from shell or .env
 cd experiments/session-triage && python3 src/run.py          # rules arm, pinned ledger, no egress

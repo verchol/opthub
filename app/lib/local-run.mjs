@@ -19,6 +19,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { STATE } from './state.mjs'
+import { claudeSettingsObject, bulkReadFiles, bulkReadEnv, BULK_READ_HOME_DIR, WORKER_PRICES } from './arm-config.mjs'
 
 export const AUTOCOMPACT = '100k'
 // The catalog's model ids, as the Anthropic API names them. Bedrock-only models have no entry.
@@ -56,18 +57,37 @@ export function localPlan(entry) {
   if (cc.fallbackModel) flags.push(`--fallback-model ${shq(cc.fallbackModel)}`)
   if (cc.appendSystemPrompt) flags.push(`--append-system-prompt ${shq(cc.appendSystemPrompt)}`)
   if (arm.flags) flags.push(arm.flags)
-  return { flags, env, appendPrompt: arm.appendPrompt ?? null, settings: cc.settings ?? null, notes }
+  // bulk-read: no proxy here, so the worker is `claude -p` on an Anthropic model, through the same
+  // credential and egress proxy as the agent. Its log lands in /work/out so the run can price it.
+  const files = []
+  if (cc.bulkRead) {
+    const worker = cc.bulkRead.localWorker ?? 'claude-haiku-4-5'
+    Object.assign(env, bulkReadEnv(cc.bulkRead, { via: 'claude', model: worker, prices: WORKER_PRICES[worker] ?? null,
+      log: '/work/out/bulk-read.jsonl', state: '/work/out/bulk-read-state.json' }))
+    files.push(...bulkReadFiles().map((f) => ({ rel: `${BULK_READ_HOME_DIR}/${f.name}`, data: f.data })))
+    notes.push(`bulk-read worker runs on ${worker} through claude -p (no proxy in the local sandbox)`)
+  }
+  return { flags, env, appendPrompt: arm.appendPrompt ?? null, settings: claudeSettingsObject(cc), files, notes }
 }
 
 /** The script the container runs. It copies the tree, runs claude headless, and exits. */
+/**
+ * Commands that set up $HOME for an arm: its settings.json, and the files it brings (the bulk-read
+ * hook scripts), outside the workspace so they are not in the run's diff.
+ */
+export function homeSetup(plan) {
+  const settings = plan.settings ? [`mkdir -p ~/.claude && printf %s ${shq(JSON.stringify(plan.settings))} > ~/.claude/settings.json`] : []
+  const files = (plan.files ?? []).map((f) => `mkdir -p ~/${shq(path.posix.dirname(f.rel))} && printf %s ${shq(f.data)} > ~/${shq(f.rel)}`)
+  return [...settings, ...files]
+}
+
 export function containerScript(plan, { timeoutSec, extraFlags = [] }) {
   const exports = Object.entries(plan.env).map(([k, v]) => `export ${k}=${shq(v)}`)
-  const settings = plan.settings ? [`mkdir -p ~/.claude && printf %s ${shq(JSON.stringify(plan.settings))} > ~/.claude/settings.json`] : []
   const ex = [...SKIP].map((d) => `--exclude=${shq(d)}`).join(' ')
   return [
     'set -u',
     ...exports,
-    ...settings,
+    ...homeSetup(plan),
     'mkdir -p /work/out/workspace',
     `tar -C /work/src ${ex} -cf - . | tar -C /work/out/workspace -xf -`,
     'cd /work/out/workspace',
@@ -152,9 +172,10 @@ export const tilde = (p) => p.replace(os.homedir(), '~')
 export function mergePlans(plans) {
   const bad = plans.find((p) => p.error)
   if (bad) return bad
-  const flags = [], env = {}, notes = [], seen = new Set()
+  const flags = [], env = {}, notes = [], files = [], seen = new Set()
   let appendPrompt = null, settings = null
   for (const p of plans) {
+    files.push(...(p.files ?? []))
     for (const fl of p.flags) {
       const k = fl.split(' ')[0]
       if (seen.has(k)) return { error: `two levers both set ${k}; they cannot be stacked` }
@@ -162,8 +183,13 @@ export function mergePlans(plans) {
     }
     for (const [k, v] of Object.entries(p.env)) { if (k in env && env[k] !== v) return { error: `two levers both set ${k}` }; env[k] = v }
     if (p.appendPrompt) appendPrompt = appendPrompt ? `${appendPrompt}\n\n${p.appendPrompt}` : p.appendPrompt
-    if (p.settings) settings = { ...(settings ?? {}), ...p.settings }
+    if (p.settings) {
+      // hooks from two levers both run, so merge them per event instead of letting one replace the other
+      const hooks = { ...(settings?.hooks ?? {}) }
+      for (const [ev, entries] of Object.entries(p.settings.hooks ?? {})) hooks[ev] = [...(hooks[ev] ?? []), ...entries]
+      settings = { ...(settings ?? {}), ...p.settings, ...(Object.keys(hooks).length ? { hooks } : {}) }
+    }
     notes.push(...p.notes)
   }
-  return { flags, env, appendPrompt, settings, notes }
+  return { flags, env, appendPrompt, settings, files, notes }
 }

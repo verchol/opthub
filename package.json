@@ -8,7 +8,7 @@
     "scenarios": "node app/opt.mjs demo scenarios",
     "status": "node app/opt.mjs status",
     "report": "node app/report.mjs",
-    "test": "node app/test/tune.test.mjs && node app/test/ult.test.mjs && node app/test/hub-graph.test.mjs && node app/test/behaviour.test.mjs && node app/test/claude-p.test.mjs && node app/test/demo-startup.test.mjs && node sandbox/test.mjs",
+    "test": "node app/test/tune.test.mjs && node app/test/ult.test.mjs && node app/test/hub-graph.test.mjs && node app/test/behaviour.test.mjs && node app/test/claude-p.test.mjs && node app/test/demo-startup.test.mjs && node app/test/bulk-read.test.mjs && node sandbox/test.mjs",
     "build:web": "npm --prefix app/web ci && npm --prefix app/web run build",
     "dev:web": "npm --prefix app/web run dev"
   },

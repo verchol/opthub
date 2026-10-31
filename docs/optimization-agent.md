@@ -1,6 +1,6 @@
 # [O] Optimization agent — models, skills, actions
 
-*Design spec, draft · 2026-10-29 · owner oleg@canarian.io. Nothing here is measured yet; claims carry
+*Design spec, draft · 2026-10-29, updated 2026-10-31 (two skills in depth; bulk-read implemented) · owner oleg@canarian.io. Nothing here is measured yet; claims carry
 an epistemic label. Related: `SPEC.md` §6 (the safety gate) and §16 (epic RO),
 [`optimizers.md`](optimizers.md) (the levers), [`router-comparison.md`](router-comparison.md),
 [`runtime-optimization.md`](runtime-optimization.md).*
@@ -62,7 +62,7 @@ Transform skills are grouped by the lever they pull; a lever maps to the target 
 | prefix-stabilizer | Transform | cache, context | Reorders the prompt so the static prefix caches; sets breakpoints and TTL |
 | compaction-policy | Transform | context | Sets when and how context compacts. Guarded: compaction can raise cost by rewriting cached prefixes *(validated fact, project ledger)* |
 | turn-cap / loop-breaker | Transform | harness | Caps turns and tool calls; adds stop conditions |
-| cheap-worker-delegation | Transform | harness | Hands sub-steps to a cheaper sub-agent (the hook + cheap-worker "shunt" pattern) |
+| cheap-worker-delegation | Transform | harness | Hands sub-steps to a cheaper worker; bulk-read delegation is its first, implemented form (below) |
 | code-mode | Transform | harness, tools | Replaces a chain of tool calls with one generated script |
 | batch-scheduler | Transform | sandbox, runtime | Moves non-interactive classes to batch or off-peak pricing |
 | historical-replay | Evaluate | — | Reruns sampled sessions of the class with the candidate config in a sandbox |
@@ -101,6 +101,109 @@ requires_eval: [historical-replay, quality-judge, stat-gate]
 action_tools: [mcp.set_allowlist, harness.set_tool_loading]  # called by Govern, never by this skill
 ledger_keys: [class, baseline_fp, delta, d_cost, d_quality, d_latency, n, method, verdict, expires]
 ```
+
+## Two skills in depth
+
+![Bulk reads are stopped at the tool layer; routing acts on each request](screens/diagrams/optimization-agent-two-skills.svg)
+
+Both act during the session but at different layers: bulk-read delegation stops a large file at the tool call, before it enters the context; routing decides which model answers each request. The agent changes neither in flight: it sets the hook and the router policy per class, after replay.
+
+### Bulk-read delegation (the Spotify pattern) — implemented
+
+Bulk-read delegation keeps large files out of the expensive model's context. A hook stops big file reads during the session and sends the file to a cheap worker model, which returns a short answer. It pays only for files that would otherwise stay in context for many requests, and only where the agent will not edit that file next.
+
+**Where it comes from.** Spotify's `shunt` plugin for Claude Code, published by Dimitri Mazmanov in September 2026, works in three layers ([Techzine](https://www.techzine.eu/news/devops/144093/spotify-reduces-claude-code-token-usage-by-90-percent/)): PreToolUse hooks block any `Read` over 350 lines and shell reads (`cat`, `head`, `tail`) of large files, while targeted reads with an offset or limit pass; the block message redirects the model to a bulk-reader skill; that skill runs on a cheap worker model (Gemini 2.5 Flash), so the file never enters Claude's context. Spotify reports about 90% fewer Claude tokens on four bulk-read scenarios in a Java monorepo — read-context tokens in those scenarios, not the bill, with the worker's tokens extra *(self-reported, 4 scenarios)*. Its stated limits: no delegated edits (summaries lack reliable line numbers), no delegated reasoning (the worker missed a thread-safety bug), and 10–30 s per delegation.
+
+**Why it saves in Claude Code.** A file read into the main thread is written to the cache, then re-sent with every later request as a cache read until compaction. On Opus 5.5 the write costs 2× input at the 1-hour TTL and each read 0.05× (`tools/ratecard.py`), so 40 later requests cost as much as the write. In the pinned month, cache reads were 48% and cache writes 34% of spend (the `read$` and `write$` columns of `docs/data/e1b-sessions.csv`): caching makes a file cheaper per request, not free.
+
+```math
+\text{saving per read} \approx T_{\text{file}}\,(p_{w} + R_{\text{after}}\,p_{r}) - T_{\text{answer}}\,(p_{w} + R_{\text{after}}\,p_{r}) - C_{\text{worker}}
+```
+
+T is tokens, R_after the requests left on that thread before compaction, p_w and p_r the cache write and read prices, C_worker the worker's cost. Latency is a separate cost on interactive sessions. Delegation does not pay for small files, files read late, reads inside subagents, or context about to be compacted.
+
+**Delegation is not a model switch.** The worker is a separate one-off call with its own short context. The main thread keeps its model and its cache; only the tool result changes, from the file to a short answer, so nothing in the main thread's cache is broken. Switching the main thread itself to a cheaper model would break it, which is why routing works per thread (next section). The main model can still pull exact lines through targeted reads and searches, which the hook lets through.
+
+**Where to enforce it.** This is a tool-result optimization; the enforcement point depends on which tool returns the large output.
+
+| Large output from | Passes an MCP gateway? | Enforce with |
+| --- | --- | --- |
+| Built-in `Read`, shell `cat`, `Grep` | No; runs inside the harness | `harness.set_hooks` (PreToolUse block) — what opthub implements |
+| MCP tools (GitHub file fetch, Jira or Confluence pages, database queries, logs) | Yes | `mcp.set_result_policy(server, tool, max_tokens, mode: truncate \| handle \| summarize)` at the gateway, or a PostToolUse hook that replaces the MCP output |
+| `WebFetch` | No | Already answered by a small model inside Claude Code, as far as known |
+
+At a gateway, prefer *handle* over *summarize*: the gateway does not know what the agent wants. Claude Code already refuses MCP outputs over 25,000 tokens by default (`MAX_MCP_OUTPUT_TOKENS`, [source](https://help.xpoz.ai/en/articles/12681842-claude-code-mcp-tool-exceeds-maximum-allowed-tokens-25000)) — a cap, not a summarizer.
+
+**Implemented in opthub** (2026-10-31; tested offline, not yet run against a live Claude Code session):
+
+| Piece | Where | What it does |
+| --- | --- | --- |
+| Diagnose: `large-read-detector` | `tools/readscan.py` (tests: `tools/test_readscan.py`) | From transcripts: every whole read over the threshold, its carry until compaction, main thread or subagent, edited or re-read afterwards, priced in context vs delegated. Free; paths hashed unless `--show-paths` |
+| Transform + action: the hook | `app/hooks/bulk-read/gate.mjs` | PreToolUse on `Read\|Bash`. Blocks whole reads over `BULK_READ_THRESHOLD` (350) and plain `cat\|less\|more\|nl\|bat`; passes targeted reads, small files, binaries, files edited in the session, files the worker failed on, and the second whole read of a blocked file. Errors never block |
+| The worker | `app/hooks/bulk-read/bulk-read.mjs` | `bulk-read --question "<q>" <file>…`: numbered lines to a cheap model, cited bullets back. `api` mode through a proxy route alias (E2B), `claude` mode via `claude -p` (local sandbox) |
+| Evaluate: the experiment | `bulk-read-delegation` in `app/config/optimizations.json`; `claude.bulkRead` in `app/lib/arm-config.mjs` | Baseline vs arm on a real session, judged blind. Both runners (`optimize.mjs`, `core.mjs`) add the worker's logged cost to the arm, since it is spent outside Claude Code's accounting, and report blocks, overrides and worker latency |
+| Tests | `app/test/bulk-read.test.mjs` (in `npm test`) | Gate decisions, the hook as a process, the worker against a mock API and a fake `claude`, the wiring in both runners |
+
+```sh
+python3 tools/readscan.py --days 30          # free: is there anything to save here?
+opt optimize bulk-read-delegation            # spends: one task, baseline vs the hook, local sandbox
+node app/optimize.mjs <sessionId> --experiment=bulk-read-delegation   # spends: E2B, worker on qwen30
+```
+
+The E2B worker is open-weights (`qwen30`) and the local one Haiku 4.5, so results from the two sandboxes are not comparable to each other.
+
+```yaml
+skill: bulk-read-delegation
+category: transform
+lever: [harness, context]
+applies_when:
+  finding: large_read_carry      # tools/readscan.py
+  class_tool_style: reader
+  harness_supports: [pretooluse_hooks]
+exclude_classes: [coding/debug, review/security]
+produces:
+  candidate_deltas:
+    - op: harness.hook_large_read
+      sweep: {threshold_lines: [200, 350, 800]}
+    - op: harness.hook_bash_read
+    - op: worker.route
+      targets: [remote:claude-haiku-4-5, local:ollama]
+risk: medium                     # summaries can miss what an edit needs
+requires_eval: [historical-replay, quality-judge, stat-gate]
+measures: [main_tokens, worker_tokens, total_cost, added_latency, bash_leak_rate, reread_rate]
+action_tools: [harness.set_hooks, harness.set_skill, routing.set_rule]
+```
+
+**Red team.** The hook is commodity: third parties reproduced the pattern within about 72 hours of publication; what is not commodity is the fire rate, threshold and class gating measured on one customer's sessions. Leaks make it theatre: if shell reads or re-reads after a summary are common, the gate saves little — the run's override count and `readscan.py`'s re-read count measure that. And a summary can miss what matters, so reasoning classes stay excluded and outcomes are judged blind.
+
+### Model routing
+
+Model routing sends work that does not need the frontier model to a cheaper one. In Claude Code the unit must be a whole class or a thread, never a single turn: switching models mid-thread re-buys the cached prefix at the write price, which usually costs more than it saves. The agent does not route requests itself; it tunes the router's policy per class and proves each change by replay.
+
+| Layer | What it decides | Where in opthub | Who changes it |
+| --- | --- | --- | --- |
+| Static, per class | The model a class launches on, the subagent model, the effort level | Claude Code settings: `--model`, `CLAUDE_CODE_SUBAGENT_MODEL`, effort (the J3 methods, applied by `recommend.py`); catalog entries `route-*` and `litellm-route-side-calls` | The optimization agent, offline |
+| Dynamic, per request | Keep, route or local, for each request | ULT, the router inside `opt claude optimize` (`docs/runtime-optimization.md`) | The router at runtime; the agent tunes its config |
+
+ULT already has the safety parts this skill relies on: a never-downgrade list (`coding/debug`, `review/security`), a cache-aware economics check, thread stickiness, shadow mode, a per-model adapter with fallback, and a hash-chained audit log. Its own conclusion: without scoped context, real savings come from background calls answered locally and from threads that start small, such as subagents.
+
+**The objective is cost per successful task, not price per token.** A model cheaper per token can cost more per task. ULT's one live route answered a summary on Haiku 4.5 for about a quarter of the Opus price and added a detail not in the source (`docs/runtime-optimization.md` §8, n = 1).
+
+| Category | Skill | What it does |
+| --- | --- | --- |
+| Diagnose | model-fit-analyzer | Per class: outcomes by model in history (J3 capability labels, replay grades), subagent share of spend (`sessiongraph.py`), share of background calls |
+| Diagnose | routing-audit-reader | Reads ULT's shadow-mode audit: what it would have routed, the estimated saving, economics-check vetoes, fallbacks |
+| Transform | route-tuner | Patches ULT's policy per class (routes, never-downgrade list, minimum confidence, local on or off) and static deltas (launch model, subagent model, effort) |
+| Transform | cascade | Cheap model first, escalate on a failure signal such as a failing test; only for threads that start small |
+| Evaluate | historical-replay, shadow week, quality-judge | Replays routed threads on the target model, blind-graded; J3 already queues `route-cheaper-frontier` re-runs |
+| Govern | policy-check, rollout-planner | Shadow first, then route mode on a canary slice of one class |
+| Learn | ledger-writer, knob-scout | A row per class and target model; a new model or price reopens closed rows |
+
+Candidate deltas, safest first *(reasonable inference; each still needs its replay)*: (1) subagent model to Haiku — subagent threads start small, so no cached prefix is re-bought (`litellm-route-side-calls` already measures the Sonnet version); (2) background calls to a local model; (3) non-coding classes to Haiku, thread-sticky; (4) lower effort for a class; (5) a whole class on a mid-tier model — J3 prices "every session mid-tier" at 59.5% of spend, a priced ceiling (`experiments/session-triage/data/RESULTS.md`); (6) mid-thread routing of coding turns, not until scoped context (C3) lands.
+
+Action tools: `routing.set_policy(project, patch)` writes the project layer `<project>/.opthub/ult.json`; `routing.set_mode(shadow | route)`; `model.set(class, model, effort)` writes `.claude/settings.local.json` through `recommend.py`'s `apply.sh`. Rollback reverts the file; `--pin frontier` overrides everything for a session.
+
+**Red team.** The router is commodity (intent routing ships free in LiteLLM and vLLM Semantic Router), and routing was one of six big levers at Uber *(project evidence ledger)*: the value is the per-class proof, not the router. Cache economics can make routing net-negative on main threads. Public routing results (RouteLLM) are chat benchmarks, not agentic sessions. Cheapest test: the shadow-mode week ULT is built for — sum the savings the economics check would approve, by class.
 
 ## Optimization models
 

@@ -27,7 +27,8 @@ import { resolveSecrets, parseEnvFile } from './secrets.mjs'
 import { processTranscript, findTranscript } from './lib/sessions-index.mjs'
 import { loadCatalog, resolveArm, armDiff, armTag } from './lib/optimizations.mjs'
 import { writeReport } from './lib/opt-report.mjs'
-import { litellmConfig, claudeEnv, claudeFlags, claudeSettings, priceResult } from './lib/arm-config.mjs'
+import { litellmConfig, claudeEnv, claudeFlags, claudeSettings, priceResult,
+         bulkReadFiles, bulkReadEnv, bulkReadSummary, BULK_READ_HOME_DIR } from './lib/arm-config.mjs'
 import { profileById, renderFiles, classesFor, readAudit } from './lib/llmlight.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
@@ -148,6 +149,10 @@ async function runCell(cell, session, inputs, budget, template) {
   try {
     await sbx.commands.run(`mkdir -p ${WORK}`)
     await sbx.files.write(inputs.map((f) => ({ path: `${WORK}/${f.rel}`, data: f.data })))
+    // settings.json goes in before the base commit: it is the arm's configuration, not the agent's
+    // output, and written after the commit it showed up in the arm's diff as a file the agent made
+    const settings = claudeSettings(cell.claude)
+    if (settings) await sbx.files.write(`${WORK}/.claude/settings.json`, settings)
     await sbx.commands.run(`cd ${WORK} && git init -q && git add -A && git -c user.email=r@r -c user.name=r commit -qm base`)
     // an LLM Light arm brings its own proxy config, hook and rules; the project's Triage classes are baked in
     let ll = null
@@ -165,14 +170,24 @@ async function runCell(cell, session, inputs, budget, template) {
     const flags = armFlags(cell, budget) + (ll?.flags ? ' ' + ll.flags : '')
     const req = cell.appendPrompt ? `${session.intent}\n\n## Additional instruction\n\n${cell.appendPrompt}\n` : session.intent
     await sbx.files.write(`${WORK}/.req`, req)
-    const settings = claudeSettings(cell.claude)
-    if (settings) await sbx.files.write(`${WORK}/.claude/settings.json`, settings)
+    // bulk-read: the gate and worker scripts go outside the workspace (so they are not in the
+    // diff), and the worker reaches its cheap model as a LiteLLM route alias on the in-sandbox proxy
+    const br = cell.claude?.bulkRead
+    let brEnv = {}
+    const BR_LOG = '/home/user/.opthub/bulk-read.jsonl'
+    if (br) {
+      const target = cell.litellm?.routes?.[br.worker]
+      if (!target || !MODELS[target]) throw new Error(`bulkRead.worker "${br.worker}" must be a litellm route alias to a MODELS id`)
+      await sbx.files.write(bulkReadFiles().map((f) => ({ path: `/home/user/${BULK_READ_HOME_DIR}/${f.name}`, data: f.data })))
+      brEnv = bulkReadEnv(br, { via: 'api', model: br.worker, prices: [MODELS[target].inM, MODELS[target].outM],
+                               log: BR_LOG, state: '/home/user/.opthub/bulk-read-state.json' })
+    }
     const t0 = Date.now()
     // The exit code and stderr are the only evidence when claude refuses a flag
     // and dies before the first turn. Losing them turned a hard failure into a
     // run that reported 0 turns, $0 and no error.
     await sbx.commands.run(`cd ${WORK} && cat .req | claude ${flags} > /home/user/out.json 2>/home/user/err.txt; echo $? > /home/user/rc.txt`,
-      { timeoutMs: 22 * 60 * 1000, envs: { ...cr, ...claudeEnv(cell.claude), ...(ll?.env ?? {}), ANTHROPIC_BASE_URL: 'http://127.0.0.1:4000', ANTHROPIC_API_KEY: 'sk-local', CI: '1' } })
+      { timeoutMs: 22 * 60 * 1000, envs: { ...cr, ...claudeEnv(cell.claude), ...brEnv, ...(ll?.env ?? {}), ANTHROPIC_BASE_URL: 'http://127.0.0.1:4000', ANTHROPIC_API_KEY: 'sk-local', CI: '1' } })
     const secs = Math.round((Date.now() - t0) / 1000)
     const readIf = async (p) => { try { return await sbx.files.read(p) } catch { return '' } }
     let r = null; try { r = JSON.parse(await sbx.files.read('/home/user/out.json')) } catch {}
@@ -186,7 +201,9 @@ async function runCell(cell, session, inputs, budget, template) {
     // a routed arm is priced from the proxy's own audit (what each tier actually cost), not from the
     // model names Claude Code asked for — those are the names before routing
     const llAudit = ll ? readAudit(await readIf('/home/user/llmlight-audit.jsonl')) : null
-    const cost = llAudit && llAudit.cost > 0 ? llAudit.cost : priceResult(r, m, MODELS, cell.litellm?.routes)
+    // the bulk-read worker spends outside Claude Code's accounting: add it, or the arm looks cheaper than it is
+    const bulkRead = br ? bulkReadSummary(await readIf(BR_LOG)) : null
+    const cost = (llAudit && llAudit.cost > 0 ? llAudit.cost : priceResult(r, m, MODELS, cell.litellm?.routes)) + (bulkRead?.workerUsd ?? 0)
     const artifacts = [...diff.matchAll(/^\s*(\S+)\s+\|\s+\d+/gm)].map((x) => x[1]).filter((f) => f && f !== '---8<---')
     let added = 0, removed = 0
     for (const l of numstat.split('\n')) { const m2 = /^(\d+)\s+(\d+)\s+(.+)$/.exec(l.trim()); if (m2) { added += +m2[1]; removed += +m2[2] } }
@@ -201,6 +218,7 @@ async function runCell(cell, session, inputs, budget, template) {
     return { ...cell, modelLabel: m.label, secs, turns: r?.num_turns ?? 0, cost, isError, exitCode: rc,
              artifacts, metrics, diff: diff.split('---8<---')[1] ?? '', err,
              ...(llAudit ? { llmlightAudit: llAudit } : {}),
+             ...(bulkRead ? { bulkRead } : {}),
              sandboxId: sbx.sandboxId, usage: r?.usage ?? {},
              reportedCost: r?.total_cost_usd ?? 0, durationMs: r?.duration_ms ?? secs * 1000,
              pricing: { inPerM: m.inM, outPerM: m.outM }, bedrock: m.bedrock }

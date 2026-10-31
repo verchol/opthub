@@ -120,6 +120,27 @@
     },
 
     {
+      "id": "bulk-read-delegation",
+      "title": "Delegate large file reads to a cheap worker",
+      "family": "context-lifecycle",
+      "tag": "large reads → worker",
+      "summary": "Spotify's shunt pattern. A PreToolUse hook (app/hooks/bulk-read/gate.mjs) blocks a whole read of any text file over 350 lines, and a plain cat of one, and tells the agent to ask a cheap worker instead (bulk-read.mjs). The worker sees the file with line numbers and answers in bullets that cite them, so the file never enters the main model's context, where it would be written to the cache and re-read on every later request. Targeted reads, files the session already edited, and a second whole read of the same file pass. The worker's spend is added to the arm's cost from its log.",
+      "arm": {
+        "model": "baseline",
+        "compaction": false,
+        "litellm": { "routes": { "route-reader": "qwen30" } },
+        "claude": {
+          "bulkRead": { "thresholdLines": 350, "worker": "route-reader", "localWorker": "claude-haiku-4-5", "maxBlocks": 1, "timeoutMs": 30000 }
+        }
+      },
+      "kong": null,
+      "kongNote": "The gateway sees only MCP tool results, not built-in Read or cat, so this lever lives in the harness. For large MCP results the gateway equivalent is a result policy (truncate, or return a handle the agent can query), not this hook.",
+      "hypothesis": "Main-model input tokens fall on sessions that read large files they do not edit, by the file's cache write plus its re-reads; no effect on short sessions or on sessions that edit what they read. Run tools/readscan.py first: it prices the ceiling per session from transcripts.",
+      "risk": "The worker's answer misses what the task needs, and the agent re-reads the file and pays twice; each delegation adds seconds of latency. The E2B worker is open-weights (qwen30), the local one Haiku, so the two sandboxes are not comparable to each other.",
+      "gate": "judge score must not drop more than 1 point out of 10 against baseline; cost including the worker must fall; blocks, overrides and worker latency reported"
+    },
+
+    {
       "id": "effort-medium",
       "title": "Lower the reasoning effort",
       "family": "effort-tuning",

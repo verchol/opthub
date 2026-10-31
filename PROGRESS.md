@@ -494,3 +494,17 @@
   session after the fact, which no setting can do; read it as a ceiling, not a policy.
 - P2 is built and not yet run: about $0.09 on Opus 5.5, with approval. Its result decides whether smart-TTL
   savings may be counted.
+
+
+## 2026-10-31 · Bulk-read delegation built: the hook, the worker, the experiment, the detector
+- The [O] spec (`docs/optimization-agent.md`) now has "Two skills in depth": bulk-read delegation
+  (Spotify's `shunt` pattern) and model routing. The first is implemented here; routing stays as specified
+  (the catalog's `route-*` entries and ULT already cover its first deltas).
+- `app/hooks/bulk-read/`: `gate.mjs`, a PreToolUse hook that blocks whole reads of text files over 350 lines
+  and plain `cat` of them, and `bulk-read.mjs`, the worker that answers with cited line numbers. Catalog
+  entry `bulk-read-delegation` (`claude.bulkRead` in `lib/arm-config.mjs`); both runners add the worker's
+  logged cost to the arm, which Claude Code's own total leaves out. 56 checks in `app/test/bulk-read.test.mjs`.
+- `tools/readscan.py` sizes the lever from transcripts: whole reads over the threshold, their carry until
+  compaction, main thread or subagent, edited afterwards, priced in context vs delegated. 12 fixture tests.
+- Not run against a live session or on this machine's history yet, so there is no saving to report. Run
+  `readscan.py` first: if the delegable ceiling is small against spend, the experiment is not worth its cost.

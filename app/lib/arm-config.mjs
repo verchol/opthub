@@ -26,14 +26,82 @@
  *     env:      { K: V }                        any other env var, verbatim
  *     settings: { ... }                         written to <workdir>/.claude/settings.json
  *     maxTurns: 40, fallbackModel: "sonnet", appendSystemPrompt: "…"   CLI flags
+ *     bulkRead: {                               the bulk-read skill (app/hooks/bulk-read/): a PreToolUse
+ *       thresholdLines: 350,                    hook blocks whole reads of larger files and sends the agent
+ *       worker: "<alias>",                      to a cheap worker. worker: a litellm route alias (E2B arm)
+ *       localWorker: "claude-haiku-4-5",        localWorker: the Anthropic model the local sandbox uses,
+ *       maxBlocks: 1, timeoutMs: 30000          which has no proxy. Runners add the worker's spend.
+ *     }
  *   }
  *
  * Without routes, every request — the main loop, subagents and Claude Code's own
  * small-fast calls — lands on the single "*" upstream. So a baseline on Opus pays
  * Opus prices for session titles. The routing arm exists to measure that.
  */
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const yamlStr = (s) => JSON.stringify(String(s))
+
+// ---- bulk-read (docs/optimization-agent.md, "Skill in depth: bulk-read delegation")
+
+const HOOKS_SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'hooks', 'bulk-read')
+/** Where a runner puts the scripts, relative to the agent's $HOME; the hook command expands $HOME. */
+export const BULK_READ_HOME_DIR = '.opthub/hooks/bulk-read'
+// $/MTok input, output for the local worker, from tools/ratecard.py; keep the two in step.
+export const WORKER_PRICES = { 'claude-haiku-4-5': [1.0, 5.0], 'claude-haiku-5-5': [0.10, 0.50], 'claude-sonnet-5-5': [2.0, 10.0] }
+
+/** The scripts an arm with bulkRead needs inside its sandbox: [{ name, data }]. */
+export function bulkReadFiles() {
+  return ['gate.mjs', 'bulk-read.mjs'].map((name) => ({ name, data: fs.readFileSync(path.join(HOOKS_SRC, name), 'utf8') }))
+}
+
+/** The settings.json hook entry: one PreToolUse hook on Read and Bash. */
+export function bulkReadHooks() {
+  return { PreToolUse: [{ matcher: 'Read|Bash',
+    hooks: [{ type: 'command', command: `node "$HOME/${BULK_READ_HOME_DIR}/gate.mjs"`, timeout: 10 }] }] }
+}
+
+/**
+ * Env for the gate and the worker. The runner says how the worker is reached:
+ * { via: 'api' | 'claude', model, prices: [in, out] | null, log, state }.
+ */
+export function bulkReadEnv(br, { via, model, prices = null, log = null, state = null } = {}) {
+  if (!br) return {}
+  const env = {
+    BULK_READ_THRESHOLD: String(br.thresholdLines ?? 350),
+    BULK_READ_MAX_BLOCKS: String(br.maxBlocks ?? 1),
+    BULK_READ_TIMEOUT_MS: String(br.timeoutMs ?? 30000),
+    BULK_READ_VIA: via ?? 'claude',
+    BULK_READ_MODEL: model ?? br.localWorker ?? 'claude-haiku-4-5',
+    BULK_READ_CMD: `node $HOME/${BULK_READ_HOME_DIR}/bulk-read.mjs`,
+  }
+  if (prices) { env.BULK_READ_PRICE_IN = String(prices[0]); env.BULK_READ_PRICE_OUT = String(prices[1]) }
+  if (log) env.BULK_READ_LOG = log
+  if (state) env.BULK_READ_STATE = state
+  return env
+}
+
+/** What a run's bulk-read log adds up to: the worker's spend and the gate's decisions. */
+export function bulkReadSummary(text) {
+  const s = { delegations: 0, failures: 0, workerUsd: 0, workerMs: 0, blocks: 0, overrides: 0, allowedEdited: 0, allowedFailed: 0, unpriced: 0 }
+  for (const line of String(text ?? '').split('\n')) {
+    if (!line.trim()) continue
+    let r; try { r = JSON.parse(line) } catch { continue }
+    if (r.kind === 'worker') {
+      if (r.ok) s.delegations++; else s.failures++
+      if (typeof r.cost_usd === 'number') s.workerUsd += r.cost_usd; else if (r.ok) s.unpriced++
+      s.workerMs += r.ms ?? 0
+    } else if (r.kind === 'gate') {
+      if (r.action === 'block') s.blocks++
+      else if (/^override/.test(r.reason)) s.overrides++
+      else if (r.reason === 'edited in this session') s.allowedEdited++
+      else if (r.reason === 'worker failed on this file') s.allowedFailed++
+    }
+  }
+  return s
+}
 
 function upstream(bedrockId, inject) {
   return [
@@ -92,9 +160,20 @@ export function claudeFlags(cc) {
   return f.join(' ')
 }
 
+/** settings.json for one arm as an object (bulkRead adds its hook), or null when the arm writes none. */
+export function claudeSettingsObject(cc) {
+  const s = cc?.settings && Object.keys(cc.settings).length ? JSON.parse(JSON.stringify(cc.settings)) : null
+  if (!cc?.bulkRead) return s
+  const out = s ?? {}
+  out.hooks = out.hooks ?? {}
+  for (const [event, entries] of Object.entries(bulkReadHooks())) out.hooks[event] = [...(out.hooks[event] ?? []), ...entries]
+  return out
+}
+
 /** settings.json content for one arm, or null when the arm writes none. */
 export function claudeSettings(cc) {
-  return cc?.settings && Object.keys(cc.settings).length ? JSON.stringify(cc.settings, null, 2) : null
+  const s = claudeSettingsObject(cc)
+  return s ? JSON.stringify(s, null, 2) : null
 }
 
 /** Stable one-line descriptions, used by armDiff so a no-op arm is still caught. */
@@ -119,6 +198,7 @@ export function describeClaude(cc) {
   if (cc.appendSystemPrompt) p.push('system prompt appended')
   for (const k of Object.keys(cc.env ?? {}).sort()) p.push(`${k}=${cc.env[k]}`)
   if (cc.settings && Object.keys(cc.settings).length) p.push(`settings.json: ${Object.keys(cc.settings).sort().join(', ')}`)
+  if (cc.bulkRead) p.push(`whole reads over ${cc.bulkRead.thresholdLines ?? 350} lines go to ${cc.bulkRead.worker ?? cc.bulkRead.localWorker ?? 'claude-haiku-4-5'}`)
   return p.length ? p.join(', ') : null
 }
 

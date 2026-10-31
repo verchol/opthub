@@ -42,6 +42,7 @@ All read `~/.claude/projects` and price with `tools/ratecard.py`, counting usage
 | `python3 tools/dynconfig.py [--since YYYY-MM-DD] [--top 15] [--root DIR]` | the Claude Code config catalog priced per session, in applied order |
 | `python3 tools/sessiongraph.py <sid> [-o g.json] [--html g.html --page triage\|session]` | one session as a graph of tasks |
 | `python3 tools/tune.py <sid> [--json]` | the "dynamic" flags for one session |
+| `python3 tools/readscan.py [--days 30] [--threshold 350] [--json out.json] [--show-paths]` | large whole-file reads: carry, edited afterwards, priced ceiling for `bulk-read-delegation` |
 | `python3 tools/costmodel.py` | the supportbot cost model; run before editing any number in `docs/optimizers.md` |
 | `python3 tools/ratecard.py` | the rate card in force, with its version |
 
@@ -113,7 +114,7 @@ opt hub demo                 # the Tallyfox demo hub on :8950 (synthetic data)
 **Spends** (starts arms or boots sandboxes):
 
 ```sh
-opt optimize [strategy]      # one task in the local sandbox
+opt optimize [strategy]      # one task in the local sandbox (e.g. bulk-read-delegation; adds the worker's cost)
 opt claude optimize [dir]    # interactive Claude Code behind LLM Ultra Light
 opt claude -p "<task>"       # headless, optimize mode   (also: opt claude example)
 opt run --experiments a,b    # scenarios, grouped under a session
