@@ -18,6 +18,7 @@ when testing.
 - `README.md` — front door and roadmap.
 - `docs/` — `experiments.md` (E1/E1b), `optimizers.md` + `optimizers-cookbook.md` (levers),
   `router-comparison.md`, `local-inference-capacity.md` (when a local Ollama route is safe),
+  `optimization-agent.md` ([O] agent design: optimization models → skills → action tools, deep context),
   `dynamic-config-analysis.md` (per-session Claude Code config savings, from `tools/dynconfig.py`), `demo-mock-spec.md` (four-terminal demo, source of all demo numbers),
   `demo-thesis.md` + `demo-diagrams.md` (developer demo), `ARTIFACTS.md` (shared-page index).
 - `docs/data/` — pinned ledgers `e1-sessions.csv` (215 sessions) and `e1b-sessions.csv`

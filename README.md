@@ -311,6 +311,9 @@ and the two version-pinning traps worth knowing before you share one.
 - [`docs/evidence-catalog.md`](docs/evidence-catalog.md) — 110 public savings claims, graded by
   evidence strength and checked against opthub's measurements.
 - [`docs/runtime-optimization.md`](docs/runtime-optimization.md) — epic RO: `opt claude optimize` and ULT.
+- [`docs/optimization-agent.md`](docs/optimization-agent.md) — **[O] optimization agent** design spec:
+  optimization models, the five skill categories, action tools per target system, deep context
+  (session classes + tradeoff ledger), the sequence of one cycle, and the kill tests. Draft, unmeasured.
 - [`docs/router-comparison.md`](docs/router-comparison.md) · [`docs/judge-calibration-spec.md`](docs/judge-calibration-spec.md)
   — router prior art, and the J1 judge calibration design.
 
